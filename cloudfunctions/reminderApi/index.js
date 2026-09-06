@@ -6,7 +6,7 @@ const {
   canArmReminder,
   canCancelReminder,
   isTerminalReminderStatus,
-} = require('./lib/rules')
+} = require('./rules')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 

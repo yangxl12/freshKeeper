@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-const cloudDate = require('../../cloudfunctions/inventoryApi/lib/date') as {
+const cloudDate = require('../../cloudfunctions/inventoryApi/date') as {
   calculateExpiryDate(input: Record<string, unknown>): string
   getExpiryPresentation(expiryDate: string, today: string): {
     expiryStatus: string
@@ -8,16 +8,16 @@ const cloudDate = require('../../cloudfunctions/inventoryApi/lib/date') as {
   }
   parseDateKey(value: string): unknown
 }
-const validation = require('../../cloudfunctions/inventoryApi/lib/validation') as {
+const validation = require('../../cloudfunctions/inventoryApi/validation') as {
   validateSaveInput(input: Record<string, unknown>): Record<string, unknown>
   validateSearch(value: unknown): string
 }
-const reminderRules = require('../../cloudfunctions/reminderApi/lib/rules') as {
+const reminderRules = require('../../cloudfunctions/reminderApi/rules') as {
   canArmReminder(status?: string): boolean
   canCancelReminder(status?: string): boolean
   isTerminalReminderStatus(status?: string): boolean
 }
-const inventoryRules = require('../../cloudfunctions/inventoryApi/lib/rules') as {
+const inventoryRules = require('../../cloudfunctions/inventoryApi/rules') as {
   getDecrementDecision(status: string, quantity: number): string
   canTransitionInventory(status: string, target: string): boolean
 }

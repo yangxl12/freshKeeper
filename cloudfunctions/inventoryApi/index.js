@@ -2,9 +2,9 @@
 
 const crypto = require('node:crypto')
 const cloud = require('wx-server-sdk')
-const { addDays, currentDateKey, getExpiryPresentation } = require('./lib/date')
-const { AppError, assert, normalizeError } = require('./lib/error')
-const { canTransitionInventory, getDecrementDecision } = require('./lib/rules')
+const { addDays, currentDateKey, getExpiryPresentation } = require('./date')
+const { AppError, assert, normalizeError } = require('./error')
+const { canTransitionInventory, getDecrementDecision } = require('./rules')
 const {
   assertNoClientIdentity,
   validateHistoryStatus,
@@ -15,7 +15,7 @@ const {
   validateSaveInput,
   validateSearch,
   validateVersion,
-} = require('./lib/validation')
+} = require('./validation')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
