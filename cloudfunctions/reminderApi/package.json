@@ -1,0 +1,12 @@
+{
+  "name": "fresh-keeper-reminder-api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "wx-server-sdk": "4.0.2"
+  }
+}

@@ -1,0 +1,98 @@
+<view class="detail page-shell">
+  <view wx:if="{{loading}}" class="detail-loading">正在读取物品信息…</view>
+
+  <empty-state
+    wx:elif="{{errorMessage}}"
+    title="无法显示物品"
+    description="{{errorMessage}}"
+    action-text="重新加载"
+    bind:action="retry"
+  />
+
+  <block wx:elif="{{item}}">
+    <view wx:if="{{errorMessage}}" class="detail-error" role="alert">
+      <text>当前显示的是上次内容：{{errorMessage}}</text>
+      <button bindtap="retry">重试</button>
+    </view>
+    <view class="detail-hero detail-hero--{{item.expiryTone}}">
+      <view class="detail-hero__topline">
+        <text class="detail-hero__kind">{{item.categoryLabel}} · {{item.storageLabel}}</text>
+        <expiry-status text="{{item.expiryStatusText}}" tone="{{item.expiryTone}}" />
+      </view>
+      <text class="detail-hero__name">{{item.name}}</text>
+      <view class="detail-hero__expiry">
+        <text class="detail-hero__expiry-label">到期日期</text>
+        <text class="detail-hero__expiry-date">{{item.expiryDate}}</text>
+      </view>
+    </view>
+
+    <view class="detail-section">
+      <view class="detail-section__heading">
+        <text class="detail-section__title">物品信息</text>
+        <button wx:if="{{item.inventoryStatus === 'active'}}" class="text-action" bindtap="editItem">编辑</button>
+      </view>
+      <view class="detail-list">
+        <view class="detail-list__row">
+          <text class="detail-list__label">当前数量</text>
+          <text class="detail-list__value detail-list__value--strong">{{item.quantity}}{{item.unit}}</text>
+        </view>
+        <view class="detail-list__row">
+          <text class="detail-list__label">分类</text>
+          <text class="detail-list__value">{{item.categoryLabel}}</text>
+        </view>
+        <view class="detail-list__row">
+          <text class="detail-list__label">存放位置</text>
+          <text class="detail-list__value">{{item.storageLabel}}</text>
+        </view>
+        <block wx:if="{{item.expiryInputMode === 'shelf_life'}}">
+          <view class="detail-list__row">
+            <text class="detail-list__label">生产日期</text>
+            <text class="detail-list__value">{{item.productionDate}}</text>
+          </view>
+          <view class="detail-list__row">
+            <text class="detail-list__label">保质期</text>
+            <text class="detail-list__value">{{item.shelfLifeText}}</text>
+          </view>
+        </block>
+        <view class="detail-list__row">
+          <text class="detail-list__label">库存状态</text>
+          <text class="detail-list__value">{{item.inventoryStatusLabel}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{item.inventoryStatus === 'active'}}" class="detail-section reminder-section">
+      <view class="detail-section__heading">
+        <view>
+          <text class="detail-section__title">微信临期提醒</text>
+          <text class="reminder-section__lead">提前 {{item.reminderLeadDays}} 天</text>
+        </view>
+      </view>
+      <text class="reminder-section__copy">{{item.reminderCopy}}</text>
+      <button
+        class="secondary-button reminder-section__button"
+        disabled="{{actionLoading || item.reminderActionDisabled || item.expiryStatus === 'expired'}}"
+        bindtap="requestReminder"
+      >{{item.expiryStatus === 'expired' ? '过期物品不再提醒' : item.reminderActionText}}</button>
+      <button wx:if="{{item.reminderStatus === 'scheduled'}}" class="cancel-reminder" bindtap="cancelReminder">取消本次提醒</button>
+    </view>
+
+    <view wx:if="{{item.inventoryStatus === 'active'}}" class="detail-section stock-actions">
+      <text class="detail-section__title">处理库存</text>
+      <button class="secondary-button stock-actions__decrement" disabled="{{actionLoading}}" bindtap="decrement">
+        数量减一
+      </button>
+      <view class="stock-actions__row">
+        <button class="primary-button" disabled="{{actionLoading}}" bindtap="confirmComplete">标记已用完</button>
+        <button class="danger-button" disabled="{{actionLoading}}" bindtap="confirmDiscard">标记已丢弃</button>
+      </view>
+      <button class="delete-action" disabled="{{actionLoading}}" bindtap="confirmDelete">删除误录记录</button>
+    </view>
+
+    <view wx:else class="history-note">
+      <text class="history-note__title">这件物品已{{item.inventoryStatus === 'used_up' ? '用完' : '丢弃'}}</text>
+      <text class="history-note__copy">历史记录用于回顾，不再参与当前库存统计。</text>
+      <button class="secondary-button" bindtap="backHome">返回当前库存</button>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,370 @@
+'use strict'
+
+const crypto = require('node:crypto')
+const cloud = require('wx-server-sdk')
+const { addDays, currentDateKey, getExpiryPresentation } = require('./lib/date')
+const { AppError, assert, normalizeError } = require('./lib/error')
+const { canTransitionInventory, getDecrementDecision } = require('./lib/rules')
+const {
+  assertNoClientIdentity,
+  validateHistoryStatus,
+  validateItemId,
+  validateOptionalCategory,
+  validateOptionalStorage,
+  validatePageSize,
+  validateSaveInput,
+  validateSearch,
+  validateVersion,
+} = require('./lib/validation')
+
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
+
+const db = cloud.database()
+const command = db.command
+const ITEMS = 'inventory_items'
+const REMINDERS = 'reminder_jobs'
+
+const CATEGORY_LABELS = {
+  food: '食品',
+  medicine: '药品',
+  household: '日化',
+  other: '其他',
+}
+const STORAGE_LABELS = {
+  refrigerated: '冷藏',
+  frozen: '冷冻',
+  cabinet: '橱柜',
+  medicine_box: '药箱',
+  other: '其他',
+}
+const STATUS_LABELS = {
+  active: '使用中',
+  used_up: '已用完',
+  discarded: '已丢弃',
+}
+
+function publicItem(item, today, extra = {}) {
+  const {
+    ownerId: _ownerId,
+    searchName: _searchName,
+    ...safeItem
+  } = item
+  return {
+    ...safeItem,
+    ...getExpiryPresentation(item.expiryDate, today),
+    categoryLabel: CATEGORY_LABELS[item.category] || '其他',
+    storageLabel: STORAGE_LABELS[item.storageLocation] || '其他',
+    inventoryStatusLabel: STATUS_LABELS[item.inventoryStatus] || '未知',
+    ...extra,
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function decodeCursor(value) {
+  if (!value) return 0
+  try {
+    const payload = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+    if (!Number.isInteger(payload.offset) || payload.offset < 0 || payload.offset > 10_000) {
+      throw new Error('invalid')
+    }
+    return payload.offset
+  } catch (_error) {
+    throw new AppError('INVALID_CURSOR', '分页位置已失效，请刷新后重试')
+  }
+}
+
+function encodeCursor(offset) {
+  return Buffer.from(JSON.stringify({ offset })).toString('base64url')
+}
+
+async function getOwnedItem(ownerId, itemId) {
+  const result = await db.collection(ITEMS).where({ _id: itemId, ownerId }).limit(1).get()
+  if (!result.data.length) throw new AppError('NOT_FOUND', '物品不存在或已被删除')
+  return result.data[0]
+}
+
+function updatedCount(result) {
+  return result?.stats?.updated ?? result?.updated ?? 0
+}
+
+async function getTransactionOwnedDoc(transaction, collectionName, ownerId, id) {
+  const result = await transaction
+    .collection(collectionName)
+    .where({ _id: id, ownerId })
+    .limit(1)
+    .get()
+  return result.data[0] || null
+}
+
+async function cancelPendingReminder(transaction, ownerId, itemId, remove = false) {
+  const job = await getTransactionOwnedDoc(transaction, REMINDERS, ownerId, itemId)
+  if (!job) return
+  if (!['scheduled', 'failed', 'cancelled'].includes(job.status)) return
+  if (remove) {
+    await transaction.collection(REMINDERS).doc(itemId).remove()
+    return
+  }
+  await transaction.collection(REMINDERS).doc(itemId).update({
+    data: {
+      status: 'cancelled',
+      updatedAt: db.serverDate(),
+    },
+  })
+}
+
+async function listActive(ownerId, event) {
+  const today = currentDateKey()
+  const search = validateSearch(event.search)
+  const category = validateOptionalCategory(event.category)
+  const storageLocation = validateOptionalStorage(event.storageLocation)
+  const pageSize = validatePageSize(event.pageSize)
+  const offset = decodeCursor(event.cursor)
+  const where = { ownerId, inventoryStatus: 'active' }
+  if (category) where.category = category
+  if (storageLocation) where.storageLocation = storageLocation
+  if (search) {
+    where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
+  }
+
+  const [pageResult, totalResult, expiredResult, expiringResult] = await Promise.all([
+    db
+      .collection(ITEMS)
+      .where(where)
+      .orderBy('expiryDate', 'asc')
+      .orderBy('createdAt', 'desc')
+      .skip(offset)
+      .limit(pageSize + 1)
+      .get(),
+    db.collection(ITEMS).where({ ownerId, inventoryStatus: 'active' }).count(),
+    db
+      .collection(ITEMS)
+      .where({ ownerId, inventoryStatus: 'active', expiryDate: command.lt(today) })
+      .count(),
+    db
+      .collection(ITEMS)
+      .where({
+        ownerId,
+        inventoryStatus: 'active',
+        expiryDate: command.gte(today).and(command.lte(addDays(today, 7))),
+      })
+      .count(),
+  ])
+
+  const hasMore = pageResult.data.length > pageSize
+  const items = pageResult.data.slice(0, pageSize).map((item) => publicItem(item, today))
+  return {
+    items,
+    overview: {
+      expired: expiredResult.total,
+      expiringWithin7Days: expiringResult.total,
+      activeTotal: totalResult.total,
+    },
+    nextCursor: hasMore ? encodeCursor(offset + pageSize) : null,
+    serverToday: today,
+  }
+}
+
+async function get(ownerId, event) {
+  const itemId = validateItemId(event.itemId)
+  const item = await getOwnedItem(ownerId, itemId)
+  const reminderResult = await db
+    .collection(REMINDERS)
+    .where({ _id: itemId, ownerId })
+    .limit(1)
+    .get()
+  return publicItem(item, currentDateKey(), {
+    reminderStatus: reminderResult.data[0]?.status || null,
+  })
+}
+
+async function save(ownerId, event) {
+  const input = event.data
+  const normalized = validateSaveInput(input)
+  if (!input.itemId) {
+    assert(input.version === undefined, 'INVALID_ARGUMENT', '新增物品不能包含记录版本')
+    const result = await db.collection(ITEMS).add({
+      data: {
+        ownerId,
+        ...normalized,
+        inventoryStatus: 'active',
+        version: 1,
+        createdAt: db.serverDate(),
+        updatedAt: db.serverDate(),
+        completedAt: null,
+      },
+    })
+    return { itemId: result._id, version: 1, expiryDate: normalized.expiryDate }
+  }
+
+  const itemId = validateItemId(input.itemId)
+  const version = validateVersion(input.version)
+  await getOwnedItem(ownerId, itemId)
+  await db.runTransaction(async (transaction) => {
+    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
+    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
+    assert(current.inventoryStatus === 'active', 'INVALID_STATE', '已处理物品不能再次编辑')
+    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
+
+    await transaction.collection(ITEMS).doc(itemId).update({
+      data: {
+        ...normalized,
+        version: version + 1,
+        updatedAt: db.serverDate(),
+      },
+    })
+
+    const reminder = await getTransactionOwnedDoc(transaction, REMINDERS, ownerId, itemId)
+    if (
+      reminder &&
+      ['scheduled', 'failed', 'cancelled'].includes(reminder.status)
+    ) {
+      await transaction.collection(REMINDERS).doc(itemId).update({
+        data: {
+          remindDate: addDays(normalized.expiryDate, -normalized.reminderLeadDays),
+          updatedAt: db.serverDate(),
+        },
+      })
+    }
+  })
+  return { itemId, version: version + 1, expiryDate: normalized.expiryDate }
+}
+
+async function decrement(ownerId, event) {
+  const itemId = validateItemId(event.itemId)
+  const version = validateVersion(event.version)
+  const item = await getOwnedItem(ownerId, itemId)
+  const decision = getDecrementDecision(item.inventoryStatus, item.quantity)
+  assert(decision !== 'invalid_state', 'INVALID_STATE', '已处理物品不能减少数量')
+  assert(item.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
+  if (decision === 'requires_completion') {
+    throw new AppError('REQUIRES_COMPLETION_CONFIRM', '这是最后一件，请确认是否标记为已用完')
+  }
+
+  const result = await db
+    .collection(ITEMS)
+    .where({
+      _id: itemId,
+      ownerId,
+      inventoryStatus: 'active',
+      version,
+      quantity: item.quantity,
+    })
+    .update({
+      data: {
+        quantity: command.inc(-1),
+        version: command.inc(1),
+        updatedAt: db.serverDate(),
+      },
+    })
+  if (updatedCount(result) !== 1) {
+    throw new AppError('CONFLICT', '记录已更新，请刷新后重试')
+  }
+  return { quantity: item.quantity - 1, version: version + 1 }
+}
+
+async function transition(ownerId, event, targetStatus) {
+  const itemId = validateItemId(event.itemId)
+  const version = validateVersion(event.version)
+  await getOwnedItem(ownerId, itemId)
+  await db.runTransaction(async (transaction) => {
+    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
+    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
+    assert(
+      canTransitionInventory(current.inventoryStatus, targetStatus),
+      'INVALID_STATE',
+      '该物品已经处理',
+    )
+    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
+    const update = {
+      inventoryStatus: targetStatus,
+      version: version + 1,
+      completedAt: db.serverDate(),
+      updatedAt: db.serverDate(),
+    }
+    if (targetStatus === 'used_up') update.quantity = 0
+    await transaction.collection(ITEMS).doc(itemId).update({ data: update })
+    await cancelPendingReminder(transaction, ownerId, itemId)
+  })
+  return { version: version + 1 }
+}
+
+async function remove(ownerId, event) {
+  const itemId = validateItemId(event.itemId)
+  const version = validateVersion(event.version)
+  await getOwnedItem(ownerId, itemId)
+  await db.runTransaction(async (transaction) => {
+    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
+    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
+    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
+    await transaction.collection(ITEMS).doc(itemId).remove()
+    await cancelPendingReminder(transaction, ownerId, itemId, true)
+  })
+  return { deleted: true }
+}
+
+async function listHistory(ownerId, event) {
+  const today = currentDateKey()
+  const search = validateSearch(event.search)
+  const status = validateHistoryStatus(event.status)
+  const pageSize = validatePageSize(event.pageSize)
+  const offset = decodeCursor(event.cursor)
+  const where = {
+    ownerId,
+    inventoryStatus: status || command.in(['used_up', 'discarded']),
+  }
+  if (search) {
+    where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
+  }
+
+  const result = await db
+    .collection(ITEMS)
+    .where(where)
+    .orderBy('completedAt', 'desc')
+    .skip(offset)
+    .limit(pageSize + 1)
+    .get()
+  const hasMore = result.data.length > pageSize
+  return {
+    items: result.data.slice(0, pageSize).map((item) => publicItem(item, today)),
+    nextCursor: hasMore ? encodeCursor(offset + pageSize) : null,
+    serverToday: today,
+  }
+}
+
+const handlers = {
+  listActive,
+  get,
+  save,
+  decrement,
+  complete: (ownerId, event) => transition(ownerId, event, 'used_up'),
+  discard: (ownerId, event) => transition(ownerId, event, 'discarded'),
+  delete: remove,
+  listHistory,
+}
+
+exports.main = async (event = {}) => {
+  const requestId = crypto.randomUUID()
+  const startedAt = Date.now()
+  const action = event && typeof event.action === 'string' ? event.action : ''
+  try {
+    assertNoClientIdentity(event)
+    const ownerId = cloud.getWXContext().OPENID
+    assert(ownerId, 'UNAUTHENTICATED', '请在微信中重新打开小程序')
+    const handler = handlers[action]
+    assert(handler, 'INVALID_ACTION', '不支持的库存操作')
+    const data = await handler(ownerId, event)
+    console.info(JSON.stringify({ requestId, action, resultCode: 'OK', durationMs: Date.now() - startedAt }))
+    return { ok: true, data, requestId }
+  } catch (error) {
+    const safeError = normalizeError(error)
+    console.warn(JSON.stringify({ requestId, action, resultCode: safeError.code, durationMs: Date.now() - startedAt }))
+    return {
+      ok: false,
+      error: { code: safeError.code, message: safeError.message },
+      requestId,
+    }
+  }
+}

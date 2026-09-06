@@ -1,0 +1,112 @@
+<view class="mine page-shell">
+  <view class="mine-header">
+    <text class="mine-header__eyebrow">个人偏好</text>
+    <text class="mine-header__title">让每次录入更快一点</text>
+  </view>
+
+  <view class="settings-panel">
+    <view class="settings-panel__heading">
+      <text class="settings-panel__title">默认设置</text>
+      <text wx:if="{{settingsSaving}}" class="settings-panel__saving">保存中…</text>
+    </view>
+    <view wx:if="{{settingsError}}" class="compact-error">
+      <text>{{settingsError}}</text>
+      <button bindtap="retrySettings">重试</button>
+    </view>
+    <view wx:if="{{settingsLoading}}" class="settings-loading">正在读取设置…</view>
+    <block wx:else>
+      <picker disabled="{{settingsSaving}}" mode="selector" range="{{reminderDayOptions}}" range-key="label" value="{{reminderDayIndex}}" bindchange="handleReminderDaysChange">
+        <view class="setting-row">
+          <view>
+            <text class="setting-row__label">默认提前提醒</text>
+            <text class="setting-row__description">新增物品时自动带入</text>
+          </view>
+          <view class="setting-row__value">
+            <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
+            <text class="setting-row__chevron">›</text>
+          </view>
+        </view>
+      </picker>
+      <picker disabled="{{settingsSaving}}" mode="selector" range="{{storageOptions}}" range-key="label" value="{{storageIndex}}" bindchange="handleStorageChange">
+        <view class="setting-row">
+          <view>
+            <text class="setting-row__label">默认存放位置</text>
+            <text class="setting-row__description">可在单件物品中修改</text>
+          </view>
+          <view class="setting-row__value">
+            <text>{{storageOptions[storageIndex].label}}</text>
+            <text class="setting-row__chevron">›</text>
+          </view>
+        </view>
+      </picker>
+      <view class="setting-row setting-row--notification">
+        <view>
+          <text class="setting-row__label">提醒授权</text>
+          <text class="setting-row__description setting-row__description--wide">{{subscriptionSummary}}</text>
+        </view>
+        <button class="setting-row__link" bindtap="openNotificationSettings">查看设置</button>
+      </view>
+    </block>
+  </view>
+
+  <view class="history">
+    <view class="history__heading">
+      <view>
+        <text class="history__eyebrow">处理记录</text>
+        <text class="history__title">历史</text>
+      </view>
+      <text class="history__hint">按完成时间倒序</text>
+    </view>
+
+    <view class="history-search">
+      <text class="history-search__icon">⌕</text>
+      <input
+        class="history-search__input"
+        value="{{historySearch}}"
+        placeholder="搜索历史物品"
+        placeholder-class="history-search__placeholder"
+        bindinput="handleHistorySearch"
+      />
+      <button wx:if="{{historySearch}}" class="history-search__clear" bindtap="clearHistorySearch">×</button>
+    </view>
+
+    <view class="history-tabs">
+      <button
+        wx:for="{{historyStatusOptions}}"
+        wx:key="value"
+        class="history-tab {{historyStatusIndex === index ? 'history-tab--active' : ''}}"
+        data-index="{{index}}"
+        bindtap="handleHistoryStatus"
+      >{{item.label}}</button>
+    </view>
+
+    <view wx:if="{{historyError}}" class="compact-error">
+      <text>{{historyError}}</text>
+      <button bindtap="retryHistory">重试</button>
+    </view>
+    <view wx:if="{{historyLoading}}" class="history-loading">正在读取历史…</view>
+    <block wx:elif="{{historyItems.length}}">
+      <inventory-row
+        wx:for="{{historyItems}}"
+        wx:key="_id"
+        item="{{item}}"
+        history
+        bind:select="openHistoryItem"
+      />
+      <view wx:if="{{historyLoadingMore}}" class="history-loading history-loading--more">正在加载更多…</view>
+      <view wx:elif="{{!historyNextCursor}}" class="history-end">没有更多记录了</view>
+    </block>
+    <empty-state
+      wx:elif="{{!historyError}}"
+      title="{{historySearch ? '没有匹配的历史记录' : '还没有处理记录'}}"
+      description="{{historySearch ? '换个名称或清空搜索后再试' : '用完或丢弃的物品会保留在这里'}}"
+      action-text="{{historySearch ? '清空搜索' : ''}}"
+      bind:action="clearHistorySearch"
+    />
+  </view>
+
+  <view class="about">
+    <text class="about__name">保质期助手 · MVP</text>
+    <text class="about__copy">记录食品、药品和日化用品的到期时间。首版数据仅供你本人查看。</text>
+  </view>
+</view>

@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "物品详情",
+  "usingComponents": {
+    "expiry-status": "/components/expiry-status/index",
+    "empty-state": "/components/empty-state/index"
+  }
+}

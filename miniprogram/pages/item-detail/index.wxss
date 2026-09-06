@@ -1,0 +1,240 @@
+.detail-loading {
+  padding: 180rpx 0;
+  color: #76847e;
+  text-align: center;
+}
+
+.detail-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22rpx;
+  padding: 18rpx 20rpx;
+  border-left: 6rpx solid #b44535;
+  background: #fff4f1;
+  color: #8f392e;
+  font-size: 23rpx;
+}
+
+.detail-error button {
+  height: 88rpx;
+  margin: 0 0 0 14rpx;
+  padding: 0 10rpx;
+  background: transparent;
+  color: #8f392e;
+  font-size: 23rpx;
+  font-weight: 650;
+  line-height: 88rpx;
+}
+
+.detail-hero {
+  position: relative;
+  overflow: hidden;
+  margin: 4rpx 0 30rpx;
+  padding: 34rpx 30rpx 32rpx;
+  border: 2rpx solid #d8e2dd;
+  border-top: 10rpx solid #4d806b;
+  border-radius: 22rpx;
+  background: #fbfcfa;
+}
+
+.detail-hero--danger {
+  border-top-color: #b44535;
+}
+
+.detail-hero--urgent {
+  border-top-color: #c35d31;
+}
+
+.detail-hero--warning {
+  border-top-color: #c0832d;
+}
+
+.detail-hero__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detail-hero__kind {
+  color: #6f7e77;
+  font-size: 23rpx;
+}
+
+.detail-hero__name {
+  display: block;
+  margin-top: 28rpx;
+  color: #18342d;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 50rpx;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.detail-hero__expiry {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 36rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx dashed #cbd7d1;
+}
+
+.detail-hero__expiry-label {
+  color: #718079;
+  font-size: 23rpx;
+}
+
+.detail-hero__expiry-date {
+  color: #234a3b;
+  font-family: "DIN Alternate", monospace;
+  font-size: 38rpx;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.detail-section {
+  margin-bottom: 24rpx;
+  padding: 30rpx 28rpx;
+  border: 2rpx solid #e0e7e3;
+  border-radius: 20rpx;
+  background: #fbfcfa;
+}
+
+.detail-section__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detail-section__title {
+  display: block;
+  color: #29443a;
+  font-size: 27rpx;
+  font-weight: 650;
+}
+
+.text-action {
+  min-width: 88rpx;
+  height: 88rpx;
+  margin: 0;
+  padding: 0 12rpx;
+  background: transparent;
+  color: #2f6b57;
+  font-size: 25rpx;
+  font-weight: 600;
+  line-height: 88rpx;
+}
+
+.detail-list {
+  margin-top: 18rpx;
+}
+
+.detail-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72rpx;
+  border-bottom: 2rpx solid #edf1ef;
+}
+
+.detail-list__row:last-child {
+  border-bottom: 0;
+}
+
+.detail-list__label {
+  color: #7a8781;
+  font-size: 24rpx;
+}
+
+.detail-list__value {
+  color: #3b5048;
+  font-size: 26rpx;
+}
+
+.detail-list__value--strong {
+  color: #1f4437;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.reminder-section__lead {
+  display: block;
+  margin-top: 4rpx;
+  color: #87938d;
+  font-size: 22rpx;
+}
+
+.reminder-section__copy {
+  display: block;
+  margin-top: 18rpx;
+  color: #6e7c75;
+  font-size: 24rpx;
+  line-height: 1.65;
+}
+
+.reminder-section__button {
+  margin-top: 22rpx;
+}
+
+.reminder-section__button[disabled] {
+  border-color: #dfe5e2;
+  background: #f1f4f2;
+  color: #8d9993;
+}
+
+.cancel-reminder,
+.delete-action {
+  height: 88rpx;
+  margin-top: 14rpx;
+  background: transparent;
+  color: #7d8983;
+  font-size: 24rpx;
+  line-height: 88rpx;
+}
+
+.stock-actions__decrement {
+  margin-top: 24rpx;
+}
+
+.stock-actions__row {
+  display: flex;
+  margin-top: 18rpx;
+  gap: 16rpx;
+}
+
+.stock-actions__row button {
+  min-width: 0;
+  flex: 1;
+  padding: 0 8rpx;
+  font-size: 27rpx;
+}
+
+.delete-action {
+  color: #a33f32;
+}
+
+.history-note {
+  padding: 40rpx 30rpx;
+  border: 2rpx solid #dce4e0;
+  border-radius: 20rpx;
+  background: #fbfcfa;
+  text-align: center;
+}
+
+.history-note__title,
+.history-note__copy {
+  display: block;
+}
+
+.history-note__title {
+  color: #2b463c;
+  font-size: 30rpx;
+  font-weight: 650;
+}
+
+.history-note__copy {
+  margin: 12rpx 0 28rpx;
+  color: #75827c;
+  font-size: 24rpx;
+}

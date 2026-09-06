@@ -1,0 +1,6 @@
+{
+  "component": true,
+  "usingComponents": {
+    "expiry-status": "/components/expiry-status/index"
+  }
+}

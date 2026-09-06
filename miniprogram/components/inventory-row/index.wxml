@@ -1,0 +1,24 @@
+<view
+  class="inventory-row {{history ? 'inventory-row--history' : ''}}"
+  bindtap="handleTap"
+  hover-class="inventory-row--pressed"
+  role="button"
+  aria-label="{{item.name}}，{{history ? item.inventoryStatusLabel : item.expiryStatusText}}"
+>
+  <view class="inventory-row__date" aria-hidden="true">
+    <text class="inventory-row__month">{{item.expiryMonth}}</text>
+    <text class="inventory-row__day">{{item.expiryDay}}</text>
+  </view>
+  <view class="inventory-row__content">
+    <view class="inventory-row__headline">
+      <text class="inventory-row__name">{{item.name}}</text>
+      <text class="inventory-row__quantity">{{item.quantity}}{{item.unit}}</text>
+    </view>
+    <text class="inventory-row__meta">{{item.categoryLabel}} · {{item.storageLabel}}</text>
+  </view>
+  <view class="inventory-row__trailing">
+    <text wx:if="{{history}}" class="inventory-row__history-status">{{item.inventoryStatusLabel}}</text>
+    <expiry-status wx:else text="{{item.expiryStatusText}}" tone="{{item.expiryTone}}" />
+    <text class="inventory-row__chevron" aria-hidden="true">›</text>
+  </view>
+</view>

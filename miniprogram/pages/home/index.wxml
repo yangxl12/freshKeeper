@@ -1,0 +1,122 @@
+<view class="home page-shell">
+  <view class="hero">
+    <view class="hero__heading">
+      <view>
+        <text class="hero__eyebrow">今日库存</text>
+        <text class="hero__title">先处理快过期的</text>
+      </view>
+      <text wx:if="{{serverToday}}" class="hero__date">{{serverToday}}</text>
+    </view>
+
+    <view class="overview" aria-label="库存概览">
+      <view class="overview__item overview__item--danger">
+        <text class="overview__value">{{overview.expired}}</text>
+        <text class="overview__label">已过期</text>
+      </view>
+      <view class="overview__divider"></view>
+      <view class="overview__item overview__item--warning">
+        <text class="overview__value">{{overview.expiringWithin7Days}}</text>
+        <text class="overview__label">7 天内到期</text>
+      </view>
+      <view class="overview__divider"></view>
+      <view class="overview__item">
+        <text class="overview__value">{{overview.activeTotal}}</text>
+        <text class="overview__label">有效品项</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="query-panel">
+    <view class="search-box">
+      <text class="search-box__icon" aria-hidden="true">⌕</text>
+      <input
+        class="search-box__input"
+        value="{{search}}"
+        placeholder="搜索物品名称"
+        placeholder-class="search-box__placeholder"
+        confirm-type="search"
+        bindinput="handleSearchInput"
+      />
+      <button wx:if="{{search}}" class="search-box__clear" bindtap="clearSearch" aria-label="清空搜索">×</button>
+    </view>
+    <view class="filters">
+      <picker
+        class="filter"
+        mode="selector"
+        range="{{categoryOptions}}"
+        range-key="label"
+        value="{{categoryIndex}}"
+        bindchange="handleCategoryChange"
+      >
+        <view class="filter__control">
+          <text>{{categoryOptions[categoryIndex].label}}</text>
+          <text class="filter__arrow" aria-hidden="true">⌄</text>
+        </view>
+      </picker>
+      <picker
+        class="filter"
+        mode="selector"
+        range="{{storageOptions}}"
+        range-key="label"
+        value="{{storageIndex}}"
+        bindchange="handleStorageChange"
+      >
+        <view class="filter__control">
+          <text>{{storageOptions[storageIndex].label}}</text>
+          <text class="filter__arrow" aria-hidden="true">⌄</text>
+        </view>
+      </picker>
+      <button wx:if="{{isFiltered}}" class="filters__reset" bindtap="resetFilters">重置</button>
+    </view>
+  </view>
+
+  <view wx:if="{{errorMessage}}" class="error-banner">
+    <text class="error-banner__text">{{errorMessage}}</text>
+    <button class="error-banner__action" bindtap="retry">重试</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="loading-list" aria-label="正在加载库存">
+    <view wx:for="{{[1, 2, 3]}}" wx:key="*this" class="loading-row">
+      <view class="loading-row__date"></view>
+      <view class="loading-row__content">
+        <view class="loading-row__line"></view>
+        <view class="loading-row__line loading-row__line--short"></view>
+      </view>
+    </view>
+  </view>
+
+  <block wx:elif="{{groups.length}}">
+    <view wx:for="{{groups}}" wx:key="key" class="inventory-group">
+      <view class="inventory-group__heading">
+        <view class="inventory-group__title-wrap">
+          <view class="inventory-group__tick inventory-group__tick--{{item.tone}}"></view>
+          <text class="inventory-group__title">{{item.label}}</text>
+        </view>
+        <text class="inventory-group__count">{{item.items.length}} 项</text>
+      </view>
+      <inventory-row
+        wx:for="{{item.items}}"
+        wx:for-item="inventoryItem"
+        wx:key="_id"
+        item="{{inventoryItem}}"
+        bind:select="openItem"
+      />
+    </view>
+    <view wx:if="{{loadingMore}}" class="load-more">正在加载更多…</view>
+    <view wx:elif="{{!nextCursor && items.length > 0}}" class="load-more">已经到底了</view>
+  </block>
+
+  <empty-state
+    wx:elif="{{!errorMessage}}"
+    title="{{isFiltered ? '没有匹配的物品' : '先记下第一件物品'}}"
+    description="{{isFiltered ? '换个名称或清除筛选后再试' : '只需名称和到期日期，之后随时可以补充'}}"
+    action-text="{{isFiltered ? '查看全部库存' : '新增物品'}}"
+    bind:action="handleEmptyAction"
+  />
+
+  <view class="home__bottom-space"></view>
+  <button class="add-button" bindtap="addItem" aria-label="新增物品">
+    <text class="add-button__plus" aria-hidden="true">＋</text>
+    <text>新增物品</text>
+  </button>
+</view>

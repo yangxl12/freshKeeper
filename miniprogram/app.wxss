@@ -1,0 +1,114 @@
+page {
+  min-height: 100%;
+  background: #f4f7f3;
+  color: #18342d;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  font-size: 28rpx;
+  line-height: 1.5;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button::after {
+  border: 0;
+}
+
+button:focus,
+input:focus {
+  outline: 4rpx solid rgba(36, 91, 73, 0.3);
+  outline-offset: 2rpx;
+}
+
+.page-shell {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 32rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+}
+
+.section-title {
+  color: #51625b;
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button {
+  min-height: 92rpx;
+  border-radius: 18rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 92rpx;
+}
+
+.primary-button {
+  background: #245b49;
+  color: #ffffff;
+}
+
+.primary-button[disabled] {
+  background: #aab6b1;
+  color: #eef2ef;
+}
+
+.secondary-button {
+  border: 2rpx solid #cbd5d0;
+  background: #ffffff;
+  color: #245b49;
+}
+
+.danger-button {
+  border: 2rpx solid #e6c5bf;
+  background: #fff7f5;
+  color: #a33f32;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 14rpx;
+  color: #51625b;
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
+.field-control {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88rpx;
+  padding: 22rpx 24rpx;
+  border: 2rpx solid #dbe3df;
+  border-radius: 16rpx;
+  background: #ffffff;
+  color: #18342d;
+}
+
+.field-placeholder {
+  color: #95a19c;
+}
+
+.feedback-error {
+  margin: 24rpx 0;
+  padding: 22rpx 24rpx;
+  border-left: 6rpx solid #b44535;
+  background: #fff4f1;
+  color: #8f392e;
+  font-size: 26rpx;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

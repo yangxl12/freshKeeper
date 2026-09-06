@@ -1,0 +1,288 @@
+'use strict'
+
+const crypto = require('node:crypto')
+const cloud = require('wx-server-sdk')
+
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
+
+const db = cloud.database()
+const command = db.command
+const ITEMS = 'inventory_items'
+const REMINDERS = 'reminder_jobs'
+const BATCH_SIZE = 50
+const MAX_BATCHES = 20
+const MILLIS_PER_DAY = 86_400_000
+
+class AppError extends Error {
+  constructor(code, message) {
+    super(message)
+    this.code = code
+  }
+}
+
+function assert(condition, code, message) {
+  if (!condition) throw new AppError(code, message)
+}
+
+function parseDateKey(value) {
+  const match = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  if (year < 1900 || year > 2200 || month < 1 || month > 12 || day < 1 || day > maxDay) {
+    return null
+  }
+  return { year, month, day }
+}
+
+function toOrdinal(value) {
+  const parts = parseDateKey(value)
+  if (!parts) return null
+  return Math.floor(Date.UTC(parts.year, parts.month - 1, parts.day) / MILLIS_PER_DAY)
+}
+
+function fromOrdinal(ordinal) {
+  const date = new Date(ordinal * MILLIS_PER_DAY)
+  return `${String(date.getUTCFullYear()).padStart(4, '0')}-${String(
+    date.getUTCMonth() + 1,
+  ).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
+function addDays(value, amount) {
+  const ordinal = toOrdinal(value)
+  return ordinal === null ? null : fromOrdinal(ordinal + amount)
+}
+
+function todayKey() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function loadConfig() {
+  const config = {
+    itemField: process.env.REMINDER_ITEM_FIELD,
+    dateField: process.env.REMINDER_DATE_FIELD,
+    statusField: process.env.REMINDER_STATUS_FIELD,
+    miniprogramState: process.env.MINIPROGRAM_STATE || 'developer',
+  }
+  assert(config.itemField, 'CONFIG_MISSING', '订阅模板物品字段尚未配置')
+  assert(config.dateField, 'CONFIG_MISSING', '订阅模板日期字段尚未配置')
+  assert(config.statusField, 'CONFIG_MISSING', '订阅模板状态字段尚未配置')
+  assert(
+    ['developer', 'trial', 'formal'].includes(config.miniprogramState),
+    'CONFIG_INVALID',
+    '小程序发布状态配置不正确',
+  )
+  return config
+}
+
+function truncate(value, maxLength) {
+  return Array.from(String(value)).slice(0, maxLength).join('')
+}
+
+function updatedCount(result) {
+  return result?.stats?.updated ?? result?.updated ?? 0
+}
+
+async function findOwnedItem(ownerId, itemId) {
+  const result = await db
+    .collection(ITEMS)
+    .where({ _id: itemId, ownerId })
+    .limit(1)
+    .get()
+  return result.data[0] || null
+}
+
+async function updateJob(job, status, data = {}) {
+  await db
+    .collection(REMINDERS)
+    .where({ _id: job._id, ownerId: job.ownerId, status: 'sending' })
+    .update({
+      data: {
+        status,
+        ...data,
+        updatedAt: db.serverDate(),
+      },
+    })
+}
+
+async function cancelInvalidJob(job, code) {
+  await db
+    .collection(REMINDERS)
+    .where({ _id: job._id, ownerId: job.ownerId, status: 'scheduled' })
+    .update({
+      data: {
+        status: 'cancelled',
+        failureCode: code,
+        failureReason: '物品状态或提醒日期已变化',
+        updatedAt: db.serverDate(),
+      },
+    })
+}
+
+function isUncertainError(error) {
+  const text = `${error?.errMsg || ''} ${error?.message || ''}`.toLowerCase()
+  return /timeout|timed out|network|econnreset|socket hang up/.test(text)
+}
+
+async function processJob(job, today, config) {
+  const item = await findOwnedItem(job.ownerId, job.itemId)
+  const expectedRemindDate = item
+    ? addDays(item.expiryDate, -item.reminderLeadDays)
+    : null
+  const expiryOrdinal = item ? toOrdinal(item.expiryDate) : null
+  const todayOrdinal = toOrdinal(today)
+  if (
+    !item ||
+    item.inventoryStatus !== 'active' ||
+    expectedRemindDate !== job.remindDate ||
+    expiryOrdinal === null ||
+    expiryOrdinal < todayOrdinal
+  ) {
+    await cancelInvalidJob(job, 'ITEM_NOT_ELIGIBLE')
+    return 'cancelled'
+  }
+
+  const claimResult = await db
+    .collection(REMINDERS)
+    .where({
+      _id: job._id,
+      ownerId: job.ownerId,
+      status: 'scheduled',
+      remindDate: job.remindDate,
+    })
+    .update({
+      data: {
+        status: 'sending',
+        updatedAt: db.serverDate(),
+      },
+    })
+  if (updatedCount(claimResult) !== 1) return 'skipped'
+
+  const sendItem = await findOwnedItem(job.ownerId, job.itemId)
+  const sendExpiryOrdinal = sendItem ? toOrdinal(sendItem.expiryDate) : null
+  const sendRemindDate = sendItem
+    ? addDays(sendItem.expiryDate, -sendItem.reminderLeadDays)
+    : null
+  if (
+    !sendItem ||
+    sendItem.inventoryStatus !== 'active' ||
+    sendRemindDate !== job.remindDate ||
+    sendExpiryOrdinal === null ||
+    sendExpiryOrdinal < todayOrdinal
+  ) {
+    await updateJob(job, 'cancelled', {
+      failureCode: 'ITEM_CHANGED_BEFORE_SEND',
+      failureReason: '发送前物品状态或提醒日期已变化',
+    })
+    return 'cancelled'
+  }
+
+  await db
+    .collection(REMINDERS)
+    .where({ _id: job._id, ownerId: job.ownerId, status: 'sending' })
+    .update({
+      data: {
+        sendAttemptedAt: db.serverDate(),
+        updatedAt: db.serverDate(),
+      },
+    })
+
+  const daysLeft = sendExpiryOrdinal - todayOrdinal
+  const statusText = daysLeft === 0 ? '今天到期' : `还有${daysLeft}天到期`
+  try {
+    await cloud.openapi.subscribeMessage.send({
+      touser: job.ownerId,
+      templateId: job.templateId,
+      page: `pages/item-detail/index?id=${encodeURIComponent(job.itemId)}&source=subscribe`,
+      miniprogramState: config.miniprogramState,
+      lang: 'zh_CN',
+      data: {
+        [config.itemField]: { value: truncate(sendItem.name, 20) },
+        [config.dateField]: { value: sendItem.expiryDate },
+        [config.statusField]: { value: truncate(statusText, 20) },
+      },
+    })
+    await updateJob(job, 'sent', {
+      sentAt: db.serverDate(),
+      failureCode: null,
+      failureReason: null,
+    })
+    return 'sent'
+  } catch (error) {
+    const uncertain = isUncertainError(error)
+    const status = uncertain ? 'unknown' : 'failed'
+    const failureCode = truncate(error?.errCode || (uncertain ? 'RESULT_UNKNOWN' : 'OPENAPI_REJECTED'), 40)
+    await updateJob(job, status, {
+      failureCode,
+      failureReason: uncertain ? '发送结果不确定，不自动重试' : '微信平台明确返回发送失败',
+    })
+    return status
+  }
+}
+
+exports.main = async () => {
+  const requestId = crypto.randomUUID()
+  const startedAt = Date.now()
+  try {
+    const context = cloud.getWXContext()
+    assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发')
+    const config = loadConfig()
+    const today = todayKey()
+    const summary = { processed: 0, sent: 0, failed: 0, unknown: 0, cancelled: 0, skipped: 0 }
+
+    for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
+      const result = await db
+        .collection(REMINDERS)
+        .where({ status: 'scheduled', remindDate: command.lte(today) })
+        .orderBy('remindDate', 'asc')
+        .limit(BATCH_SIZE)
+        .get()
+      if (!result.data.length) break
+
+      for (const job of result.data) {
+        const outcome = await processJob(job, today, config)
+        summary.processed += 1
+        summary[outcome] += 1
+      }
+      if (result.data.length < BATCH_SIZE) break
+    }
+
+    console.info(
+      JSON.stringify({
+        requestId,
+        action: 'dispatch',
+        resultCode: 'OK',
+        durationMs: Date.now() - startedAt,
+        ...summary,
+      }),
+    )
+    return { ok: true, data: summary, requestId }
+  } catch (error) {
+    const safeError =
+      error instanceof AppError
+        ? error
+        : new AppError('INTERNAL_ERROR', '提醒派发暂时不可用')
+    console.warn(
+      JSON.stringify({
+        requestId,
+        action: 'dispatch',
+        resultCode: safeError.code,
+        durationMs: Date.now() - startedAt,
+      }),
+    )
+    return {
+      ok: false,
+      error: { code: safeError.code, message: safeError.message },
+      requestId,
+    }
+  }
+}

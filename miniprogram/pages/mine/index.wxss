@@ -1,0 +1,273 @@
+.mine-header {
+  padding: 10rpx 4rpx 36rpx;
+}
+
+.mine-header__eyebrow,
+.mine-header__title {
+  display: block;
+}
+
+.mine-header__eyebrow {
+  color: #668075;
+  font-size: 22rpx;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.mine-header__title {
+  margin-top: 8rpx;
+  color: #18342d;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 42rpx;
+  font-weight: 700;
+}
+
+.settings-panel {
+  overflow: hidden;
+  padding: 30rpx 28rpx 4rpx;
+  border: 2rpx solid #dfe7e3;
+  border-top: 8rpx solid #719787;
+  border-radius: 22rpx;
+  background: #fbfcfa;
+}
+
+.settings-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.settings-panel__title {
+  color: #29443a;
+  font-size: 28rpx;
+  font-weight: 650;
+}
+
+.settings-panel__saving {
+  color: #819089;
+  font-size: 22rpx;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 116rpx;
+  border-bottom: 2rpx solid #e9eeeb;
+}
+
+.setting-row--notification {
+  border-bottom: 0;
+}
+
+.setting-row__label,
+.setting-row__description {
+  display: block;
+}
+
+.setting-row__label {
+  color: #324a41;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.setting-row__description {
+  margin-top: 6rpx;
+  color: #87938d;
+  font-size: 21rpx;
+}
+
+.setting-row__description--wide {
+  max-width: 410rpx;
+}
+
+.setting-row__value {
+  display: flex;
+  align-items: center;
+  margin-left: 18rpx;
+  color: #3a6655;
+  font-size: 25rpx;
+}
+
+.setting-row__chevron {
+  margin-left: 12rpx;
+  color: #a1ada7;
+  font-size: 38rpx;
+}
+
+.setting-row__link {
+  min-width: 126rpx;
+  height: 88rpx;
+  margin: 0 0 0 16rpx;
+  padding: 0 12rpx;
+  background: transparent;
+  color: #2f6b57;
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 88rpx;
+}
+
+.settings-loading,
+.history-loading {
+  padding: 50rpx 0;
+  color: #7b8982;
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.history {
+  margin-top: 54rpx;
+}
+
+.history__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.history__eyebrow,
+.history__title {
+  display: block;
+}
+
+.history__eyebrow {
+  color: #6d8278;
+  font-size: 21rpx;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.history__title {
+  color: #243f35;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.history__hint {
+  padding-bottom: 5rpx;
+  color: #909c96;
+  font-size: 21rpx;
+}
+
+.history-search {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 82rpx;
+  margin-top: 24rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid #dce4e0;
+  border-radius: 16rpx;
+  background: #fbfcfa;
+}
+
+.history-search__icon {
+  margin-right: 12rpx;
+  color: #708179;
+  font-size: 32rpx;
+}
+
+.history-search__input {
+  height: 78rpx;
+  flex: 1;
+  font-size: 26rpx;
+}
+
+.history-search__placeholder {
+  color: #99a59f;
+}
+
+.history-search__clear {
+  width: 88rpx;
+  height: 88rpx;
+  padding: 0;
+  background: transparent;
+  color: #86948d;
+  font-size: 34rpx;
+  line-height: 88rpx;
+}
+
+.history-tabs {
+  display: flex;
+  margin: 16rpx 0 12rpx;
+  gap: 12rpx;
+}
+
+.history-tab {
+  min-height: 88rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border: 2rpx solid #dae3de;
+  border-radius: 34rpx;
+  background: #f8faf7;
+  color: #67766f;
+  font-size: 24rpx;
+  line-height: 86rpx;
+}
+
+.history-tab--active {
+  border-color: #497a66;
+  background: #e7f0eb;
+  color: #245b49;
+  font-weight: 650;
+}
+
+.compact-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16rpx 0;
+  padding: 18rpx 20rpx;
+  border-left: 6rpx solid #b44535;
+  background: #fff4f1;
+  color: #8f392e;
+  font-size: 23rpx;
+}
+
+.compact-error button {
+  height: 88rpx;
+  margin: 0;
+  padding: 0 12rpx;
+  background: transparent;
+  color: #8f392e;
+  font-size: 23rpx;
+  font-weight: 650;
+  line-height: 88rpx;
+}
+
+.history-loading--more {
+  padding: 30rpx 0;
+}
+
+.history-end {
+  padding: 34rpx 0;
+  color: #97a39d;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.about {
+  margin-top: 56rpx;
+  padding: 28rpx 4rpx 14rpx;
+  border-top: 2rpx solid #dce4e0;
+}
+
+.about__name,
+.about__copy {
+  display: block;
+}
+
+.about__name {
+  color: #50635a;
+  font-size: 24rpx;
+  font-weight: 650;
+}
+
+.about__copy {
+  margin-top: 8rpx;
+  color: #87938d;
+  font-size: 22rpx;
+  line-height: 1.65;
+}
