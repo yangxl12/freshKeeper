@@ -52,9 +52,11 @@
 
 | 变量 | 值 |
 | --- | --- |
-| `REMINDER_ITEM_FIELD` | 模板中的物品名称字段，例如实际获批的 `thing1` |
-| `REMINDER_DATE_FIELD` | 模板中的到期日期字段，例如实际获批的 `date2` |
-| `REMINDER_STATUS_FIELD` | 模板中的临期提示字段，例如实际获批的 `thing3` |
+| `REMINDER_ITEM_FIELD` | 物品名称字段：`thing7` |
+| `REMINDER_DATE_FIELD` | 保质期字段：`time2` |
+| `REMINDER_REMAINING_DAYS_FIELD` | 剩余天数字段：`number5` |
+| `REMINDER_QUANTITY_FIELD` | 当前库存数量字段：`number4` |
+| `REMINDER_NOTE_FIELD` | 备注字段：`thing3` |
 | `MINIPROGRAM_STATE` | 开发 `developer`、体验 `trial`、正式 `formal` |
 
 模板字段必须以公众平台实际审批结果为准。`dispatchReminders/config.json` 已声明 `subscribeMessage.send` 权限和每日 09:00 触发器；部署后仍需在控制台确认业务时区为 `Asia/Shanghai`，并确认该函数不能被客户端调用。

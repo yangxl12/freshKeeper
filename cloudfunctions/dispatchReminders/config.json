@@ -3,6 +3,14 @@
   "permissions": {
     "openapi": ["subscribeMessage.send"]
   },
+  "envVariables": {
+    "REMINDER_ITEM_FIELD": "thing7",
+    "REMINDER_DATE_FIELD": "time2",
+    "REMINDER_REMAINING_DAYS_FIELD": "number5",
+    "REMINDER_QUANTITY_FIELD": "number4",
+    "REMINDER_NOTE_FIELD": "thing3",
+    "MINIPROGRAM_STATE": "developer"
+  },
   "triggers": [
     {
       "name": "daily-reminder-dispatch",

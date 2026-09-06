@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto')
 const cloud = require('wx-server-sdk')
+const { buildReminderTemplateData, truncate } = require('./template')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
@@ -68,24 +69,20 @@ function todayKey() {
 
 function loadConfig() {
   const config = {
-    itemField: process.env.REMINDER_ITEM_FIELD,
-    dateField: process.env.REMINDER_DATE_FIELD,
-    statusField: process.env.REMINDER_STATUS_FIELD,
+    itemField: process.env.REMINDER_ITEM_FIELD || 'thing7',
+    dateField: process.env.REMINDER_DATE_FIELD || 'time2',
+    remainingDaysField: process.env.REMINDER_REMAINING_DAYS_FIELD || 'number5',
+    quantityField: process.env.REMINDER_QUANTITY_FIELD || 'number4',
+    noteField:
+      process.env.REMINDER_NOTE_FIELD || process.env.REMINDER_STATUS_FIELD || 'thing3',
     miniprogramState: process.env.MINIPROGRAM_STATE || 'developer',
   }
-  assert(config.itemField, 'CONFIG_MISSING', '订阅模板物品字段尚未配置')
-  assert(config.dateField, 'CONFIG_MISSING', '订阅模板日期字段尚未配置')
-  assert(config.statusField, 'CONFIG_MISSING', '订阅模板状态字段尚未配置')
   assert(
     ['developer', 'trial', 'formal'].includes(config.miniprogramState),
     'CONFIG_INVALID',
     '小程序发布状态配置不正确',
   )
   return config
-}
-
-function truncate(value, maxLength) {
-  return Array.from(String(value)).slice(0, maxLength).join('')
 }
 
 function updatedCount(result) {
@@ -197,7 +194,6 @@ async function processJob(job, today, config) {
     })
 
   const daysLeft = sendExpiryOrdinal - todayOrdinal
-  const statusText = daysLeft === 0 ? '今天到期' : `还有${daysLeft}天到期`
   try {
     await cloud.openapi.subscribeMessage.send({
       touser: job.ownerId,
@@ -205,11 +201,7 @@ async function processJob(job, today, config) {
       page: `pages/item-detail/index?id=${encodeURIComponent(job.itemId)}&source=subscribe`,
       miniprogramState: config.miniprogramState,
       lang: 'zh_CN',
-      data: {
-        [config.itemField]: { value: truncate(sendItem.name, 20) },
-        [config.dateField]: { value: sendItem.expiryDate },
-        [config.statusField]: { value: truncate(statusText, 20) },
-      },
+      data: buildReminderTemplateData(sendItem, daysLeft, config),
     })
     await updateJob(job, 'sent', {
       sentAt: db.serverDate(),

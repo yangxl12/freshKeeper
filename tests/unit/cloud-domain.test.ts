@@ -21,6 +21,13 @@ const inventoryRules = require('../../cloudfunctions/inventoryApi/rules') as {
   getDecrementDecision(status: string, quantity: number): string
   canTransitionInventory(status: string, target: string): boolean
 }
+const reminderTemplate = require('../../cloudfunctions/dispatchReminders/template') as {
+  buildReminderTemplateData(
+    item: { name: string; expiryDate: string; quantity: number },
+    daysLeft: number,
+    fields: Record<string, string>,
+  ): Record<string, { value: string }>
+}
 
 function validSaveInput() {
   return {
@@ -90,6 +97,28 @@ describe('cloud inventory domain', () => {
 })
 
 describe('reminder states', () => {
+  it('maps the configured reminder template fields', () => {
+    expect(
+      reminderTemplate.buildReminderTemplateData(
+        { name: '鲜牛奶', expiryDate: '2026-09-09', quantity: 2 },
+        3,
+        {
+          itemField: 'thing7',
+          dateField: 'time2',
+          remainingDaysField: 'number5',
+          quantityField: 'number4',
+          noteField: 'thing3',
+        },
+      ),
+    ).toEqual({
+      thing7: { value: '鲜牛奶' },
+      time2: { value: '2026年9月9日' },
+      number5: { value: '3' },
+      number4: { value: '2' },
+      thing3: { value: '还有3天到期' },
+    })
+  })
+
   it('only rearms explicitly unsent terminal outcomes', () => {
     expect(reminderRules.canArmReminder()).toBe(true)
     expect(reminderRules.canArmReminder('failed')).toBe(true)

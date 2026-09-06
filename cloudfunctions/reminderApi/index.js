@@ -13,6 +13,7 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database()
 const ITEMS = 'inventory_items'
 const REMINDERS = 'reminder_jobs'
+const DEFAULT_REMINDER_TEMPLATE_ID = 'jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8'
 const MILLIS_PER_DAY = 86_400_000
 
 class AppError extends Error {
@@ -95,7 +96,7 @@ async function findOwned(collectionName, ownerId, id) {
 
 async function arm(ownerId, event) {
   const itemId = validateItemId(event.itemId)
-  const templateId = process.env.REMINDER_TEMPLATE_ID
+  const templateId = process.env.REMINDER_TEMPLATE_ID || DEFAULT_REMINDER_TEMPLATE_ID
   assert(templateId, 'REMINDER_NOT_CONFIGURED', '提醒功能尚未完成配置')
 
   const item = await findOwned(ITEMS, ownerId, itemId)
