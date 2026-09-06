@@ -1,6 +1,33 @@
 import type { ApiResult } from '../types/inventory'
 
 const FALLBACK_ERROR_MESSAGE = '服务暂时不可用，请稍后重试'
+const CLOUD_NOT_ENABLED_MESSAGE = '云开发尚未开通或当前账号无权限，请联系管理员处理'
+
+interface CloudCallFailure {
+  code: string
+  message: string
+}
+
+export function classifyCloudCallFailure(error: unknown): CloudCallFailure {
+  const errMsg =
+    error && typeof error === 'object' && 'errMsg' in error
+      ? String((error as { errMsg?: unknown }).errMsg || '')
+      : ''
+
+  if (errMsg.includes('network')) {
+    return { code: 'NETWORK_ERROR', message: '网络连接失败，请检查网络后重试' }
+  }
+
+  if (
+    errMsg.includes('-601034') ||
+    errMsg.includes('没有权限，请先开通云开发') ||
+    errMsg.includes('没有权限，请先开通云开发或者云托管')
+  ) {
+    return { code: 'CLOUD_NOT_ENABLED', message: CLOUD_NOT_ENABLED_MESSAGE }
+  }
+
+  return { code: 'CLOUD_CALL_FAILED', message: FALLBACK_ERROR_MESSAGE }
+}
 
 export class CloudServiceError extends Error {
   readonly code: string
@@ -38,10 +65,8 @@ export function callCloud<T>(name: string, data: Record<string, unknown>): Promi
         resolve(result.data)
       },
       fail(error) {
-        const message = error.errMsg?.includes('network')
-          ? '网络连接失败，请检查网络后重试'
-          : FALLBACK_ERROR_MESSAGE
-        reject(new CloudServiceError('CLOUD_CALL_FAILED', message))
+        const failure = classifyCloudCallFailure(error)
+        reject(new CloudServiceError(failure.code, failure.message))
       },
     })
   })
