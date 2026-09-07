@@ -490,7 +490,9 @@ async function listHistory(ownerId, event) {
   const offset = decodeCursor(event.cursor)
   const where = {
     ownerId,
-    inventoryStatus: status || command.in(['used_up', 'discarded']),
+    inventoryStatus: status === 'discarded'
+      ? command.in(['deleted', 'discarded'])
+      : status || command.in(['used_up', 'discarded']),
   }
   if (search) {
     where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })

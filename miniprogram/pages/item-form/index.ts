@@ -22,13 +22,6 @@ const LEGACY_STORAGE_LABELS: Record<string, string> = {
   medicine_box: '药箱',
   other: '其他',
 }
-const LEGACY_STORAGE_VALUES: Record<string, string> = {
-  冷藏: 'refrigerated',
-  冷冻: 'frozen',
-  橱柜: 'cabinet',
-  药箱: 'medicine_box',
-  其他: 'other',
-}
 Page({
   data: {
     itemId: '',
@@ -205,7 +198,6 @@ Page({
     const shelfLifeUnit = SHELF_LIFE_OPTIONS[this.data.shelfLifeUnitIndex]
       ?.value as ShelfLifeUnit
     const enteredStorageLocation = this.data.storageLocation.trim()
-    const storageLocation = LEGACY_STORAGE_VALUES[enteredStorageLocation] || enteredStorageLocation
     const input: InventorySaveInput = {
       itemId: this.data.itemId || undefined,
       version: this.data.itemId ? this.data.version : undefined,
@@ -213,7 +205,7 @@ Page({
       quantity: Number(this.data.quantity),
       unit: this.data.unit.trim(),
       category,
-      storageLocation,
+      storageLocation: enteredStorageLocation,
       expiryInputMode: this.data.mode,
       productionDate: this.data.mode === 'shelf_life' ? this.data.productionDate : null,
       shelfLifeValue:

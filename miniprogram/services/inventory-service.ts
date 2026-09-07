@@ -87,7 +87,9 @@ export function discardItem(
 }
 
 export function deleteItem(itemId: string, version: number): Promise<{ version: number }> {
-  return callCloud('inventoryApi', { action: 'delete', itemId, version })
+  // `discard` is the stable move-to-trash action. Older deployed functions
+  // still treat `delete` as permanent removal.
+  return callCloud('inventoryApi', { action: 'discard', itemId, version })
 }
 
 export function permanentlyDeleteItem(itemId: string, version: number): Promise<{ deleted: true }> {
@@ -107,7 +109,28 @@ export function batchCompleteItems(items: BatchItemReference[]): Promise<BatchMu
 }
 
 export function batchDeleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
-  return callCloud('inventoryApi', { action: 'batchDelete', items })
+  const request = callCloud<BatchMutationResult>('inventoryApi', { action: 'batchDelete', items })
+  return request.catch((error) => {
+    if (!(error instanceof CloudServiceError) || error.code !== 'INVALID_ACTION') throw error
+    return Promise.all(
+      items.map(async (item) => {
+        try {
+          await discardItem(item.itemId, item.version)
+          return { itemId: item.itemId, succeeded: true as const }
+        } catch (itemError) {
+          const failed = itemError instanceof CloudServiceError
+            ? { code: itemError.code, message: itemError.message }
+            : { code: 'CLOUD_CALL_FAILED', message: '服务暂时不可用，请稍后重试' }
+          return { itemId: item.itemId, succeeded: false as const, error: failed }
+        }
+      }),
+    ).then((results) => ({
+      succeeded: results.filter((result) => result.succeeded).map((result) => result.itemId),
+      failed: results
+        .filter((result) => !result.succeeded)
+        .map((result) => ({ itemId: result.itemId, ...result.error })),
+    }))
+  })
 }
 
 export function batchPermanentlyDeleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
