@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { deleteItem, listTrash } from '../../miniprogram/services/inventory-service'
+import {
+  batchDeleteItems,
+  deleteItem,
+  listTrash,
+} from '../../miniprogram/services/inventory-service'
 
 const originalWx = globalThis.wx
 
@@ -20,7 +24,7 @@ afterEach(() => {
 })
 
 describe('inventory service compatibility', () => {
-  it('uses discard for a user-facing delete so old deployments move the item to trash', async () => {
+  it('uses the explicit move-to-trash contract instead of a legacy status transition', async () => {
     let requestData: Record<string, unknown> | undefined
     installCloudCall((request) => {
       requestData = request.data
@@ -28,7 +32,34 @@ describe('inventory service compatibility', () => {
     })
 
     await expect(deleteItem('item-1', 1)).resolves.toEqual({ version: 2 })
-    expect(requestData).toMatchObject({ action: 'discard', itemId: 'item-1', version: 1 })
+    expect(requestData).toMatchObject({ action: 'moveToTrash', itemId: 'item-1', version: 1 })
+  })
+
+  it('falls back to individual delete actions when batch delete is unavailable', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    installCloudCall((request) => {
+      requests.push(request.data)
+      if (requests.length === 1) {
+        request.success({
+          result: {
+            ok: false,
+            error: { code: 'INVALID_ACTION', message: '不支持的库存操作' },
+            requestId: 'req-batch',
+          },
+        })
+        return
+      }
+      request.success({ result: { ok: true, data: { version: 3 }, requestId: 'req-delete' } })
+    })
+
+    await expect(batchDeleteItems([{ itemId: 'used-up-1', version: 2 }])).resolves.toEqual({
+      succeeded: ['used-up-1'],
+      failed: [],
+    })
+    expect(requests).toEqual([
+      { action: 'batchDelete', items: [{ itemId: 'used-up-1', version: 2 }] },
+      { action: 'moveToTrash', itemId: 'used-up-1', version: 2 },
+    ])
   })
 
   it('falls back to the legacy history action when listTrash is unavailable', async () => {

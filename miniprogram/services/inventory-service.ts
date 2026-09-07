@@ -79,17 +79,8 @@ export function completeItem(
   return callCloud('inventoryApi', { action: 'complete', itemId, version })
 }
 
-export function discardItem(
-  itemId: string,
-  version: number,
-): Promise<{ version: number }> {
-  return callCloud('inventoryApi', { action: 'discard', itemId, version })
-}
-
 export function deleteItem(itemId: string, version: number): Promise<{ version: number }> {
-  // `discard` is the stable move-to-trash action. Older deployed functions
-  // still treat `delete` as permanent removal.
-  return callCloud('inventoryApi', { action: 'discard', itemId, version })
+  return callCloud('inventoryApi', { action: 'moveToTrash', itemId, version })
 }
 
 export function permanentlyDeleteItem(itemId: string, version: number): Promise<{ deleted: true }> {
@@ -115,7 +106,7 @@ export function batchDeleteItems(items: BatchItemReference[]): Promise<BatchMuta
     return Promise.all(
       items.map(async (item) => {
         try {
-          await discardItem(item.itemId, item.version)
+          await deleteItem(item.itemId, item.version)
           return { itemId: item.itemId, succeeded: true as const }
         } catch (itemError) {
           const failed = itemError instanceof CloudServiceError

@@ -18,6 +18,10 @@ function canTransitionInventory(inventoryStatus, targetStatus) {
   return inventoryStatus === 'active' && targetStatus === 'used_up'
 }
 
+function canMoveInventoryToTrash(inventoryStatus) {
+  return inventoryStatus === 'active' || inventoryStatus === 'used_up'
+}
+
 function getOverviewBucket(inventoryStatus, expiryDate, today, expiringEnd) {
   if (inventoryStatus === 'used_up') return 'used_up'
   if (inventoryStatus !== 'active') return null
@@ -43,6 +47,7 @@ function summarizeOverviewRows(rows) {
 }
 
 module.exports = {
+  canMoveInventoryToTrash,
   canTransitionInventory,
   getDecrementDecision,
   getOverviewBucket,

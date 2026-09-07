@@ -22,6 +22,7 @@ const reminderRules = require('../../cloudfunctions/reminderApi/rules') as {
 }
 const inventoryRules = require('../../cloudfunctions/inventoryApi/rules') as {
   getDecrementDecision(status: string, quantity: number): string
+  canMoveInventoryToTrash(status: string): boolean
   canTransitionInventory(status: string, target: string): boolean
   getOverviewBucket(status: string, expiryDate: string, today: string, end: string): string | null
   summarizeOverviewRows(rows: Array<{ _id: string; total: number }>): Record<string, number>
@@ -114,7 +115,16 @@ describe('cloud inventory domain', () => {
     })).toMatchObject({
       storageLocation: '',
     })
-    expect(() => validation.validateSaveInput({ ...validSaveInput(), storageLocation: 'x'.repeat(21) })).toThrow(/20/)
+    expect(validation.validateSaveInput({
+      ...validSaveInput(),
+      storageLocation: `冰箱-${'很长的位置'.repeat(20)}`,
+    })).toMatchObject({
+      storageLocation: `冰箱-${'很长的位置'.repeat(20)}`,
+    })
+    expect(() => validation.validateSaveInput({
+      ...validSaveInput(),
+      storageLocation: 1,
+    })).toThrow(/存放位置/)
   })
 
   it('validates decrement amounts and bounded batch references', () => {
@@ -226,6 +236,13 @@ describe('inventory state transitions', () => {
     expect(inventoryRules.canTransitionInventory('active', 'discarded')).toBe(false)
     expect(inventoryRules.canTransitionInventory('used_up', 'discarded')).toBe(false)
     expect(inventoryRules.canTransitionInventory('active', 'deleted')).toBe(false)
+  })
+
+  it('lets both active and used-up items move to trash', () => {
+    expect(inventoryRules.canMoveInventoryToTrash('active')).toBe(true)
+    expect(inventoryRules.canMoveInventoryToTrash('used_up')).toBe(true)
+    expect(inventoryRules.canMoveInventoryToTrash('deleted')).toBe(false)
+    expect(inventoryRules.canMoveInventoryToTrash('discarded')).toBe(false)
   })
 })
 

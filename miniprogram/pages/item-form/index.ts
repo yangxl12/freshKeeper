@@ -204,7 +204,7 @@ Page({
       quantity: Number(this.data.quantity),
       unit: this.data.unit.trim(),
       category,
-      ...(enteredStorageLocation ? { storageLocation: enteredStorageLocation } : {}),
+      storageLocation: enteredStorageLocation,
       expiryInputMode: this.data.mode,
       productionDate: this.data.mode === 'shelf_life' ? this.data.productionDate : null,
       shelfLifeValue:

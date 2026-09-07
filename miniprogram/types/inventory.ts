@@ -90,7 +90,7 @@ export interface InventorySaveInput {
   quantity: number
   unit: string
   category: Category
-  storageLocation?: StorageLocation
+  storageLocation: StorageLocation
   expiryInputMode: ExpiryInputMode
   productionDate: string | null
   shelfLifeValue: number | null

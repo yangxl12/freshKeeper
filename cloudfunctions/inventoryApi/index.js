@@ -5,6 +5,7 @@ const cloud = require('wx-server-sdk')
 const { addDays, currentDateKey, getExpiryPresentation } = require('./date')
 const { AppError, assert, normalizeError } = require('./error')
 const {
+  canMoveInventoryToTrash,
   canTransitionInventory,
   getDecrementDecision,
 } = require('./rules')
@@ -407,7 +408,7 @@ async function moveToTrash(ownerId, event) {
   await db.runTransaction(async (transaction) => {
     const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
     assert(current, 'NOT_FOUND', '物品不存在或已被删除')
-    assert(['active', 'used_up'].includes(current.inventoryStatus), 'INVALID_STATE', '该物品已经删除')
+    assert(canMoveInventoryToTrash(current.inventoryStatus), 'INVALID_STATE', '该物品已经删除')
     assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
     await transaction.collection(ITEMS).doc(itemId).update({
       data: {
@@ -550,6 +551,7 @@ const handlers = {
   complete: (ownerId, event) => transition(ownerId, event, 'used_up'),
   discard: moveToTrash,
   delete: moveToTrash,
+  moveToTrash,
   permanentDelete: removePermanently,
   restore,
   batchComplete: (ownerId, event) => processBatch(ownerId, event, (id, item) => transition(id, item, 'used_up')),
