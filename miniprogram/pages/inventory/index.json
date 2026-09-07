@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "库存",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "inventory-row": "/components/inventory-row/index",
+    "empty-state": "/components/empty-state/index"
+  }
+}

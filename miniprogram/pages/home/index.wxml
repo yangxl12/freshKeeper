@@ -1,83 +1,8 @@
 <view class="home page-shell">
-  <view class="hero">
-    <view class="hero__tag-hole" aria-hidden="true"></view>
-    <view class="hero__topline">
-      <text class="hero__eyebrow">今日待处理</text>
-      <text wx:if="{{serverToday}}" class="hero__date">{{serverToday}}</text>
-    </view>
-    <view class="hero__main">
-      <text class="hero__number {{attentionTotal > 99 ? 'hero__number--compact' : ''}}">{{attentionTotal}}</text>
-      <view class="hero__copy">
-        <text class="hero__title">今天先处理 {{attentionTotal}} 项</text>
-        <text class="hero__hint">{{attentionTotal ? '按到期先后排好了' : '库存状态很好，继续保持'}}</text>
-      </view>
-    </view>
-    <view class="hero__summary" aria-label="库存概览">
-      <view class="hero-chip hero-chip--danger">
-        <text>已过期</text>
-        <text class="hero-chip__value">{{overview.expired}}</text>
-      </view>
-      <view class="hero-chip hero-chip--warning">
-        <text>7 天内</text>
-        <text class="hero-chip__value">{{overview.expiringWithin7Days}}</text>
-      </view>
-      <text class="hero__total">共 {{overview.activeTotal}} 项库存</text>
-    </view>
-  </view>
-
-  <view class="query-panel">
-    <view class="search-box">
-      <view class="line-icon line-icon--search search-box__icon" aria-hidden="true"></view>
-      <input
-        class="search-box__input"
-        value="{{search}}"
-        placeholder="搜索物品"
-        placeholder-class="search-box__placeholder"
-        confirm-type="search"
-        bindinput="handleSearchInput"
-      />
-      <button
-        wx:if="{{search}}"
-        class="search-box__clear"
-        bindtap="clearSearch"
-        hover-class="pressable--pressed"
-        aria-label="清空搜索"
-      ><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
-    </view>
-    <view class="filters">
-      <picker
-        class="filter"
-        mode="selector"
-        range="{{categoryOptions}}"
-        range-key="label"
-        value="{{categoryIndex}}"
-        bindchange="handleCategoryChange"
-      >
-        <view class="filter__control {{categoryIndex ? 'filter__control--active' : ''}}">
-          <text>{{categoryOptions[categoryIndex].label}}</text>
-          <view class="line-icon line-icon--chevron filter__arrow" aria-hidden="true"></view>
-        </view>
-      </picker>
-      <picker
-        class="filter"
-        mode="selector"
-        range="{{storageOptions}}"
-        range-key="label"
-        value="{{storageIndex}}"
-        bindchange="handleStorageChange"
-      >
-        <view class="filter__control {{storageIndex ? 'filter__control--active' : ''}}">
-          <text>{{storageOptions[storageIndex].label}}</text>
-          <view class="line-icon line-icon--chevron filter__arrow" aria-hidden="true"></view>
-        </view>
-      </picker>
-      <button
-        wx:if="{{isFiltered}}"
-        class="filters__reset"
-        bindtap="resetFilters"
-        hover-class="pressable--pressed"
-      >清除</button>
-    </view>
+  <view class="page-heading">
+    <text class="page-heading__eyebrow">家庭保鲜台</text>
+    <text class="page-heading__title">库存概览</text>
+    <text class="page-heading__hint">五个数字，看清家里的保质期状态</text>
   </view>
 
   <view wx:if="{{errorMessage}}" class="error-banner">
@@ -85,49 +10,63 @@
     <button class="error-banner__action" bindtap="retry" hover-class="pressable--pressed">重试</button>
   </view>
 
-  <view wx:if="{{loading}}" class="loading-list" aria-label="正在加载库存">
-    <view wx:for="{{[1, 2, 3]}}" wx:key="*this" class="loading-row">
-      <view class="loading-row__date"></view>
-      <view class="loading-row__content">
-        <view class="loading-row__line"></view>
-        <view class="loading-row__line loading-row__line--short"></view>
-      </view>
+  <view wx:if="{{loading}}" class="overview-skeleton" aria-label="正在加载库存概览">
+    <view class="overview-skeleton__main"></view>
+    <view class="overview-skeleton__grid">
+      <view wx:for="{{[1, 2, 3, 4]}}" wx:key="*this" class="overview-skeleton__card"></view>
     </view>
   </view>
 
-  <block wx:elif="{{groups.length}}">
-    <view wx:for="{{groups}}" wx:key="key" class="inventory-group">
-      <view class="inventory-group__heading">
-        <text class="inventory-group__title inventory-group__title--{{item.tone}}">{{item.label}}</text>
-        <text class="inventory-group__count">{{item.items.length}} 项</text>
+  <block wx:elif="{{overview}}">
+    <view
+      class="total-card"
+      data-card="activeTotal"
+      bindtap="openInventory"
+      hover-class="overview-card--pressed"
+      role="button"
+      aria-label="物品总数 {{overview.activeTotal}}，查看全部在库物品"
+    >
+      <view class="total-card__tag-hole" aria-hidden="true"></view>
+      <view class="total-card__topline">
+        <text class="total-card__label">物品总数</text>
+        <text class="total-card__date">{{overview.serverToday}}</text>
       </view>
-      <inventory-row
-        wx:for="{{item.items}}"
-        wx:for-item="inventoryItem"
-        wx:key="_id"
-        item="{{inventoryItem}}"
-        bind:select="openItem"
-      />
+      <view class="total-card__content">
+        <text class="total-card__number {{overview.activeTotal > 999 ? 'total-card__number--compact' : ''}}">{{overview.activeTotal}}</text>
+        <view class="total-card__aside">
+          <text class="total-card__caption">当前在库</text>
+          <text class="total-card__link">查看全部</text>
+        </view>
+      </view>
     </view>
-    <view wx:if="{{loadingMore}}" class="load-more">正在加载更多…</view>
-    <view wx:elif="{{!nextCursor && items.length > 0}}" class="load-more">已经到底了</view>
+
+    <view class="status-grid" aria-label="库存状态">
+      <view class="status-card status-card--danger" data-card="expired" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="已过期 {{overview.expired}}，查看已过期物品">
+        <text class="status-card__number">{{overview.expired}}</text>
+        <view class="status-card__footer"><text class="status-card__label">已过期</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
+      </view>
+      <view class="status-card status-card--warning" data-card="expiringWithin7Days" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="临期 {{overview.expiringWithin7Days}}，查看七天内到期物品">
+        <text class="status-card__number">{{overview.expiringWithin7Days}}</text>
+        <view class="status-card__footer"><text class="status-card__label">临期</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
+      </view>
+      <view class="status-card status-card--neutral" data-card="usedUpTotal" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="已用完 {{overview.usedUpTotal}}，查看已用完物品">
+        <text class="status-card__number">{{overview.usedUpTotal}}</text>
+        <view class="status-card__footer"><text class="status-card__label">已用完</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
+      </view>
+      <view class="status-card status-card--safe" data-card="safe" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="状态良好 {{overview.safe}}，查看状态良好物品">
+        <text class="status-card__number">{{overview.safe}}</text>
+        <view class="status-card__footer"><text class="status-card__label">状态良好</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
+      </view>
+    </view>
+
+    <view wx:if="{{overview.activeTotal === 0}}" class="empty-hint">
+      <text class="empty-hint__title">库存还是空的</text>
+      <text class="empty-hint__copy">点右下角新增，记下第一件物品</text>
+    </view>
   </block>
 
-  <empty-state
-    wx:elif="{{!errorMessage}}"
-    title="{{isFiltered ? '没有匹配的物品' : '先记下第一件物品'}}"
-    description="{{isFiltered ? '换个名称或清除筛选后再试' : '只需名称和到期日期，之后随时可以补充'}}"
-    action-text="{{isFiltered ? '清除筛选' : '新增物品'}}"
-    bind:action="handleEmptyAction"
-  />
-
   <view class="home__bottom-space"></view>
-  <button
-    class="add-button"
-    bindtap="addItem"
-    hover-class="pressable--pressed"
-    aria-label="新增物品"
-  >
+  <button class="add-button" bindtap="addItem" hover-class="pressable--pressed" aria-label="新增物品">
     <text class="add-button__plus" aria-hidden="true">＋</text>
     <text>新增</text>
   </button>

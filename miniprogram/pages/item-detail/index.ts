@@ -98,7 +98,6 @@ Page({
     this.setData({ actionLoading: true })
     try {
       const result = await decrementItem(item._id, item.version)
-      getApp<IAppOption>().globalData.inventoryDirty = true
       this.setData({
         'item.quantity': result.quantity,
         'item.version': result.version,
@@ -126,7 +125,6 @@ Page({
     this.setData({ actionLoading: true })
     try {
       await completeItem(item._id, item.version)
-      getApp<IAppOption>().globalData.inventoryDirty = true
       track('item_used_up')
       wx.showToast({ title: '已移入历史', icon: 'success' })
       wx.navigateBack()
@@ -149,7 +147,6 @@ Page({
     this.setData({ actionLoading: true })
     try {
       await discardItem(item._id, item.version)
-      getApp<IAppOption>().globalData.inventoryDirty = true
       track('item_discarded')
       wx.showToast({ title: '已移入历史', icon: 'success' })
       wx.navigateBack()
@@ -172,7 +169,6 @@ Page({
     this.setData({ actionLoading: true })
     try {
       await deleteItem(item._id, item.version)
-      getApp<IAppOption>().globalData.inventoryDirty = true
       wx.showToast({ title: '已删除', icon: 'success' })
       wx.navigateBack()
     } catch (error) {

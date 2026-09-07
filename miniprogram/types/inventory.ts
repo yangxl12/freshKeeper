@@ -8,6 +8,12 @@ export type StorageLocation =
 export type ExpiryInputMode = 'direct' | 'shelf_life'
 export type ShelfLifeUnit = 'day' | 'month' | 'year'
 export type InventoryStatus = 'active' | 'used_up' | 'discarded'
+export type InventoryViewStatus =
+  | 'active_all'
+  | 'expired'
+  | 'expiring'
+  | 'safe'
+  | 'used_up'
 export type ExpiryStatus =
   | 'expired'
   | 'due_today'
@@ -55,13 +61,22 @@ export interface InventoryOverview {
   expired: number
   expiringWithin7Days: number
   activeTotal: number
+  usedUpTotal: number
+  safe: number
+}
+
+export interface InventoryOverviewResult extends InventoryOverview {
+  serverToday: string
 }
 
 export interface InventoryListResult {
   items: InventoryItem[]
-  overview: InventoryOverview
   nextCursor: string | null
   serverToday: string
+}
+
+export interface LegacyInventoryListResult extends InventoryListResult {
+  overview: Pick<InventoryOverview, 'expired' | 'expiringWithin7Days' | 'activeTotal'>
 }
 
 export interface HistoryListResult {

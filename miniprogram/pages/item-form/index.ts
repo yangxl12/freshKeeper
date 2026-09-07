@@ -225,7 +225,6 @@ Page({
     this.setData({ saving: true, errorMessage: '' })
     try {
       await saveItem(input)
-      getApp<IAppOption>().globalData.inventoryDirty = true
       if (!this.data.itemId) track('item_create_success')
       wx.showToast({ title: this.data.itemId ? '修改成功' : '已加入库存', icon: 'success' })
       wx.navigateBack()

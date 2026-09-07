@@ -11,6 +11,7 @@ const cloudDate = require('../../cloudfunctions/inventoryApi/date') as {
 const validation = require('../../cloudfunctions/inventoryApi/validation') as {
   validateSaveInput(input: Record<string, unknown>): Record<string, unknown>
   validateSearch(value: unknown): string
+  validateInventoryViewStatus(value: unknown): string
 }
 const reminderRules = require('../../cloudfunctions/reminderApi/rules') as {
   canArmReminder(status?: string): boolean
@@ -20,6 +21,8 @@ const reminderRules = require('../../cloudfunctions/reminderApi/rules') as {
 const inventoryRules = require('../../cloudfunctions/inventoryApi/rules') as {
   getDecrementDecision(status: string, quantity: number): string
   canTransitionInventory(status: string, target: string): boolean
+  getOverviewBucket(status: string, expiryDate: string, today: string, end: string): string | null
+  summarizeOverviewRows(rows: Array<{ _id: string; total: number }>): Record<string, number>
 }
 const reminderTemplate = require('../../cloudfunctions/dispatchReminders/template') as {
   buildReminderTemplateData(
@@ -93,6 +96,41 @@ describe('cloud inventory domain', () => {
   it('escapes empty search semantics and limits search length', () => {
     expect(validation.validateSearch('  Milk  ')).toBe('milk')
     expect(() => validation.validateSearch('x'.repeat(41))).toThrow(/40/)
+  })
+
+  it('validates all inventory view statuses and defaults to active inventory', () => {
+    for (const status of ['active_all', 'expired', 'expiring', 'safe', 'used_up']) {
+      expect(validation.validateInventoryViewStatus(status)).toBe(status)
+    }
+    expect(validation.validateInventoryViewStatus(undefined)).toBe('active_all')
+    expect(() => validation.validateInventoryViewStatus('discarded')).toThrow(/库存状态/)
+  })
+
+  it('keeps overview buckets mutually exclusive at -1, 0, 7 and 8 day boundaries', () => {
+    const bucket = (status: string, expiryDate: string) =>
+      inventoryRules.getOverviewBucket(status, expiryDate, '2026-09-07', '2026-09-14')
+    expect(bucket('active', '2026-09-06')).toBe('expired')
+    expect(bucket('active', '2026-09-07')).toBe('expiring')
+    expect(bucket('active', '2026-09-14')).toBe('expiring')
+    expect(bucket('active', '2026-09-15')).toBe('safe')
+    expect(bucket('used_up', '2026-09-06')).toBe('used_up')
+    expect(bucket('discarded', '2026-09-06')).toBeNull()
+  })
+
+  it('fills empty overview buckets and derives the active total', () => {
+    expect(
+      inventoryRules.summarizeOverviewRows([
+        { _id: 'expired', total: 2 },
+        { _id: 'safe', total: 5 },
+        { _id: 'used_up', total: 3 },
+      ]),
+    ).toEqual({
+      activeTotal: 7,
+      expired: 2,
+      expiringWithin7Days: 0,
+      usedUpTotal: 3,
+      safe: 5,
+    })
   })
 })
 

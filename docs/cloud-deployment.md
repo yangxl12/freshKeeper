@@ -26,6 +26,7 @@
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, storageLocation ASC, expiryDate ASC, createdAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, storageLocation ASC, expiryDate ASC, createdAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, completedAt DESC` |
+| `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, completedAt DESC` |
 | `reminder_jobs` | `status ASC, remindDate ASC` |
 | `reminder_jobs` | `ownerId ASC, status ASC` |
 
@@ -81,7 +82,9 @@ npm run check
 
 - 两种日期录入各一次，覆盖新增、查看、编辑和二次确认删除。
 - 数量 `2 → 1`、数量 `1 → 已用完`、丢弃和历史查看。
-- 搜索、分类、位置及组合筛选，清空后恢复全部库存。
+- 首页五张概览卡分别进入正确的库存状态，且数字满足“物品总数 = 已过期 + 临期 + 状态良好”。
+- 库存页搜索、种类、状态的两两与三项组合筛选，清空后恢复全部在库物品。
+- 选择“已用完”时按完成时间倒序展示；已丢弃只出现在“我的 → 历史记录”。
 - 拒绝订阅后继续新增和编辑；接受后收到一次消息并正确进入详情。
 - 杀掉微信进程后重新进入，确认数据仍存在。
 - 使用两个微信账号确认数据隔离。
