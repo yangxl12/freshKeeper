@@ -132,12 +132,12 @@
       </view>
 
       <view class="field">
-        <text class="field-label">存放位置</text>
+        <text class="field-label">存放位置（选填）</text>
         <input
           class="field-control"
           value="{{storageLocation}}"
           maxlength="20"
-          placeholder="如冰箱，床头柜，药箱等"
+          placeholder="可任意输入，例如冰箱、床头柜"
           placeholder-class="field-placeholder"
           data-field="storageLocation"
           bindinput="handleTextInput"
