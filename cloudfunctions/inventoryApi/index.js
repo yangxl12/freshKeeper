@@ -7,7 +7,6 @@ const { AppError, assert, normalizeError } = require('./error')
 const {
   canTransitionInventory,
   getDecrementDecision,
-  summarizeOverviewRows,
 } = require('./rules')
 const {
   assertNoClientIdentity,
@@ -26,7 +25,6 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
 const db = cloud.database()
 const command = db.command
-const aggregateCommand = db.command.aggregate
 const ITEMS = 'inventory_items'
 const REMINDERS = 'reminder_jobs'
 
@@ -186,37 +184,29 @@ async function listActive(ownerId, event) {
 async function getOverview(ownerId) {
   const today = currentDateKey()
   const expiringEnd = addDays(today, 7)
-  const result = await db
-    .collection(ITEMS)
-    .aggregate()
-    .match({
-      ownerId,
-      inventoryStatus: command.in(['active', 'used_up']),
-    })
-    .group({
-      _id: aggregateCommand.switch({
-        branches: [
-          {
-            case: aggregateCommand.eq(['$inventoryStatus', 'used_up']),
-            then: 'used_up',
-          },
-          {
-            case: aggregateCommand.lt(['$expiryDate', today]),
-            then: 'expired',
-          },
-          {
-            case: aggregateCommand.lte(['$expiryDate', expiringEnd]),
-            then: 'expiring',
-          },
-        ],
-        default: 'safe',
-      }),
-      total: aggregateCommand.sum(1),
-    })
-    .end()
+  const [activeResult, expiredResult, expiringResult, usedUpResult] = await Promise.all([
+    db.collection(ITEMS).where({ ownerId, inventoryStatus: 'active' }).count(),
+    db
+      .collection(ITEMS)
+      .where({ ownerId, inventoryStatus: 'active', expiryDate: command.lt(today) })
+      .count(),
+    db
+      .collection(ITEMS)
+      .where({
+        ownerId,
+        inventoryStatus: 'active',
+        expiryDate: command.gte(today).and(command.lte(expiringEnd)),
+      })
+      .count(),
+    db.collection(ITEMS).where({ ownerId, inventoryStatus: 'used_up' }).count(),
+  ])
 
   return {
-    ...summarizeOverviewRows(result.data),
+    activeTotal: activeResult.total,
+    expired: expiredResult.total,
+    expiringWithin7Days: expiringResult.total,
+    usedUpTotal: usedUpResult.total,
+    safe: Math.max(0, activeResult.total - expiredResult.total - expiringResult.total),
     serverToday: today,
   }
 }
