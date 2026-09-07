@@ -8,6 +8,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:project": "node scripts/validate-project.mjs",
+    "check:mcp": "node scripts/start-wechat-devtools-mcp.mjs --check",
     "check": "npm run typecheck && npm test && npm run check:project"
   },
   "devDependencies": {

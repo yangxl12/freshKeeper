@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "wechat-devtools-mcp": {
+      "command": "node",
+      "args": ["scripts/start-wechat-devtools-mcp.mjs"]
+    }
+  }
+}
