@@ -44,8 +44,9 @@
 }
 
 .record-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
   padding-bottom: 4rpx;
   border-bottom: 2rpx solid #dce4e0;
 }
@@ -56,8 +57,11 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 100%;
+  width: 50%;
+  min-width: 0;
+  max-width: 50%;
   min-height: 76rpx;
+  flex: 0 0 50%;
   margin: 0;
   padding: 0;
   background: transparent;
@@ -74,13 +78,14 @@
 
 .record-tab--active::after {
   position: absolute;
-  right: 34%;
   bottom: -4rpx;
-  left: 34%;
+  left: 50%;
+  width: 32%;
   height: 6rpx;
   border-radius: 3rpx;
   background: #1f5d49;
   content: "";
+  transform: translateX(-50%);
 }
 
 .records__heading {
