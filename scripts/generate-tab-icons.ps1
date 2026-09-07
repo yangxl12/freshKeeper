@@ -6,7 +6,7 @@ $iconSize = 81
 function New-TabIcon {
   param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
-    [Parameter(Mandatory = $true)][ValidateSet('inventory', 'mine')][string]$Kind,
+    [Parameter(Mandatory = $true)][ValidateSet('home', 'inventory', 'mine')][string]$Kind,
     [Parameter(Mandatory = $true)][string]$ColorHex
   )
 
@@ -25,7 +25,20 @@ function New-TabIcon {
     $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
     $pen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
 
-    if ($Kind -eq 'inventory') {
+    if ($Kind -eq 'home') {
+      $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
+      try {
+        $path.StartFigure()
+        $path.AddLine(14, 39, 40, 17)
+        $path.AddLine(40, 17, 67, 39)
+        $path.AddLine(61, 39, 61, 67)
+        $path.AddLine(20, 67, 20, 39)
+        $graphics.DrawPath($pen, $path)
+        $graphics.DrawRectangle($pen, 34, 48, 13, 19)
+      } finally {
+        $path.Dispose()
+      }
+    } elseif ($Kind -eq 'inventory') {
       $graphics.DrawRectangle($pen, 17, 17, 47, 48)
       $graphics.DrawLine($pen, 17, 34, 64, 34)
       $graphics.DrawLine($pen, 17, 50, 64, 50)
@@ -53,6 +66,8 @@ function New-TabIcon {
   }
 }
 
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-home.png') -Kind home -ColorHex '#84918B'
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-home-active.png') -Kind home -ColorHex '#1F5D49'
 New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-inventory.png') -Kind inventory -ColorHex '#84918B'
 New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-inventory-active.png') -Kind inventory -ColorHex '#1F5D49'
 New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-mine.png') -Kind mine -ColorHex '#84918B'

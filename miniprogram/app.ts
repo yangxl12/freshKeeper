@@ -2,7 +2,7 @@ import { CLOUD_ENV_ID } from './config/runtime'
 
 App<IAppOption>({
   globalData: {
-    inventoryDirty: true,
+    pendingInventoryIntent: null,
   },
   onLaunch() {
     if (!wx.cloud) {

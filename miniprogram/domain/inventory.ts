@@ -3,17 +3,62 @@ import type {
   ExpiryStatus,
   InventoryItem,
   InventoryStatus,
+  InventoryViewStatus,
   ShelfLifeUnit,
   StorageLocation,
 } from '../types/inventory'
 
 export const CATEGORY_OPTIONS: ReadonlyArray<{ value: Category | ''; label: string }> = [
-  { value: '', label: '全部分类' },
+  { value: '', label: '全部' },
   { value: 'food', label: '食品' },
   { value: 'medicine', label: '药品' },
   { value: 'household', label: '日化' },
   { value: 'other', label: '其他' },
 ]
+
+export const INVENTORY_VIEW_STATUS_OPTIONS: ReadonlyArray<{
+  value: InventoryViewStatus
+  label: string
+}> = [
+  { value: 'active_all', label: '全部在库' },
+  { value: 'expired', label: '已过期' },
+  { value: 'expiring', label: '临期' },
+  { value: 'safe', label: '状态良好' },
+  { value: 'used_up', label: '已用完' },
+]
+
+export const HOME_CARD_VIEW_STATUS = {
+  activeTotal: 'active_all',
+  expired: 'expired',
+  expiringWithin7Days: 'expiring',
+  usedUpTotal: 'used_up',
+} as const satisfies Record<string, InventoryViewStatus>
+
+export type InventoryCardItem = InventoryItem & {
+  expiryDateText: string
+  remainingDaysText: string
+}
+
+export function toInventoryCardItem(item: InventoryItem): InventoryCardItem {
+  const [year, month, day] = item.expiryDate.split('-')
+  let remainingDaysText = `剩余 ${item.daysLeft} 天`
+  if (item.daysLeft < 0) remainingDaysText = `已过期 ${Math.abs(item.daysLeft)} 天`
+  if (item.daysLeft === 0) remainingDaysText = '今天到期'
+
+  return {
+    ...item,
+    expiryDateText: `${year}年${month}月${day}日`,
+    remainingDaysText,
+  }
+}
+
+export function hasActiveInventoryConditions(
+  search: string,
+  category: Category | '',
+  viewStatus: InventoryViewStatus,
+) {
+  return Boolean(search.trim() || category || viewStatus !== 'active_all')
+}
 
 export const STORAGE_OPTIONS: ReadonlyArray<{
   value: StorageLocation | ''

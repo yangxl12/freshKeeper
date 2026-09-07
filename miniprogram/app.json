@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/home/index",
+    "pages/inventory/index",
     "pages/item-form/index",
     "pages/item-detail/index",
     "pages/mine/index"
@@ -20,6 +21,12 @@
     "list": [
       {
         "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "assets/tab-home.png",
+        "selectedIconPath": "assets/tab-home-active.png"
+      },
+      {
+        "pagePath": "pages/inventory/index",
         "text": "库存",
         "iconPath": "assets/tab-inventory.png",
         "selectedIconPath": "assets/tab-inventory-active.png"

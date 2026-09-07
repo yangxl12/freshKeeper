@@ -2,8 +2,11 @@ import type {
   HistoryListResult,
   InventoryItem,
   InventoryListResult,
+  InventoryOverviewResult,
   InventorySaveInput,
   InventoryStatus,
+  InventoryViewStatus,
+  LegacyInventoryListResult,
 } from '../types/inventory'
 import { callCloud } from './cloud-client'
 
@@ -15,12 +18,33 @@ export interface ListActiveParams {
   pageSize?: number
 }
 
-export function listActive(params: ListActiveParams = {}): Promise<InventoryListResult> {
+export function listActive(params: ListActiveParams = {}): Promise<LegacyInventoryListResult> {
   return callCloud('inventoryApi', {
     action: 'listActive',
     search: params.search || '',
     category: params.category || '',
     storageLocation: params.storageLocation || '',
+    cursor: params.cursor || null,
+    pageSize: params.pageSize || 30,
+  })
+}
+
+export function getOverview(): Promise<InventoryOverviewResult> {
+  return callCloud('inventoryApi', { action: 'getOverview' })
+}
+
+export function listInventory(params: {
+  search?: string
+  category?: string
+  viewStatus?: InventoryViewStatus
+  cursor?: string | null
+  pageSize?: number
+} = {}): Promise<InventoryListResult> {
+  return callCloud('inventoryApi', {
+    action: 'listInventory',
+    search: params.search || '',
+    category: params.category || '',
+    viewStatus: params.viewStatus || 'active_all',
     cursor: params.cursor || null,
     pageSize: params.pageSize || 30,
   })

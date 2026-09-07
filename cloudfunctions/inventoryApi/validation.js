@@ -14,6 +14,13 @@ const STORAGE_LOCATIONS = new Set([
 const INPUT_MODES = new Set(['direct', 'shelf_life'])
 const SHELF_LIFE_UNITS = new Set(['day', 'month', 'year'])
 const HISTORY_STATUSES = new Set(['used_up', 'discarded'])
+const INVENTORY_VIEW_STATUSES = new Set([
+  'active_all',
+  'expired',
+  'expiring',
+  'safe',
+  'used_up',
+])
 const SAVE_FIELDS = new Set([
   'itemId',
   'version',
@@ -130,9 +137,16 @@ function validateHistoryStatus(value) {
   return value
 }
 
+function validateInventoryViewStatus(value) {
+  if (value === undefined || value === null || value === '') return 'active_all'
+  assert(INVENTORY_VIEW_STATUSES.has(value), 'INVALID_ARGUMENT', '库存状态不正确')
+  return value
+}
+
 module.exports = {
   assertNoClientIdentity,
   validateHistoryStatus,
+  validateInventoryViewStatus,
   validateItemId,
   validateOptionalCategory,
   validateOptionalStorage,

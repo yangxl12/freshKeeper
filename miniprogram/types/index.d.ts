@@ -1,5 +1,8 @@
 interface IAppOption {
   globalData: {
-    inventoryDirty: boolean
+    pendingInventoryIntent: {
+      viewStatus: import('./inventory').InventoryViewStatus
+      source: 'home_card'
+    } | null
   }
 }

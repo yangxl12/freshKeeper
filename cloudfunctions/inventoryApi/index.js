@@ -4,10 +4,14 @@ const crypto = require('node:crypto')
 const cloud = require('wx-server-sdk')
 const { addDays, currentDateKey, getExpiryPresentation } = require('./date')
 const { AppError, assert, normalizeError } = require('./error')
-const { canTransitionInventory, getDecrementDecision } = require('./rules')
+const {
+  canTransitionInventory,
+  getDecrementDecision,
+} = require('./rules')
 const {
   assertNoClientIdentity,
   validateHistoryStatus,
+  validateInventoryViewStatus,
   validateItemId,
   validateOptionalCategory,
   validateOptionalStorage,
@@ -63,21 +67,31 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function decodeCursor(value) {
+function decodeCursor(value, expectedSignature = '') {
   if (!value) return 0
   try {
     const payload = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
     if (!Number.isInteger(payload.offset) || payload.offset < 0 || payload.offset > 10_000) {
       throw new Error('invalid')
     }
+    if (expectedSignature && payload.signature !== expectedSignature) throw new Error('invalid')
     return payload.offset
   } catch (_error) {
     throw new AppError('INVALID_CURSOR', '分页位置已失效，请刷新后重试')
   }
 }
 
-function encodeCursor(offset) {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64url')
+function encodeCursor(offset, signature = '') {
+  const payload = signature ? { offset, signature } : { offset }
+  return Buffer.from(JSON.stringify(payload)).toString('base64url')
+}
+
+function querySignature(values) {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify(values))
+    .digest('base64url')
+    .slice(0, 16)
 }
 
 async function getOwnedItem(ownerId, itemId) {
@@ -163,6 +177,75 @@ async function listActive(ownerId, event) {
       activeTotal: totalResult.total,
     },
     nextCursor: hasMore ? encodeCursor(offset + pageSize) : null,
+    serverToday: today,
+  }
+}
+
+async function getOverview(ownerId) {
+  const today = currentDateKey()
+  const expiringEnd = addDays(today, 7)
+  const [activeResult, expiredResult, expiringResult, usedUpResult] = await Promise.all([
+    db.collection(ITEMS).where({ ownerId, inventoryStatus: 'active' }).count(),
+    db
+      .collection(ITEMS)
+      .where({ ownerId, inventoryStatus: 'active', expiryDate: command.lt(today) })
+      .count(),
+    db
+      .collection(ITEMS)
+      .where({
+        ownerId,
+        inventoryStatus: 'active',
+        expiryDate: command.gte(today).and(command.lte(expiringEnd)),
+      })
+      .count(),
+    db.collection(ITEMS).where({ ownerId, inventoryStatus: 'used_up' }).count(),
+  ])
+
+  return {
+    activeTotal: activeResult.total,
+    expired: expiredResult.total,
+    expiringWithin7Days: expiringResult.total,
+    usedUpTotal: usedUpResult.total,
+    safe: Math.max(0, activeResult.total - expiredResult.total - expiringResult.total),
+    serverToday: today,
+  }
+}
+
+async function listInventory(ownerId, event) {
+  const today = currentDateKey()
+  const search = validateSearch(event.search)
+  const category = validateOptionalCategory(event.category)
+  const viewStatus = validateInventoryViewStatus(event.viewStatus)
+  const pageSize = validatePageSize(event.pageSize)
+  const signature = querySignature({ search, category, viewStatus, pageSize })
+  const offset = decodeCursor(event.cursor, signature)
+  const where = {
+    ownerId,
+    inventoryStatus: viewStatus === 'used_up' ? 'used_up' : 'active',
+  }
+  if (category) where.category = category
+  if (search) {
+    where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
+  }
+  if (viewStatus === 'expired') {
+    where.expiryDate = command.lt(today)
+  } else if (viewStatus === 'expiring') {
+    where.expiryDate = command.gte(today).and(command.lte(addDays(today, 7)))
+  } else if (viewStatus === 'safe') {
+    where.expiryDate = command.gt(addDays(today, 7))
+  }
+
+  let query = db.collection(ITEMS).where(where)
+  if (viewStatus === 'used_up') {
+    query = query.orderBy('completedAt', 'desc')
+  } else {
+    query = query.orderBy('expiryDate', 'asc').orderBy('createdAt', 'desc')
+  }
+  const result = await query.skip(offset).limit(pageSize + 1).get()
+  const hasMore = result.data.length > pageSize
+  return {
+    items: result.data.slice(0, pageSize).map((item) => publicItem(item, today)),
+    nextCursor: hasMore ? encodeCursor(offset + pageSize, signature) : null,
     serverToday: today,
   }
 }
@@ -336,6 +419,8 @@ async function listHistory(ownerId, event) {
 
 const handlers = {
   listActive,
+  getOverview,
+  listInventory,
   get,
   save,
   decrement,

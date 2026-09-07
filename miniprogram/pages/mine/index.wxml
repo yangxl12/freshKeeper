@@ -108,7 +108,6 @@
         wx:for="{{historyItems}}"
         wx:key="_id"
         item="{{item}}"
-        history
         bind:select="openHistoryItem"
       />
       <view wx:if="{{historyLoadingMore}}" class="history-loading history-loading--more">正在加载更多…</view>
