@@ -73,20 +73,9 @@
   </view>
 
   <block wx:elif="{{items.length}}">
-    <block wx:if="{{showGrouped}}">
-      <view wx:for="{{groups}}" wx:key="key" class="inventory-group">
-        <view class="inventory-group__heading">
-          <text class="inventory-group__title inventory-group__title--{{item.tone}}">{{item.label}}</text>
-          <text class="inventory-group__count">{{item.items.length}} 项</text>
-        </view>
-        <inventory-row wx:for="{{item.items}}" wx:for-item="inventoryItem" wx:key="_id" item="{{inventoryItem}}" bind:select="openItem" />
-      </view>
-    </block>
-    <block wx:else>
-      <view class="flat-list">
-        <inventory-row wx:for="{{items}}" wx:for-item="inventoryItem" wx:key="_id" item="{{inventoryItem}}" history="{{showHistory}}" bind:select="openItem" />
-      </view>
-    </block>
+    <view class="flat-list">
+      <inventory-row wx:for="{{items}}" wx:for-item="inventoryItem" wx:key="_id" item="{{inventoryItem}}" bind:select="openItem" />
+    </view>
 
     <view wx:if="{{loadingMore}}" class="load-more">正在加载更多…</view>
     <view wx:elif="{{loadMoreError}}" class="load-more load-more--error">

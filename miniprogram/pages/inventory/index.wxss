@@ -119,25 +119,11 @@
   line-height: 88rpx;
 }
 
-.inventory-group { margin-top: 44rpx; }
-.inventory-group:first-child { margin-top: 34rpx; }
-
-.inventory-group__heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 6rpx;
-}
-
-.inventory-group__title { color: #173b31; font-size: 30rpx; font-weight: 650; }
-.inventory-group__title--danger { color: #b84a3e; }
-.inventory-group__title--urgent,
-.inventory-group__title--warning { color: #a96524; }
-.inventory-group__count { color: #84918b; font-family: "DIN Alternate", "Arial Narrow", sans-serif; font-size: 22rpx; }
-.flat-list { margin-top: 28rpx; }
+.flat-list { margin-top: 30rpx; }
 
 .loading-list { padding-top: 28rpx; }
-.loading-row { display: flex; align-items: center; height: 126rpx; border-bottom: 2rpx solid #e4eae6; }
+.loading-row { display: flex; align-items: center; height: 126rpx; margin-top: 16rpx; padding: 0 22rpx; border: 2rpx solid #e4eae6; border-radius: 20rpx; background: #ffffff; }
+.loading-row:first-child { margin-top: 0; }
 .loading-row__date,
 .loading-row__line { border-radius: 10rpx; background: #e1e8e4; }
 .loading-row__date { width: 82rpx; height: 76rpx; margin-right: 22rpx; }

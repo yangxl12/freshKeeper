@@ -4,10 +4,6 @@ Component({
       type: Object,
       value: {},
     },
-    history: {
-      type: Boolean,
-      value: false,
-    },
   },
   methods: {
     handleTap() {

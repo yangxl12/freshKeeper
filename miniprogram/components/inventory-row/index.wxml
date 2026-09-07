@@ -1,24 +1,16 @@
 <view
-  class="inventory-row {{history ? 'inventory-row--history' : ''}}"
+  class="inventory-row inventory-row--{{item.expiryTone}}"
   bindtap="handleTap"
   hover-class="inventory-row--pressed"
   role="button"
-  aria-label="{{item.name}}，{{history ? item.inventoryStatusLabel : item.expiryStatusText}}"
+  aria-label="{{item.name}}，{{item.remainingDaysText}}，到期日期 {{item.expiryDateText}}，{{item.categoryLabel}}"
 >
-  <view class="inventory-row__date inventory-row__date--{{item.expiryTone}}" aria-hidden="true">
-    <text class="inventory-row__month">{{item.expiryMonth}}</text>
-    <text class="inventory-row__day">{{item.expiryDay}}</text>
+  <view class="inventory-row__headline">
+    <text class="inventory-row__name">{{item.name}}</text>
+    <text class="inventory-row__remaining">{{item.remainingDaysText}}</text>
   </view>
-  <view class="inventory-row__content">
-    <view class="inventory-row__headline">
-      <text class="inventory-row__name">{{item.name}}</text>
-      <text class="inventory-row__quantity">{{item.quantity}}{{item.unit}}</text>
-    </view>
-    <text class="inventory-row__meta">{{item.categoryLabel}} · {{item.storageLabel}}</text>
-  </view>
-  <view class="inventory-row__trailing">
-    <text wx:if="{{history}}" class="inventory-row__history-status">{{item.inventoryStatusLabel}}</text>
-    <expiry-status wx:elif="{{item.expiryStatusText}}" text="{{item.expiryStatusText}}" tone="{{item.expiryTone}}" />
-    <view class="line-icon line-icon--chevron line-icon--chevron-right inventory-row__chevron" aria-hidden="true"></view>
+  <view class="inventory-row__details">
+    <text class="inventory-row__expiry">{{item.expiryDateText}}</text>
+    <text class="inventory-row__category">{{item.categoryLabel}}</text>
   </view>
 </view>

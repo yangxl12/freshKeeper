@@ -1,8 +1,6 @@
 <view class="home page-shell">
   <view class="page-heading">
-    <text class="page-heading__eyebrow">家庭保鲜台</text>
     <text class="page-heading__title">库存概览</text>
-    <text class="page-heading__hint">五个数字，看清家里的保质期状态</text>
   </view>
 
   <view wx:if="{{errorMessage}}" class="error-banner">
@@ -11,57 +9,54 @@
   </view>
 
   <view wx:if="{{loading}}" class="overview-skeleton" aria-label="正在加载库存概览">
-    <view class="overview-skeleton__main"></view>
     <view class="overview-skeleton__grid">
       <view wx:for="{{[1, 2, 3, 4]}}" wx:key="*this" class="overview-skeleton__card"></view>
     </view>
   </view>
 
   <block wx:elif="{{overview}}">
-    <view
-      class="total-card"
-      data-card="activeTotal"
-      bindtap="openInventory"
-      hover-class="overview-card--pressed"
-      role="button"
-      aria-label="物品总数 {{overview.activeTotal}}，查看全部在库物品"
-    >
-      <view class="total-card__tag-hole" aria-hidden="true"></view>
-      <view class="total-card__topline">
-        <text class="total-card__label">物品总数</text>
-        <text class="total-card__date">{{overview.serverToday}}</text>
-      </view>
-      <view class="total-card__content">
-        <text class="total-card__number {{overview.activeTotal > 999 ? 'total-card__number--compact' : ''}}">{{overview.activeTotal}}</text>
-        <view class="total-card__aside">
-          <text class="total-card__caption">当前在库</text>
-          <text class="total-card__link">查看全部</text>
-        </view>
-      </view>
-    </view>
-
     <view class="status-grid" aria-label="库存状态">
+      <view class="status-card status-card--total" data-card="activeTotal" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="物品总数 {{overview.activeTotal}}，查看全部在库物品">
+        <view class="status-card__topline">
+          <view class="overview-icon overview-icon--inventory" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
+          <text class="status-card__number">{{overview.activeTotal}}</text>
+        </view>
+        <text class="status-card__label">物品总数</text>
+      </view>
       <view class="status-card status-card--danger" data-card="expired" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="已过期 {{overview.expired}}，查看已过期物品">
-        <text class="status-card__number">{{overview.expired}}</text>
-        <view class="status-card__footer"><text class="status-card__label">已过期</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
+        <view class="status-card__topline">
+          <view class="overview-icon overview-icon--expired" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
+          <text class="status-card__number">{{overview.expired}}</text>
+        </view>
+        <text class="status-card__label">已过期</text>
       </view>
       <view class="status-card status-card--warning" data-card="expiringWithin7Days" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="临期 {{overview.expiringWithin7Days}}，查看七天内到期物品">
-        <text class="status-card__number">{{overview.expiringWithin7Days}}</text>
-        <view class="status-card__footer"><text class="status-card__label">临期</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
+        <view class="status-card__topline">
+          <view class="overview-icon overview-icon--expiring" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
+          <text class="status-card__number">{{overview.expiringWithin7Days}}</text>
+        </view>
+        <text class="status-card__label">临期</text>
       </view>
       <view class="status-card status-card--neutral" data-card="usedUpTotal" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="已用完 {{overview.usedUpTotal}}，查看已用完物品">
-        <text class="status-card__number">{{overview.usedUpTotal}}</text>
-        <view class="status-card__footer"><text class="status-card__label">已用完</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
-      </view>
-      <view class="status-card status-card--safe" data-card="safe" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="状态良好 {{overview.safe}}，查看状态良好物品">
-        <text class="status-card__number">{{overview.safe}}</text>
-        <view class="status-card__footer"><text class="status-card__label">状态良好</text><text class="status-card__arrow" aria-hidden="true">→</text></view>
+        <view class="status-card__topline">
+          <view class="overview-icon overview-icon--used" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
+          <text class="status-card__number">{{overview.usedUpTotal}}</text>
+        </view>
+        <text class="status-card__label">已用完</text>
       </view>
     </view>
 
-    <view wx:if="{{overview.activeTotal === 0}}" class="empty-hint">
-      <text class="empty-hint__title">库存还是空的</text>
-      <text class="empty-hint__copy">点右下角新增，记下第一件物品</text>
+    <view class="expiring-section">
+      <view class="expiring-section__heading">
+        <text class="expiring-section__title">临期物品</text>
+        <text class="expiring-section__count">{{overview.expiringWithin7Days}} 项</text>
+      </view>
+      <view wx:if="{{expiringItems.length}}" class="expiring-list">
+        <inventory-row wx:for="{{expiringItems}}" wx:key="_id" item="{{item}}" bind:select="openItem" />
+      </view>
+      <view wx:else class="expiring-empty">
+        <text>近期没有即将过期的物品</text>
+      </view>
     </view>
   </block>
 

@@ -2,5 +2,7 @@
   "navigationBarTitleText": "首页",
   "enablePullDownRefresh": true,
   "backgroundTextStyle": "dark",
-  "usingComponents": {}
+  "usingComponents": {
+    "inventory-row": "/components/inventory-row/index"
+  }
 }

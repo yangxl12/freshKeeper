@@ -32,8 +32,25 @@ export const HOME_CARD_VIEW_STATUS = {
   expired: 'expired',
   expiringWithin7Days: 'expiring',
   usedUpTotal: 'used_up',
-  safe: 'safe',
 } as const satisfies Record<string, InventoryViewStatus>
+
+export type InventoryCardItem = InventoryItem & {
+  expiryDateText: string
+  remainingDaysText: string
+}
+
+export function toInventoryCardItem(item: InventoryItem): InventoryCardItem {
+  const [year, month, day] = item.expiryDate.split('-')
+  let remainingDaysText = `剩余 ${item.daysLeft} 天`
+  if (item.daysLeft < 0) remainingDaysText = `已过期 ${Math.abs(item.daysLeft)} 天`
+  if (item.daysLeft === 0) remainingDaysText = '今天到期'
+
+  return {
+    ...item,
+    expiryDateText: `${year}年${month}月${day}日`,
+    remainingDaysText,
+  }
+}
 
 export function hasActiveInventoryConditions(
   search: string,

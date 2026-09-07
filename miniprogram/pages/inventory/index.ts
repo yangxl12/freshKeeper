@@ -2,27 +2,17 @@ import {
   CATEGORY_OPTIONS,
   hasActiveInventoryConditions,
   INVENTORY_VIEW_STATUS_OPTIONS,
-  groupInventoryItems,
+  toInventoryCardItem,
+  type InventoryCardItem,
 } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { listInventory } from '../../services/inventory-service'
-import type {
-  Category,
-  InventoryItem,
-  InventoryViewStatus,
-} from '../../types/inventory'
+import type { Category, InventoryViewStatus } from '../../types/inventory'
 import { millisecondsUntilShanghaiTomorrow } from '../../utils/shanghai-time'
 
 let searchTimer: number | undefined
 let midnightTimer: number | undefined
 let listRequestSequence = 0
-
-type InventoryPageItem = InventoryItem & { expiryMonth: string; expiryDay: string }
-
-function decorateItem(item: InventoryItem): InventoryPageItem {
-  const [, month, day] = item.expiryDate.split('-')
-  return { ...item, expiryMonth: `${month}月`, expiryDay: day }
-}
 
 Page({
   data: {
@@ -31,13 +21,7 @@ Page({
     viewStatus: 'active_all' as InventoryViewStatus,
     categoryOptions: CATEGORY_OPTIONS,
     statusOptions: INVENTORY_VIEW_STATUS_OPTIONS,
-    items: [] as InventoryPageItem[],
-    groups: [] as Array<{
-      key: string
-      label: string
-      tone: string
-      items: InventoryPageItem[]
-    }>,
+    items: [] as InventoryCardItem[],
     nextCursor: null as string | null,
     serverToday: '',
     loading: true,
@@ -45,8 +29,6 @@ Page({
     errorMessage: '',
     loadMoreError: '',
     hasActiveConditions: false,
-    showGrouped: true,
-    showHistory: false,
   },
 
   onShow() {
@@ -61,8 +43,6 @@ Page({
           category: '',
           viewStatus: intent.viewStatus,
           hasActiveConditions: intent.viewStatus !== 'active_all',
-          showGrouped: intent.viewStatus === 'active_all',
-          showHistory: intent.viewStatus === 'used_up',
         },
         () => void this.refresh(true, true),
       )
@@ -112,7 +92,7 @@ Page({
         loading: clearExisting || this.data.items.length === 0,
         errorMessage: '',
         loadMoreError: '',
-        ...(clearExisting ? { items: [], groups: [], nextCursor: null } : {}),
+        ...(clearExisting ? { items: [], nextCursor: null } : {}),
       })
     } else {
       this.setData({ loadingMore: true, loadMoreError: '' })
@@ -124,12 +104,10 @@ Page({
         cursor: reset ? null : this.data.nextCursor,
       })
       if (requestSequence !== listRequestSequence) return
-      const pageItems = result.items.map(decorateItem)
+      const pageItems = result.items.map(toInventoryCardItem)
       const items = reset ? pageItems : [...this.data.items, ...pageItems]
-      const showGrouped = query.viewStatus === 'active_all'
       this.setData({
         items,
-        groups: showGrouped ? groupInventoryItems(items) : [],
         nextCursor: result.nextCursor,
         serverToday: result.serverToday,
         loading: false,
@@ -141,8 +119,6 @@ Page({
           query.category as Category | '',
           query.viewStatus,
         ),
-        showGrouped,
-        showHistory: query.viewStatus === 'used_up',
       })
     } catch (error) {
       if (requestSequence !== listRequestSequence) return
@@ -217,8 +193,6 @@ Page({
           this.data.category,
           viewStatus,
         ),
-        showGrouped: viewStatus === 'active_all',
-        showHistory: viewStatus === 'used_up',
       },
       () => void this.refresh(true, true),
     )
@@ -232,8 +206,6 @@ Page({
         category: '',
         viewStatus: 'active_all',
         hasActiveConditions: false,
-        showGrouped: true,
-        showHistory: false,
       },
       () => void this.refresh(true, true),
     )

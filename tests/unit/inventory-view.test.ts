@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   HOME_CARD_VIEW_STATUS,
   hasActiveInventoryConditions,
+  toInventoryCardItem,
 } from '../../miniprogram/domain/inventory'
+import type { InventoryItem } from '../../miniprogram/types/inventory'
 
 describe('inventory view filters', () => {
   it('maps every overview card to its inventory status', () => {
@@ -12,7 +14,17 @@ describe('inventory view filters', () => {
       expired: 'expired',
       expiringWithin7Days: 'expiring',
       usedUpTotal: 'used_up',
-      safe: 'safe',
+    })
+  })
+
+  it('formats the four fields used by inventory cards', () => {
+    const item = {
+      expiryDate: '2026-09-10',
+      daysLeft: 3,
+    } as InventoryItem
+    expect(toInventoryCardItem(item)).toMatchObject({
+      expiryDateText: '2026年09月10日',
+      remainingDaysText: '剩余 3 天',
     })
   })
 

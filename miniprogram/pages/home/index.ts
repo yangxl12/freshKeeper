@@ -1,6 +1,10 @@
 import { getErrorMessage } from '../../services/cloud-client'
-import { getOverview } from '../../services/inventory-service'
-import { HOME_CARD_VIEW_STATUS } from '../../domain/inventory'
+import { getOverview, listInventory } from '../../services/inventory-service'
+import {
+  HOME_CARD_VIEW_STATUS,
+  toInventoryCardItem,
+  type InventoryCardItem,
+} from '../../domain/inventory'
 import type { InventoryOverviewResult } from '../../types/inventory'
 import { millisecondsUntilShanghaiTomorrow } from '../../utils/shanghai-time'
 
@@ -13,6 +17,7 @@ Page({
     refreshing: false,
     errorMessage: '',
     overview: null as InventoryOverviewResult | null,
+    expiringItems: [] as InventoryCardItem[],
   },
 
   onShow() {
@@ -48,9 +53,17 @@ Page({
     const requestSequence = ++overviewRequestSequence
     this.setData({ loading: !this.data.overview, errorMessage: '' })
     try {
-      const overview = await getOverview()
+      const [overview, expiringResult] = await Promise.all([
+        getOverview(),
+        listInventory({ viewStatus: 'expiring' }),
+      ])
       if (requestSequence !== overviewRequestSequence) return
-      this.setData({ overview, loading: false, errorMessage: '' })
+      this.setData({
+        overview,
+        expiringItems: expiringResult.items.map(toInventoryCardItem),
+        loading: false,
+        errorMessage: '',
+      })
     } catch (error) {
       if (requestSequence !== overviewRequestSequence) return
       const message = getErrorMessage(error)
@@ -81,6 +94,10 @@ Page({
 
   addItem() {
     wx.navigateTo({ url: '/pages/item-form/index' })
+  },
+
+  openItem(event: WechatMiniprogram.CustomEvent<{ itemId: string }>) {
+    wx.navigateTo({ url: `/pages/item-detail/index?id=${event.detail.itemId}` })
   },
 
   retry() {

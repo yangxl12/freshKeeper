@@ -1,26 +1,13 @@
 .home { padding-top: 30rpx; }
 
-.page-heading__eyebrow,
-.page-heading__title,
-.page-heading__hint { display: block; }
-
-.page-heading__eyebrow {
-  color: #84918b;
-  font-size: 21rpx;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-}
-
 .page-heading__title {
-  margin-top: 5rpx;
+  display: block;
   color: #173b31;
   font-family: "Songti SC", "STSong", serif;
   font-size: 44rpx;
   font-weight: 700;
   line-height: 1.3;
 }
-
-.page-heading__hint { margin-top: 8rpx; color: #718079; font-size: 23rpx; }
 
 .error-banner {
   display: flex;
@@ -46,121 +33,226 @@
   line-height: 88rpx;
 }
 
-.total-card,
-.overview-skeleton__main {
-  box-sizing: border-box;
-  min-height: 270rpx;
-  margin-top: 34rpx;
-  border-radius: 28rpx;
-}
-
-.total-card {
-  position: relative;
-  overflow: hidden;
-  padding: 30rpx;
-  background: #1f5d49;
-  box-shadow: 0 16rpx 38rpx rgba(23, 59, 49, 0.16);
-  color: #ffffff;
-  transition: opacity 120ms ease, transform 120ms ease;
-}
-
-.total-card::after {
-  position: absolute;
-  right: -54rpx;
-  bottom: -82rpx;
-  width: 230rpx;
-  height: 230rpx;
-  border: 2rpx solid rgba(255, 255, 255, 0.09);
-  border-radius: 50%;
-  content: "";
-}
-
-.total-card__tag-hole {
-  position: absolute;
-  top: 28rpx;
-  right: 28rpx;
-  box-sizing: border-box;
-  width: 18rpx;
-  height: 18rpx;
-  border: 2rpx solid rgba(255, 255, 255, 0.34);
-  border-radius: 50%;
-  background: #174b3c;
-  box-shadow: inset 0 2rpx 4rpx rgba(0, 0, 0, 0.12);
-}
-
-.total-card__topline,
-.total-card__content,
-.status-card__footer { display: flex; align-items: center; justify-content: space-between; }
-
-.total-card__topline,
-.total-card__content { position: relative; z-index: 1; }
-.total-card__topline { padding-right: 40rpx; }
-.total-card__label { color: rgba(255, 255, 255, 0.84); font-size: 26rpx; font-weight: 600; letter-spacing: 0.08em; }
-.total-card__date { color: rgba(255, 255, 255, 0.58); font-family: "DIN Alternate", "Arial Narrow", sans-serif; font-size: 21rpx; }
-
-.total-card__content {
-  align-items: flex-end;
-  margin-top: 26rpx;
-  padding-top: 22rpx;
-  border-top: 2rpx dashed rgba(255, 255, 255, 0.2);
-}
-
-.total-card__number,
-.status-card__number {
-  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.total-card__number { font-size: 92rpx; line-height: 0.95; }
-.total-card__number--compact { font-size: 72rpx; }
-.total-card__aside { display: flex; align-items: flex-end; flex-direction: column; padding-bottom: 2rpx; }
-.total-card__caption { color: rgba(255, 255, 255, 0.62); font-size: 22rpx; }
-.total-card__link { margin-top: 7rpx; color: #ffffff; font-size: 24rpx; font-weight: 600; }
-
 .status-grid,
 .overview-skeleton__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18rpx;
-  margin-top: 18rpx;
+  margin-top: 34rpx;
 }
 
 .status-card,
-.overview-skeleton__card { box-sizing: border-box; min-height: 196rpx; border-radius: 20rpx; }
+.overview-skeleton__card {
+  box-sizing: border-box;
+  min-height: 196rpx;
+  border-radius: 22rpx;
+}
 
 .status-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   justify-content: space-between;
   flex-direction: column;
-  padding: 24rpx;
+  padding: 22rpx 24rpx 24rpx;
   border: 2rpx solid #dde5e0;
   background: #ffffff;
+  box-shadow: 0 8rpx 24rpx rgba(23, 59, 49, 0.045);
   transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.status-card::after {
+  position: absolute;
+  right: -22rpx;
+  bottom: -42rpx;
+  width: 104rpx;
+  height: 104rpx;
+  border: 18rpx solid currentColor;
+  border-radius: 50%;
+  content: "";
+  opacity: 0.025;
+}
+
+.status-card__topline {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.status-card__number {
+  color: #173b31;
+  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
+  font-size: 54rpx;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.status-card__label {
+  position: relative;
+  z-index: 1;
+  color: #53645d;
+  font-size: 25rpx;
+  font-weight: 600;
 }
 
 .status-card--danger .status-card__number { color: #b84a3e; }
 .status-card--warning .status-card__number { color: #a96524; }
-.status-card--safe .status-card__number { color: #1f5d49; }
-.status-card--neutral .status-card__number { color: #68766f; }
-.status-card__number { color: #173b31; font-size: 60rpx; line-height: 1; }
-.status-card__label { color: #53645d; font-size: 26rpx; font-weight: 600; }
-.status-card__arrow { color: #9aa69f; font-size: 28rpx; }
-.overview-card--pressed { opacity: 0.75; transform: scale(0.985); }
+.status-card--neutral .status-card__number { color: #61716a; }
 
-.empty-hint {
-  margin-top: 36rpx;
-  padding: 26rpx 28rpx;
-  border-left: 6rpx solid #1f5d49;
-  background: #e8f2ed;
+.overview-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 17rpx;
+  color: #1f5d49;
 }
 
-.empty-hint__title,
-.empty-hint__copy { display: block; }
-.empty-hint__title { color: #173b31; font-size: 27rpx; font-weight: 600; }
-.empty-hint__copy { margin-top: 4rpx; color: #68766f; font-size: 23rpx; }
+.overview-icon--inventory { background: #e7f1ec; }
+.overview-icon--expired { background: #f8e9e6; color: #b84a3e; }
+.overview-icon--expiring { background: #f7ecdf; color: #a96524; }
+.overview-icon--used { background: #edf0ee; color: #61716a; }
 
-.overview-skeleton__main,
+.overview-icon__glyph,
+.overview-icon__glyph::before,
+.overview-icon__glyph::after {
+  position: absolute;
+  box-sizing: border-box;
+  content: "";
+}
+
+.overview-icon--inventory .overview-icon__glyph {
+  width: 29rpx;
+  height: 23rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 4rpx;
+}
+
+.overview-icon--inventory .overview-icon__glyph::before {
+  top: 6rpx;
+  left: -3rpx;
+  width: 29rpx;
+  border-top: 3rpx solid currentColor;
+}
+
+.overview-icon--inventory .overview-icon__glyph::after {
+  top: -9rpx;
+  left: 5rpx;
+  width: 13rpx;
+  height: 8rpx;
+  border: 3rpx solid currentColor;
+  border-bottom: 0;
+  border-radius: 4rpx 4rpx 0 0;
+}
+
+.overview-icon--expired .overview-icon__glyph {
+  width: 28rpx;
+  height: 27rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 5rpx;
+}
+
+.overview-icon--expired .overview-icon__glyph::before {
+  top: 6rpx;
+  left: -3rpx;
+  width: 28rpx;
+  border-top: 3rpx solid currentColor;
+}
+
+.overview-icon--expired .overview-icon__glyph::after {
+  right: 5rpx;
+  bottom: 4rpx;
+  width: 4rpx;
+  height: 9rpx;
+  border-radius: 2rpx;
+  background: currentColor;
+  box-shadow: 0 12rpx 0 -1rpx currentColor;
+}
+
+.overview-icon--expiring .overview-icon__glyph {
+  width: 25rpx;
+  height: 31rpx;
+  border-top: 3rpx solid currentColor;
+  border-bottom: 3rpx solid currentColor;
+}
+
+.overview-icon--expiring .overview-icon__glyph::before {
+  top: 3rpx;
+  left: 3rpx;
+  width: 19rpx;
+  height: 22rpx;
+  border-right: 3rpx solid currentColor;
+  border-left: 3rpx solid currentColor;
+  transform: skew(-24deg);
+}
+
+.overview-icon--expiring .overview-icon__glyph::after {
+  bottom: 5rpx;
+  left: 9rpx;
+  width: 8rpx;
+  height: 8rpx;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.overview-icon--used .overview-icon__glyph {
+  width: 29rpx;
+  height: 29rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 50%;
+}
+
+.overview-icon--used .overview-icon__glyph::after {
+  top: 7rpx;
+  left: 6rpx;
+  width: 14rpx;
+  height: 7rpx;
+  border-bottom: 3rpx solid currentColor;
+  border-left: 3rpx solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.overview-card--pressed { opacity: 0.72; transform: scale(0.985); }
+
+.expiring-section { margin-top: 48rpx; }
+
+.expiring-section__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4rpx;
+}
+
+.expiring-section__title {
+  color: #173b31;
+  font-size: 31rpx;
+  font-weight: 650;
+}
+
+.expiring-section__count {
+  color: #84918b;
+  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
+  font-size: 22rpx;
+}
+
+.expiring-list { margin-top: 20rpx; }
+
+.expiring-empty {
+  margin-top: 20rpx;
+  padding: 42rpx 24rpx;
+  border: 2rpx dashed #d5dfda;
+  border-radius: 20rpx;
+  color: #84918b;
+  font-size: 24rpx;
+  text-align: center;
+}
+
 .overview-skeleton__card {
   background: #e1e8e4;
   animation: skeleton-pulse 1.2s ease-in-out infinite alternate;
@@ -196,6 +288,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .overview-skeleton__main,
   .overview-skeleton__card { animation: none; }
 }

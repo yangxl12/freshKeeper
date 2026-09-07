@@ -1,4 +1,8 @@
-import { HISTORY_STATUS_OPTIONS, STORAGE_OPTIONS } from '../../domain/inventory'
+import {
+  HISTORY_STATUS_OPTIONS,
+  STORAGE_OPTIONS,
+  toInventoryCardItem,
+} from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { listHistory } from '../../services/inventory-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
@@ -23,11 +27,8 @@ let historySearchTimer: number | undefined
 let historyRequestSequence = 0
 
 function decorateHistoryItem(item: InventoryItem) {
-  const [, month, day] = item.expiryDate.split('-')
   return {
-    ...item,
-    expiryMonth: `${month}月`,
-    expiryDay: day,
+    ...toInventoryCardItem(item),
     inventoryStatusLabel: item.inventoryStatus === 'used_up' ? '已用完' : '已丢弃',
   }
 }
