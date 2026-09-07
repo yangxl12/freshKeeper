@@ -1,44 +1,26 @@
 .status {
   display: inline-flex;
   align-items: center;
-  min-height: 42rpx;
+  min-height: 44rpx;
+  padding: 0 12rpx;
+  border-radius: 22rpx;
+  background: #e8f2ed;
   color: #52615b;
-  font-size: 24rpx;
+  font-size: 22rpx;
   font-weight: 600;
 }
 
-.status__dot {
-  width: 12rpx;
-  height: 12rpx;
-  margin-right: 10rpx;
-  border-radius: 50%;
-  background: #6d8b7d;
-}
-
 .status--danger {
-  color: #a33f32;
-}
-
-.status--danger .status__dot {
-  background: #b44535;
+  background: #f8e9e6;
+  color: #b84a3e;
 }
 
 .status--urgent {
-  color: #9a4c29;
-}
-
-.status--urgent .status__dot {
-  background: #c35d31;
+  background: #f7ecdf;
+  color: #a96524;
 }
 
 .status--warning {
-  color: #93611f;
-}
-
-.status--warning .status__dot {
-  background: #c0832d;
-}
-
-.status--safe .status__dot {
-  background: #4d806b;
+  background: #f7ecdf;
+  color: #96611f;
 }

@@ -1,11 +1,11 @@
-<view class="empty">
+<view class="empty {{compact ? 'empty--compact' : ''}}">
   <view class="empty__mark" aria-hidden="true">
     <view class="empty__line"></view>
     <view class="empty__line empty__line--short"></view>
   </view>
   <text class="empty__title">{{title}}</text>
   <text wx:if="{{description}}" class="empty__description">{{description}}</text>
-  <button wx:if="{{actionText}}" class="empty__action" bindtap="handleAction">
+  <button wx:if="{{actionText}}" class="empty__action" bindtap="handleAction" hover-class="empty__action--pressed">
     {{actionText}}
   </button>
 </view>

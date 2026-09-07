@@ -5,7 +5,7 @@
   role="button"
   aria-label="{{item.name}}，{{history ? item.inventoryStatusLabel : item.expiryStatusText}}"
 >
-  <view class="inventory-row__date" aria-hidden="true">
+  <view class="inventory-row__date inventory-row__date--{{item.expiryTone}}" aria-hidden="true">
     <text class="inventory-row__month">{{item.expiryMonth}}</text>
     <text class="inventory-row__day">{{item.expiryDay}}</text>
   </view>
@@ -18,7 +18,7 @@
   </view>
   <view class="inventory-row__trailing">
     <text wx:if="{{history}}" class="inventory-row__history-status">{{item.inventoryStatusLabel}}</text>
-    <expiry-status wx:else text="{{item.expiryStatusText}}" tone="{{item.expiryTone}}" />
-    <text class="inventory-row__chevron" aria-hidden="true">›</text>
+    <expiry-status wx:elif="{{item.expiryStatusText}}" text="{{item.expiryStatusText}}" tone="{{item.expiryTone}}" />
+    <view class="line-icon line-icon--chevron line-icon--chevron-right inventory-row__chevron" aria-hidden="true"></view>
   </view>
 </view>

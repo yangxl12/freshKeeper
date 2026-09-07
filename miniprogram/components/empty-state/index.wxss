@@ -6,13 +6,25 @@
   text-align: center;
 }
 
+.empty--compact {
+  padding-top: 42rpx;
+  padding-bottom: 18rpx;
+}
+
+.empty--compact .empty__mark {
+  width: 82rpx;
+  height: 90rpx;
+  padding: 24rpx 16rpx;
+  border-top-width: 10rpx;
+}
+
 .empty__mark {
   box-sizing: border-box;
   width: 104rpx;
   height: 116rpx;
   padding: 32rpx 20rpx;
-  border: 3rpx solid #b9c8c1;
-  border-top: 12rpx solid #769889;
+  border: 2rpx solid #b9c8c1;
+  border-top: 12rpx solid #1f5d49;
   border-radius: 10rpx;
   background: #fbfcfa;
   transform: rotate(-3deg);
@@ -47,11 +59,16 @@
   min-width: 220rpx;
   min-height: 88rpx;
   margin-top: 30rpx;
-  border: 2rpx solid #b9cbc3;
+  border: 2rpx solid #1f5d49;
   border-radius: 16rpx;
-  background: #ffffff;
-  color: #245b49;
+  background: #1f5d49;
+  color: #ffffff;
   font-size: 27rpx;
   font-weight: 600;
   line-height: 86rpx;
+}
+
+.empty__action--pressed {
+  opacity: 0.72;
+  transform: scale(0.985);
 }

@@ -10,12 +10,13 @@
     <view class="form-intro">
       <text class="form-intro__step">{{itemId ? '更新标签' : '贴一张日期标签'}}</text>
       <text class="form-intro__title">{{itemId ? '修改物品信息' : '记下它什么时候到期'}}</text>
-      <text class="form-intro__description">名称和到期信息必填，其余保持默认即可快速保存。</text>
+      <text class="form-intro__description">名称和到期时间必填，其余可稍后补充。</text>
     </view>
 
+    <view class="form-sheet">
     <view class="form-section">
       <view class="field">
-        <text class="field-label">物品名称 *</text>
+        <text class="field-label">物品名称 <text class="required-mark">*</text></text>
         <input
           class="field-control"
           value="{{name}}"
@@ -54,7 +55,7 @@
     </view>
 
     <view class="form-section form-section--dated">
-      <text class="form-section__title">到期信息 *</text>
+      <text class="form-section__title">到期信息 <text class="required-mark">*</text></text>
       <view class="mode-switch" role="tablist">
         <button
           class="mode-switch__item {{mode === 'direct' ? 'mode-switch__item--active' : ''}}"
@@ -75,7 +76,7 @@
         <picker mode="date" value="{{expiryDate}}" end="2200-12-31" data-field="expiryDate" bindchange="handleDateChange">
           <view class="field-control date-control {{!expiryDate ? 'field-placeholder' : ''}}">
             <text>{{expiryDate || '选择日期'}}</text>
-            <text class="date-control__icon" aria-hidden="true">日</text>
+            <view class="line-icon line-icon--calendar date-control__icon" aria-hidden="true"></view>
           </view>
         </picker>
       </view>
@@ -86,7 +87,7 @@
           <picker mode="date" value="{{productionDate}}" end="{{today}}" data-field="productionDate" bindchange="handleDateChange">
             <view class="field-control date-control {{!productionDate ? 'field-placeholder' : ''}}">
               <text>{{productionDate || '选择日期'}}</text>
-              <text class="date-control__icon" aria-hidden="true">日</text>
+              <view class="line-icon line-icon--calendar date-control__icon" aria-hidden="true"></view>
             </view>
           </picker>
         </view>
@@ -108,7 +109,7 @@
             <picker mode="selector" range="{{shelfLifeOptions}}" range-key="label" value="{{shelfLifeUnitIndex}}" bindchange="handleShelfLifeUnitChange">
               <view class="field-control date-control">
                 <text>{{shelfLifeOptions[shelfLifeUnitIndex].label}}</text>
-                <text class="date-control__arrow" aria-hidden="true">⌄</text>
+                <view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view>
               </view>
             </picker>
           </view>
@@ -128,7 +129,7 @@
           <picker mode="selector" range="{{categoryOptions}}" range-key="label" value="{{categoryIndex}}" bindchange="handleCategoryChange">
             <view class="field-control date-control">
               <text>{{categoryOptions[categoryIndex].label}}</text>
-              <text class="date-control__arrow" aria-hidden="true">⌄</text>
+              <view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view>
             </view>
           </picker>
         </view>
@@ -137,7 +138,7 @@
           <picker mode="selector" range="{{storageOptions}}" range-key="label" value="{{storageIndex}}" bindchange="handleStorageChange">
             <view class="field-control date-control">
               <text>{{storageOptions[storageIndex].label}}</text>
-              <text class="date-control__arrow" aria-hidden="true">⌄</text>
+              <view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view>
             </view>
           </picker>
         </view>
@@ -159,8 +160,9 @@
         <text class="field-help">保存物品不需要开启微信提醒，可稍后在详情页单独开启。</text>
       </view>
     </view>
+    </view>
 
-    <button class="primary-button save-button" disabled="{{saving}}" bindtap="save">
+    <button class="primary-button save-button" disabled="{{saving}}" bindtap="save" hover-class="pressable--pressed">
       {{saving ? '正在保存…' : (itemId ? '保存修改' : '加入库存')}}
     </button>
   </block>

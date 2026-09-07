@@ -1,9 +1,9 @@
 .form-page {
-  padding-bottom: calc(60rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(190rpx + env(safe-area-inset-bottom));
 }
 
 .form-intro {
-  padding: 8rpx 4rpx 40rpx;
+  padding: 4rpx 4rpx 32rpx;
 }
 
 .form-intro__step,
@@ -13,46 +13,59 @@
 }
 
 .form-intro__step {
-  color: #668075;
+  color: #61776e;
   font-size: 22rpx;
   font-weight: 600;
   letter-spacing: 0.12em;
 }
 
 .form-intro__title {
-  margin-top: 8rpx;
-  color: #18342d;
+  margin-top: 6rpx;
+  color: #173b31;
   font-family: "Songti SC", "STSong", serif;
-  font-size: 44rpx;
+  font-size: 42rpx;
   font-weight: 700;
+  line-height: 1.28;
 }
 
 .form-intro__description {
-  margin-top: 14rpx;
-  color: #74817b;
-  font-size: 25rpx;
+  margin-top: 10rpx;
+  color: #84918b;
+  font-size: 23rpx;
+}
+
+.form-sheet {
+  overflow: hidden;
+  border: 2rpx solid #dde5e0;
+  border-radius: 20rpx;
+  background: #ffffff;
 }
 
 .form-section {
-  margin-bottom: 28rpx;
-  padding: 32rpx 28rpx 4rpx;
-  border: 2rpx solid #e0e7e3;
-  border-radius: 22rpx;
-  background: #fbfcfa;
+  padding: 32rpx 28rpx 2rpx;
+  border-bottom: 2rpx solid #e5ebe7;
+}
+
+.form-section:last-child {
+  border-bottom: 0;
 }
 
 .form-section--dated {
-  position: relative;
-  overflow: hidden;
-  border-top: 8rpx solid #719787;
+  background: #e8f2ed;
 }
 
 .form-section__title {
   display: block;
   margin-bottom: 26rpx;
-  color: #29443a;
-  font-size: 27rpx;
+  color: #173b31;
+  font-size: 30rpx;
   font-weight: 650;
+}
+
+.required-mark {
+  color: #b84a3e;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 22rpx;
 }
 
 .field {
@@ -87,7 +100,7 @@
   display: flex;
   padding: 6rpx;
   border-radius: 16rpx;
-  background: #eaf0ed;
+  background: rgba(31, 93, 73, 0.09);
 }
 
 .mode-switch__item {
@@ -96,7 +109,7 @@
   padding: 0 10rpx;
   border-radius: 12rpx;
   background: transparent;
-  color: #65766e;
+  color: #607269;
   font-size: 25rpx;
   font-weight: 500;
   line-height: 88rpx;
@@ -104,8 +117,8 @@
 
 .mode-switch__item--active {
   background: #ffffff;
-  box-shadow: 0 5rpx 14rpx rgba(38, 70, 58, 0.08);
-  color: #245b49;
+  box-shadow: 0 5rpx 14rpx rgba(23, 59, 49, 0.08);
+  color: #1f5d49;
   font-weight: 650;
 }
 
@@ -116,20 +129,22 @@
 }
 
 .date-control__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 42rpx;
-  height: 42rpx;
-  border: 2rpx solid #b9c9c1;
-  border-top: 7rpx solid #719787;
-  border-radius: 6rpx;
-  color: #6c7b74;
-  font-size: 18rpx;
+  width: 30rpx;
+  height: 30rpx;
+  color: #54766a;
 }
 
 .date-control__arrow {
-  color: #83918a;
+  width: 26rpx;
+  height: 26rpx;
+  color: #84918b;
+}
+
+.date-control__arrow::before {
+  top: 6rpx;
+  left: 8rpx;
+  width: 9rpx;
+  height: 9rpx;
 }
 
 .expiry-preview {
@@ -138,23 +153,23 @@
   justify-content: space-between;
   margin: -4rpx 0 30rpx;
   padding: 20rpx 22rpx;
-  border-left: 6rpx solid #cbd6d1;
-  background: #f0f4f1;
+  border-left: 6rpx solid #b8c9c1;
+  background: rgba(255, 255, 255, 0.46);
 }
 
 .expiry-preview--ready {
-  border-left-color: #3f775f;
-  background: #eaf2ed;
+  border-left-color: #1f5d49;
+  background: #ffffff;
 }
 
 .expiry-preview__label {
-  color: #6e7c75;
+  color: #687970;
   font-size: 24rpx;
 }
 
 .expiry-preview__date {
-  color: #294b3e;
-  font-family: "DIN Alternate", monospace;
+  color: #173b31;
+  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
   font-size: 27rpx;
   font-weight: 650;
 }
@@ -166,7 +181,7 @@
   width: 100%;
   min-height: 88rpx;
   padding: 0 24rpx;
-  border: 2rpx solid #dbe3df;
+  border: 2rpx solid #dde5e0;
   border-radius: 16rpx;
   background: #ffffff;
 }
@@ -177,24 +192,29 @@
 }
 
 .number-suffix-control__suffix {
-  color: #75847d;
+  color: #6e7d76;
   font-size: 25rpx;
 }
 
 .field-help {
   display: block;
   margin-top: 12rpx;
-  color: #829089;
+  color: #84918b;
   font-size: 22rpx;
 }
 
 .save-button {
-  margin-top: 40rpx;
+  position: fixed;
+  right: 32rpx;
+  bottom: calc(24rpx + env(safe-area-inset-bottom));
+  left: 32rpx;
+  z-index: 10;
+  box-shadow: 0 12rpx 28rpx rgba(23, 59, 49, 0.18);
 }
 
 .form-loading {
   padding: 160rpx 0;
-  color: #76847e;
+  color: #74817b;
   text-align: center;
 }
 
@@ -204,8 +224,19 @@
   margin-left: 12rpx;
   padding: 0;
   background: transparent;
-  color: #8f392e;
+  color: #9e3e34;
   font-size: 25rpx;
   font-weight: 650;
   line-height: 88rpx;
+}
+
+@media (max-width: 340px) {
+  .form-section {
+    padding-right: 22rpx;
+    padding-left: 22rpx;
+  }
+
+  .field-row {
+    gap: 14rpx;
+  }
 }

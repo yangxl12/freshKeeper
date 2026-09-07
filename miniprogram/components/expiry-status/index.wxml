@@ -1,4 +1,3 @@
 <view class="status status--{{tone}}">
-  <view class="status__dot" aria-hidden="true"></view>
   <text>{{text}}</text>
 </view>
