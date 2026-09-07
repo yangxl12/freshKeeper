@@ -63,8 +63,12 @@ function validateSaveInput(input) {
   assert(Number.isInteger(input.quantity) && input.quantity >= 1 && input.quantity <= 9999, 'INVALID_ARGUMENT', '数量需为 1～9999 的整数')
   assert(unit.length >= 1 && unit.length <= 8, 'INVALID_ARGUMENT', '单位需为 1～8 个字符')
   assert(CATEGORIES.has(input.category), 'INVALID_ARGUMENT', '物品分类不正确')
-  assert(typeof input.storageLocation === 'string', 'INVALID_ARGUMENT', '存放位置不正确')
-  const storageLocation = input.storageLocation.trim()
+  const storageLocation = input.storageLocation == null
+    ? ''
+    : typeof input.storageLocation === 'string'
+      ? input.storageLocation.trim()
+      : null
+  assert(storageLocation !== null, 'INVALID_ARGUMENT', '存放位置不正确')
   assert(storageLocation.length <= 20, 'INVALID_ARGUMENT', '存放位置不能超过 20 个字符')
   assert(INPUT_MODES.has(input.expiryInputMode), 'INVALID_ARGUMENT', '到期录入方式不正确')
   assert(Number.isInteger(input.reminderLeadDays) && input.reminderLeadDays >= 0 && input.reminderLeadDays <= 30, 'INVALID_ARGUMENT', '提前提醒需为 0～30 天的整数')
@@ -140,7 +144,7 @@ function validateOptionalCategory(value) {
 }
 
 function validateOptionalStorage(value) {
-  if (!value) return ''
+  if (value == null || value === '') return ''
   assert(typeof value === 'string', 'INVALID_ARGUMENT', '存放位置不正确')
   const storageLocation = value.trim()
   assert(storageLocation.length <= 20, 'INVALID_ARGUMENT', '存放位置不能超过 20 个字符')

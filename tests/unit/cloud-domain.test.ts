@@ -102,7 +102,16 @@ describe('cloud inventory domain', () => {
     expect(validation.validateSaveInput({ ...validSaveInput(), storageLocation: '  床头柜  ' })).toMatchObject({
       storageLocation: '床头柜',
     })
+    expect(validation.validateSaveInput({ ...validSaveInput(), storageLocation: '冰箱' })).toMatchObject({
+      storageLocation: '冰箱',
+    })
     expect(validation.validateSaveInput({ ...validSaveInput(), storageLocation: '' })).toMatchObject({
+      storageLocation: '',
+    })
+    expect(validation.validateSaveInput({
+      ...validSaveInput(),
+      storageLocation: undefined,
+    })).toMatchObject({
       storageLocation: '',
     })
     expect(() => validation.validateSaveInput({ ...validSaveInput(), storageLocation: 'x'.repeat(21) })).toThrow(/20/)

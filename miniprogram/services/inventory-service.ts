@@ -10,7 +10,7 @@ import type {
   InventoryViewStatus,
   LegacyInventoryListResult,
 } from '../types/inventory'
-import { callCloud } from './cloud-client'
+import { CloudServiceError, callCloud } from './cloud-client'
 
 export interface ListActiveParams {
   search?: string
@@ -119,11 +119,21 @@ export function listTrash(params: {
   cursor?: string | null
   pageSize?: number
 } = {}): Promise<HistoryListResult> {
-  return callCloud('inventoryApi', {
+  const request = callCloud<HistoryListResult>('inventoryApi', {
     action: 'listTrash',
     search: params.search || '',
     cursor: params.cursor || null,
     pageSize: params.pageSize || 30,
+  })
+  return request.catch((error) => {
+    // Keep existing deployments usable while the new listTrash action rolls out.
+    if (!(error instanceof CloudServiceError) || error.code !== 'INVALID_ACTION') throw error
+    return listHistory({
+      search: params.search,
+      status: 'discarded',
+      cursor: params.cursor,
+      pageSize: params.pageSize,
+    })
   })
 }
 

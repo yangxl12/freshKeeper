@@ -158,7 +158,7 @@ freshKeeper/
 | `quantity` | integer | 是 | 使用中为 1～9999；完成后允许为 0 |
 | `unit` | string | 是 | 默认“件”，1～8 字符 |
 | `category` | enum | 是 | `food/medicine/household/other` |
-| `storageLocation` | enum | 是 | `refrigerated/frozen/cabinet/medicine_box/other` |
+| `storageLocation` | string | 否 | 用户自定义存放位置，最长 20 个字符；空值表示未填写 |
 | `expiryInputMode` | enum | 是 | `direct/shelf_life` |
 | `productionDate` | date-key/null | 否 | 生产日期 |
 | `shelfLifeValue` | integer/null | 否 | 保质期数值 |

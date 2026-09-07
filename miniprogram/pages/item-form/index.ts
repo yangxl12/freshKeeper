@@ -94,7 +94,7 @@ Page({
         categoryIndex: categoryIndex >= 0 ? categoryIndex : 0,
         storageLocation:
           LEGACY_STORAGE_LABELS[item.storageLocation] ||
-          (item.storageLocation === '' ? '' : item.storageLabel),
+          (item.storageLocation ? item.storageLabel : ''),
         expiryDate: item.expiryDate,
         productionDate: item.productionDate || '',
         shelfLifeValue: item.shelfLifeValue ? String(item.shelfLifeValue) : '',
