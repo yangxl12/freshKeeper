@@ -87,7 +87,7 @@ flowchart LR
 | 小程序页面层 | 展示、表单交互、搜索筛选条件、加载/空/错误状态 |
 | 小程序 service 层 | 封装云函数调用、统一响应和错误映射，不包含业务状态转换 |
 | `inventoryApi` | 库存查询、详情、保存、减量、完成、丢弃、删除和历史记录 |
-| `settingsApi` | 获取与修改默认提醒天数、默认存放位置 |
+| `settingsApi` | 获取与修改默认提醒天数 |
 | `reminderApi` | 在订阅授权成功后登记提醒，或主动取消未发送提醒 |
 | `dispatchReminders` | 定时领取到期任务、发送订阅消息、落发送结果 |
 | 云数据库 | 保存库存、设置和提醒任务；不允许小程序端直接读写 |
@@ -179,8 +179,7 @@ freshKeeper/
 | --- | --- | --- |
 | `_id` | string | 使用 `OPENID`，仅服务端可见 |
 | `ownerId` | string | 与当前用户一致 |
-| `defaultReminderLeadDays` | integer | 0～30，默认 3 |
-| `defaultStorageLocation` | enum/null | 未设置时由表单展示“其他”或空选择 |
+| `defaultReminderLeadDays` | integer | 0～30，默认 1 |
 | `createdAt/updatedAt` | server date | 服务端时间 |
 
 用户首次进入不强制创建设置记录；查询不到时由服务端返回默认值，首次修改时再写入。
@@ -293,7 +292,7 @@ type ApiResult<T> =
 | action | 行为 |
 | --- | --- |
 | `get` | 返回已保存设置或服务端默认值 |
-| `update` | 仅允许更新默认提醒天数和默认存放位置 |
+| `update` | 仅允许更新默认提醒天数 |
 
 “提醒授权状态”不能简单保存成永久布尔值。页面应展示：平台设置入口说明，以及当前物品是否存在 `scheduled/sent` 任务；真正能否发送最终由微信订阅额度决定。
 

@@ -43,6 +43,14 @@
 - `dispatchReminders`
 - `cleanupTrash`
 
+编译或上传小程序不会同步更新云函数。只要 `cloudfunctions/` 有改动，发布对应客户端前必须单独部署相关函数；否则新客户端仍会调用旧接口。也可以使用开发者工具 CLI：
+
+```bash
+cli cloud functions deploy --env <环境ID> --names <函数名> --project <项目目录> --remote-npm-install
+```
+
+部署 `settingsApi` 后，应在“我的 → 提醒设置”中修改默认提醒天数并保存一次，确认云端只校验提醒天数；保存时会同时清除当前用户历史设置中的废弃默认存放位置字段。
+
 运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用前三个业务函数；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
 
 为 `reminderApi` 配置环境变量：

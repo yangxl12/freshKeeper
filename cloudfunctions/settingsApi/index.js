@@ -8,6 +8,7 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database()
 const SETTINGS = 'user_settings'
 const REMINDERS = 'reminder_jobs'
+const LEGACY_DEFAULT_STORAGE_FIELD = 'defaultStorageLocation'
 
 class AppError extends Error {
   constructor(code, message) {
@@ -53,7 +54,7 @@ async function getSettings(ownerId) {
 
 function validateSettings(input) {
   assert(input && typeof input === 'object' && !Array.isArray(input), 'INVALID_ARGUMENT', '设置内容不正确')
-  const allowed = new Set(['defaultReminderLeadDays'])
+  const allowed = new Set(['defaultReminderLeadDays', LEGACY_DEFAULT_STORAGE_FIELD])
   for (const key of Object.keys(input)) {
     assert(allowed.has(key), 'FORBIDDEN_FIELD', `设置字段 ${key} 不允许修改`)
   }
@@ -64,6 +65,14 @@ function validateSettings(input) {
     'INVALID_ARGUMENT',
     '默认提醒天数需为 0～30 的整数',
   )
+  if (Object.prototype.hasOwnProperty.call(input, LEGACY_DEFAULT_STORAGE_FIELD)) {
+    const legacyValue = input[LEGACY_DEFAULT_STORAGE_FIELD]
+    assert(
+      legacyValue === null || (typeof legacyValue === 'string' && legacyValue.length <= 100),
+      'INVALID_ARGUMENT',
+      '设置内容不正确',
+    )
+  }
   return {
     defaultReminderLeadDays: input.defaultReminderLeadDays,
   }
@@ -76,7 +85,7 @@ async function updateSettings(ownerId, event) {
     await db.collection(SETTINGS).where({ _id: ownerId, ownerId }).update({
       data: {
         ...normalized,
-        defaultStorageLocation: db.command.remove(),
+        [LEGACY_DEFAULT_STORAGE_FIELD]: db.command.remove(),
         updatedAt: db.serverDate(),
       },
     })
