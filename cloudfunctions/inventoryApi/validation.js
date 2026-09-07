@@ -69,7 +69,6 @@ function validateSaveInput(input) {
       ? input.storageLocation.trim()
       : null
   assert(storageLocation !== null, 'INVALID_ARGUMENT', '存放位置不正确')
-  assert(storageLocation.length <= 20, 'INVALID_ARGUMENT', '存放位置不能超过 20 个字符')
   assert(INPUT_MODES.has(input.expiryInputMode), 'INVALID_ARGUMENT', '到期录入方式不正确')
   assert(Number.isInteger(input.reminderLeadDays) && input.reminderLeadDays >= 0 && input.reminderLeadDays <= 30, 'INVALID_ARGUMENT', '提前提醒需为 0～30 天的整数')
 
@@ -146,9 +145,7 @@ function validateOptionalCategory(value) {
 function validateOptionalStorage(value) {
   if (value == null || value === '') return ''
   assert(typeof value === 'string', 'INVALID_ARGUMENT', '存放位置不正确')
-  const storageLocation = value.trim()
-  assert(storageLocation.length <= 20, 'INVALID_ARGUMENT', '存放位置不能超过 20 个字符')
-  return storageLocation
+  return value.trim()
 }
 
 function validateHistoryStatus(value) {

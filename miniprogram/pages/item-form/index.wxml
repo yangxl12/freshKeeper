@@ -136,7 +136,6 @@
         <input
           class="field-control"
           value="{{storageLocation}}"
-          maxlength="20"
           placeholder="可任意输入，例如冰箱、床头柜"
           placeholder-class="field-placeholder"
           data-field="storageLocation"

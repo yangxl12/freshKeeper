@@ -168,7 +168,6 @@ Page({
       return '数量需为 1～9999 的整数'
     }
     if (!unit || unit.length > 8) return '单位需为 1～8 个字符'
-    if (this.data.storageLocation.trim().length > 20) return '存放位置不能超过 20 个字符'
     if (!Number.isInteger(reminderLeadDays) || reminderLeadDays < 0 || reminderLeadDays > 30) {
       return '提前提醒需为 0～30 天的整数'
     }
