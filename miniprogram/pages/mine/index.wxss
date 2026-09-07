@@ -52,13 +52,19 @@
 
 .record-tab {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
   min-height: 76rpx;
   margin: 0;
   padding: 0;
   background: transparent;
   color: #7a8881;
   font-size: 26rpx;
-  line-height: 76rpx;
+  line-height: 1;
+  text-align: center;
 }
 
 .record-tab--active {

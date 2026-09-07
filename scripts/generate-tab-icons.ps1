@@ -7,15 +7,24 @@ function New-TabIcon {
   param(
     [Parameter(Mandatory = $true)][string]$OutputPath,
     [Parameter(Mandatory = $true)][ValidateSet('home', 'inventory', 'mine')][string]$Kind,
-    [Parameter(Mandatory = $true)][string]$ColorHex
+    [Parameter(Mandatory = $true)][string]$ColorHex,
+    [switch]$Active
   )
 
   $bitmap = [System.Drawing.Bitmap]::new($iconSize, $iconSize)
   $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+  $strokeWidth = if ($Active) { 4.2 } else { 3.4 }
   $pen = [System.Drawing.Pen]::new(
     [System.Drawing.ColorTranslator]::FromHtml($ColorHex),
-    3.4
+    $strokeWidth
   )
+  $activeBackground = if ($Active) {
+    [System.Drawing.SolidBrush]::new(
+      [System.Drawing.ColorTranslator]::FromHtml('#E2F0E9')
+    )
+  } else {
+    $null
+  }
 
   try {
     $graphics.Clear([System.Drawing.Color]::Transparent)
@@ -24,6 +33,10 @@ function New-TabIcon {
     $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
     $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
     $pen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+
+    if ($Active) {
+      $graphics.FillEllipse($activeBackground, 3, 3, 75, 75)
+    }
 
     if ($Kind -eq 'home') {
       $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
@@ -60,15 +73,18 @@ function New-TabIcon {
 
     $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
   } finally {
+    if ($null -ne $activeBackground) {
+      $activeBackground.Dispose()
+    }
     $pen.Dispose()
     $graphics.Dispose()
     $bitmap.Dispose()
   }
 }
 
-New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-home.png') -Kind home -ColorHex '#84918B'
-New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-home-active.png') -Kind home -ColorHex '#1F5D49'
-New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-inventory.png') -Kind inventory -ColorHex '#84918B'
-New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-inventory-active.png') -Kind inventory -ColorHex '#1F5D49'
-New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-mine.png') -Kind mine -ColorHex '#84918B'
-New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-mine-active.png') -Kind mine -ColorHex '#1F5D49'
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-home.png') -Kind home -ColorHex '#929E98'
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-home-active.png') -Kind home -ColorHex '#176348' -Active
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-inventory.png') -Kind inventory -ColorHex '#929E98'
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-inventory-active.png') -Kind inventory -ColorHex '#176348' -Active
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-mine.png') -Kind mine -ColorHex '#929E98'
+New-TabIcon -OutputPath (Join-Path $assetDirectory 'tab-mine-active.png') -Kind mine -ColorHex '#176348' -Active
