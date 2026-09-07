@@ -101,27 +101,43 @@
         disabled="{{actionLoading}}"
         bindtap="confirmComplete"
         hover-class="pressable--pressed"
-      >标记已用完</button>
-      <button
-        class="secondary-button stock-actions__decrement"
-        disabled="{{actionLoading}}"
-        bindtap="decrement"
-        hover-class="pressable--pressed"
-      >数量减一</button>
-    </view>
-
-    <view wx:if="{{item.inventoryStatus === 'active'}}" class="danger-zone">
-      <text class="danger-zone__title">其他处理</text>
-      <view class="danger-zone__actions">
-        <button class="danger-zone__action" disabled="{{actionLoading}}" bindtap="confirmDiscard" hover-class="pressable--pressed">标记已丢弃</button>
-        <button class="danger-zone__action" disabled="{{actionLoading}}" bindtap="confirmDelete" hover-class="pressable--pressed">删除误录记录</button>
+      >标记为已用完</button>
+      <view class="decrement-control">
+        <text class="decrement-control__label">数量减</text>
+        <input
+          class="decrement-control__input"
+          value="{{decrementAmount}}"
+          type="number"
+          maxlength="4"
+          bindinput="handleDecrementInput"
+          aria-label="减少数量"
+        />
+        <button
+          class="secondary-button decrement-control__button"
+          disabled="{{actionLoading}}"
+          bindtap="decrement"
+          hover-class="pressable--pressed"
+        >确认</button>
       </view>
     </view>
 
-    <view wx:else class="history-note">
-      <text class="history-note__title">这件物品已{{item.inventoryStatus === 'used_up' ? '用完' : '丢弃'}}</text>
-      <text class="history-note__copy">历史记录用于回顾，不再参与当前库存统计。</text>
+    <view wx:if="{{item.inventoryStatus === 'active'}}" class="danger-zone">
+      <button class="danger-button delete-button" disabled="{{actionLoading}}" bindtap="confirmDelete" hover-class="pressable--pressed">删除</button>
+    </view>
+
+    <view wx:elif="{{item.inventoryStatus === 'used_up'}}" class="history-note">
+      <text class="history-note__title">这件物品已用完</text>
+      <text class="history-note__copy">该记录不再参与当前库存统计。</text>
       <button class="secondary-button" bindtap="backHome" hover-class="pressable--pressed">返回当前库存</button>
+      <button class="danger-button history-note__delete" disabled="{{actionLoading}}" bindtap="confirmDelete" hover-class="pressable--pressed">删除</button>
+    </view>
+
+    <view wx:else class="trash-note">
+      <text class="trash-note__eyebrow">回收站</text>
+      <text class="trash-note__title">可在 {{item.purgeDateText || '近期' }} 前恢复</text>
+      <text class="trash-note__copy">重新编辑并确认后，这件物品会再次进入库存。</text>
+      <button class="primary-button" disabled="{{actionLoading}}" bindtap="restoreItem" hover-class="pressable--pressed">重新编辑</button>
+      <button class="danger-button trash-note__delete" disabled="{{actionLoading}}" bindtap="confirmPermanentDelete" hover-class="pressable--pressed">彻底删除</button>
     </view>
   </block>
 </view>

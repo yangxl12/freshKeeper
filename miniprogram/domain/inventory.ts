@@ -2,7 +2,6 @@ import type {
   Category,
   ExpiryStatus,
   InventoryItem,
-  InventoryStatus,
   InventoryViewStatus,
   ShelfLifeUnit,
   StorageLocation,
@@ -79,15 +78,6 @@ export const SHELF_LIFE_OPTIONS: ReadonlyArray<{
   { value: 'day', label: '天' },
   { value: 'month', label: '个月' },
   { value: 'year', label: '年' },
-]
-
-export const HISTORY_STATUS_OPTIONS: ReadonlyArray<{
-  value: InventoryStatus | ''
-  label: string
-}> = [
-  { value: '', label: '全部' },
-  { value: 'used_up', label: '已用完' },
-  { value: 'discarded', label: '已丢弃' },
 ]
 
 export const EXPIRY_GROUPS: ReadonlyArray<{

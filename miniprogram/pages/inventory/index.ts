@@ -219,6 +219,18 @@ Page({
     wx.navigateTo({ url: '/pages/item-form/index' })
   },
 
+  openBatchOperations() {
+    if (!this.data.items.length) return
+    const app = getApp<IAppOption>()
+    app.globalData.pendingBatchIntent = {
+      source: 'inventory',
+      search: this.data.search,
+      category: this.data.category,
+      viewStatus: this.data.viewStatus,
+    }
+    wx.navigateTo({ url: '/pages/batch-operation/index?source=inventory' })
+  },
+
   handleEmptyAction() {
     if (this.data.hasActiveConditions) this.resetFilters()
     else this.addItem()

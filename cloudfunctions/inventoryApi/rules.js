@@ -1,14 +1,21 @@
 'use strict'
 
-function getDecrementDecision(inventoryStatus, quantity) {
-  if (inventoryStatus !== 'active' || !Number.isInteger(quantity) || quantity < 1) {
+function getDecrementDecision(inventoryStatus, quantity, amount = 1) {
+  if (
+    inventoryStatus !== 'active' ||
+    !Number.isInteger(quantity) ||
+    quantity < 1 ||
+    !Number.isInteger(amount) ||
+    amount < 1 ||
+    amount > quantity
+  ) {
     return 'invalid_state'
   }
-  return quantity === 1 ? 'requires_completion' : 'decrement'
+  return amount === quantity ? 'requires_completion' : 'decrement'
 }
 
 function canTransitionInventory(inventoryStatus, targetStatus) {
-  return inventoryStatus === 'active' && ['used_up', 'discarded'].includes(targetStatus)
+  return inventoryStatus === 'active' && targetStatus === 'used_up'
 }
 
 function getOverviewBucket(inventoryStatus, expiryDate, today, expiringEnd) {

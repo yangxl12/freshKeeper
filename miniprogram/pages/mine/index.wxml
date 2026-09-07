@@ -1,130 +1,72 @@
 <view class="mine page-shell">
-  <view class="mine-header">
-    <text class="mine-header__title">我的保鲜设置</text>
-  </view>
+  <button class="settings-entry" bindtap="openSettings" hover-class="pressable--pressed">
+    <view>
+      <text class="settings-entry__title">提醒设置</text>
+      <text class="settings-entry__value">默认提前 {{reminderDayIndex}} 天</text>
+    </view>
+    <text class="settings-entry__action">设置</text>
+  </button>
 
-  <view class="settings-panel">
-    <view class="settings-panel__heading">
-      <text class="settings-panel__title">默认设置</text>
-      <text wx:if="{{settingsSaving}}" class="settings-panel__saving">保存中…</text>
+  <view class="records">
+    <view class="record-tabs" role="tablist">
+      <button class="record-tab {{recordMode === 'used_up' ? 'record-tab--active' : ''}}" data-mode="used_up" bindtap="switchRecordMode">处理记录</button>
+      <button class="record-tab {{recordMode === 'trash' ? 'record-tab--active' : ''}}" data-mode="trash" bindtap="switchRecordMode">回收站</button>
     </view>
-    <view wx:if="{{settingsError}}" class="compact-error">
-      <text>{{settingsError}}</text>
-      <button bindtap="retrySettings" hover-class="pressable--pressed">重试</button>
-    </view>
-    <view wx:if="{{settingsLoading}}" class="settings-loading">正在读取设置…</view>
-    <block wx:else>
-      <picker disabled="{{settingsSaving}}" mode="selector" range="{{reminderDayOptions}}" range-key="label" value="{{reminderDayIndex}}" bindchange="handleReminderDaysChange">
-        <view class="setting-row">
-          <view class="setting-row__main">
-            <view class="setting-icon" aria-hidden="true">
-              <view class="line-icon line-icon--calendar setting-icon__calendar"></view>
-            </view>
-            <view>
-              <text class="setting-row__label">默认提前提醒</text>
-              <text class="setting-row__description">新增物品时自动带入</text>
-            </view>
-          </view>
-          <view class="setting-row__value">
-            <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
-            <view class="line-icon line-icon--chevron line-icon--chevron-right setting-row__chevron" aria-hidden="true"></view>
-          </view>
-        </view>
-      </picker>
-      <picker disabled="{{settingsSaving}}" mode="selector" range="{{storageOptions}}" range-key="label" value="{{storageIndex}}" bindchange="handleStorageChange">
-        <view class="setting-row">
-          <view class="setting-row__main">
-            <view class="setting-icon" aria-hidden="true">
-              <view class="setting-icon__symbol setting-icon__symbol--pin"></view>
-            </view>
-            <view>
-              <text class="setting-row__label">默认存放位置</text>
-              <text class="setting-row__description">可在单件物品中修改</text>
-            </view>
-          </view>
-          <view class="setting-row__value">
-            <text>{{storageOptions[storageIndex].label}}</text>
-            <view class="line-icon line-icon--chevron line-icon--chevron-right setting-row__chevron" aria-hidden="true"></view>
-          </view>
-        </view>
-      </picker>
-      <view class="setting-row setting-row--notification">
-        <view class="setting-row__main setting-row__main--notification">
-          <view class="setting-icon" aria-hidden="true">
-            <view class="setting-icon__symbol setting-icon__symbol--message"></view>
-          </view>
-          <view>
-            <text class="setting-row__label">提醒授权</text>
-            <text class="setting-row__description setting-row__description--wide">{{subscriptionSummary}}</text>
-          </view>
-        </view>
-        <button class="setting-row__link" bindtap="openNotificationSettings" hover-class="pressable--pressed">查看设置</button>
+
+    <view class="records__heading">
+      <view>
+        <text class="records__title">{{recordMode === 'trash' ? '回收站' : '已用完'}}</text>
+        <text class="records__hint">{{recordMode === 'trash' ? '已删除物品保留 30 天' : '按完成时间倒序'}}</text>
       </view>
+      <button wx:if="{{recordMode === 'trash'}}" class="records__batch" disabled="{{!recordItems.length}}" bindtap="openTrashBatch" hover-class="pressable--pressed">批量操作</button>
+    </view>
+
+    <view class="record-search">
+      <view class="line-icon line-icon--search record-search__icon" aria-hidden="true"></view>
+      <input class="record-search__input" value="{{recordSearch}}" placeholder="{{recordMode === 'trash' ? '搜索已删除物品' : '搜索已用完物品'}}" placeholder-class="record-search__placeholder" bindinput="handleRecordSearch" />
+      <button wx:if="{{recordSearch}}" class="record-search__clear" bindtap="clearRecordSearch" hover-class="pressable--pressed" aria-label="清空搜索"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
+    </view>
+
+    <view wx:if="{{recordError}}" class="compact-error"><text>{{recordError}}</text><button bindtap="retryRecords" hover-class="pressable--pressed">重试</button></view>
+    <view wx:if="{{recordLoading}}" class="record-loading">正在读取记录…</view>
+    <block wx:elif="{{recordItems.length}}">
+      <view wx:for="{{recordItems}}" wx:key="_id" class="record-item">
+        <inventory-row item="{{item}}" bind:select="openRecordItem" />
+        <view wx:if="{{recordMode === 'trash'}}" class="trash-row-meta">
+          <text>{{item.purgeDateText ? item.purgeDateText + ' 后自动清理' : '将在后续清理任务中移除'}}</text>
+          <button data-id="{{item._id}}" data-version="{{item.version}}" catchtap="deleteTrashItem" hover-class="pressable--pressed">彻底删除</button>
+        </view>
+      </view>
+      <view wx:if="{{recordLoadingMore}}" class="record-loading record-loading--more">正在加载更多…</view>
+      <view wx:elif="{{!recordNextCursor}}" class="record-end">没有更多记录了</view>
     </block>
+    <empty-state wx:elif="{{!recordError}}" compact title="{{recordSearch ? '没有匹配的记录' : (recordMode === 'trash' ? '回收站是空的' : '还没有已用完记录')}}" description="{{recordSearch ? '换个名称或清空搜索后再试' : (recordMode === 'trash' ? '删除的物品会在这里保留 30 天' : '标记为已用完的物品会保留在这里')}}" action-text="{{recordSearch ? '清空搜索' : ''}}" bind:action="clearRecordSearch" />
   </view>
 
-  <view class="history">
-    <view class="history__heading">
-      <text class="history__title">历史记录</text>
-      <text class="history__hint">按完成时间倒序</text>
+  <view wx:if="{{settingsVisible}}" class="settings-modal" bindtap="closeSettings">
+    <view class="settings-dialog" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
+      <view class="settings-dialog__heading">
+        <view><text class="settings-dialog__title">提醒设置</text><text class="settings-dialog__subtitle">用于新增物品和微信通知</text></view>
+        <button class="settings-dialog__close" disabled="{{settingsSaving}}" bindtap="closeSettings" aria-label="关闭设置">×</button>
+      </view>
+      <view wx:if="{{settingsError}}" class="compact-error"><text>{{settingsError}}</text><button bindtap="retrySettings">重试</button></view>
+      <view wx:if="{{settingsLoading}}" class="settings-loading">正在读取设置…</view>
+      <block wx:else>
+        <picker disabled="{{settingsSaving}}" mode="selector" range="{{reminderDayOptions}}" range-key="label" value="{{reminderDayIndex}}" bindchange="handleReminderDaysChange">
+          <view class="setting-row">
+            <view><text class="setting-row__label">默认提前提醒</text><text class="setting-row__description">新增物品时自动带入</text></view>
+            <view class="setting-row__value"><text>{{reminderDayOptions[reminderDayIndex].label}}</text><view class="line-icon line-icon--chevron line-icon--chevron-right setting-row__chevron" aria-hidden="true"></view></view>
+          </view>
+        </picker>
+        <view class="setting-row setting-row--notification">
+          <view class="setting-row__notification-copy"><text class="setting-row__label">提醒授权</text><text class="setting-row__description">{{subscriptionSummary}}</text></view>
+          <button class="setting-row__link" bindtap="openNotificationSettings" hover-class="pressable--pressed">查看设置</button>
+        </view>
+      </block>
+      <view class="settings-dialog__actions">
+        <button class="secondary-button" disabled="{{settingsSaving}}" bindtap="closeSettings">取消</button>
+        <button class="primary-button" disabled="{{settingsSaving || settingsLoading}}" bindtap="saveSettings">{{settingsSaving ? '保存中…' : '保存'}}</button>
+      </view>
     </view>
-
-    <view class="history-search">
-      <view class="line-icon line-icon--search history-search__icon" aria-hidden="true"></view>
-      <input
-        class="history-search__input"
-        value="{{historySearch}}"
-        placeholder="搜索历史物品"
-        placeholder-class="history-search__placeholder"
-        bindinput="handleHistorySearch"
-      />
-      <button
-        wx:if="{{historySearch}}"
-        class="history-search__clear"
-        bindtap="clearHistorySearch"
-        hover-class="pressable--pressed"
-        aria-label="清空搜索"
-      ><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
-    </view>
-
-    <view class="history-tabs">
-      <button
-        wx:for="{{historyStatusOptions}}"
-        wx:key="value"
-        class="history-tab {{historyStatusIndex === index ? 'history-tab--active' : ''}}"
-        data-index="{{index}}"
-        bindtap="handleHistoryStatus"
-        hover-class="pressable--pressed"
-      >{{item.label}}</button>
-    </view>
-
-    <view wx:if="{{historyError}}" class="compact-error">
-      <text>{{historyError}}</text>
-      <button bindtap="retryHistory" hover-class="pressable--pressed">重试</button>
-    </view>
-    <view wx:if="{{historyLoading}}" class="history-loading">正在读取历史…</view>
-    <block wx:elif="{{historyItems.length}}">
-      <inventory-row
-        wx:for="{{historyItems}}"
-        wx:key="_id"
-        item="{{item}}"
-        bind:select="openHistoryItem"
-      />
-      <view wx:if="{{historyLoadingMore}}" class="history-loading history-loading--more">正在加载更多…</view>
-      <view wx:elif="{{!historyNextCursor}}" class="history-end">没有更多记录了</view>
-    </block>
-    <empty-state
-      wx:elif="{{!historyError}}"
-      compact
-      title="{{historySearch ? '没有匹配的历史记录' : '还没有处理记录'}}"
-      description="{{historySearch ? '换个名称或清空搜索后再试' : '用完或丢弃的物品会保留在这里'}}"
-      action-text="{{historySearch ? '清空搜索' : ''}}"
-      bind:action="clearHistorySearch"
-    />
-  </view>
-
-  <view class="about">
-    <text class="about__name">保质期助手 · MVP</text>
-    <text class="about__copy">记录食品、药品和日化用品的到期时间。首版数据仅供你本人查看。</text>
   </view>
 </view>

@@ -17,39 +17,34 @@
   <block wx:elif="{{overview}}">
     <view class="status-grid" aria-label="库存状态">
       <view class="status-card status-card--total" data-card="activeTotal" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="物品总数 {{overview.activeTotal}}，查看全部在库物品">
-        <view class="status-card__topline">
-          <view class="overview-icon overview-icon--inventory" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
-          <text class="status-card__number">{{overview.activeTotal}}</text>
-        </view>
         <text class="status-card__label">物品总数</text>
+        <text class="status-card__number">{{overview.activeTotal}}</text>
+        <text class="status-card__meta">当前在库</text>
       </view>
       <view class="status-card status-card--danger" data-card="expired" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="已过期 {{overview.expired}}，查看已过期物品">
-        <view class="status-card__topline">
-          <view class="overview-icon overview-icon--expired" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
-          <text class="status-card__number">{{overview.expired}}</text>
-        </view>
         <text class="status-card__label">已过期</text>
+        <text class="status-card__number">{{overview.expired}}</text>
+        <text class="status-card__meta">需要处理</text>
       </view>
       <view class="status-card status-card--warning" data-card="expiringWithin7Days" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="临期 {{overview.expiringWithin7Days}}，查看七天内到期物品">
-        <view class="status-card__topline">
-          <view class="overview-icon overview-icon--expiring" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
-          <text class="status-card__number">{{overview.expiringWithin7Days}}</text>
-        </view>
         <text class="status-card__label">临期</text>
+        <text class="status-card__number">{{overview.expiringWithin7Days}}</text>
+        <text class="status-card__meta">7 天内到期</text>
       </view>
       <view class="status-card status-card--neutral" data-card="usedUpTotal" bindtap="openInventory" hover-class="overview-card--pressed" role="button" aria-label="已用完 {{overview.usedUpTotal}}，查看已用完物品">
-        <view class="status-card__topline">
-          <view class="overview-icon overview-icon--used" aria-hidden="true"><view class="overview-icon__glyph"></view></view>
-          <text class="status-card__number">{{overview.usedUpTotal}}</text>
-        </view>
         <text class="status-card__label">已用完</text>
+        <text class="status-card__number">{{overview.usedUpTotal}}</text>
+        <text class="status-card__meta">处理记录</text>
       </view>
     </view>
 
     <view class="expiring-section">
       <view class="expiring-section__heading">
         <text class="expiring-section__title">临期物品</text>
-        <text class="expiring-section__count">{{overview.expiringWithin7Days}} 项</text>
+        <view class="expiring-section__actions">
+          <text class="expiring-section__count">{{overview.expiringWithin7Days}} 项</text>
+          <button class="section-batch-button" disabled="{{!expiringItems.length}}" bindtap="openBatchOperations" hover-class="pressable--pressed">批量操作</button>
+        </view>
       </view>
       <view wx:if="{{expiringItems.length}}" class="expiring-list">
         <inventory-row wx:for="{{expiringItems}}" wx:key="_id" item="{{item}}" bind:select="openItem" />
@@ -63,6 +58,5 @@
   <view class="home__bottom-space"></view>
   <button class="add-button" bindtap="addItem" hover-class="pressable--pressed" aria-label="新增物品">
     <text class="add-button__plus" aria-hidden="true">＋</text>
-    <text>新增</text>
   </button>
 </view>

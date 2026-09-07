@@ -4,8 +4,8 @@ import {
   completeItem,
   decrementItem,
   deleteItem,
-  discardItem,
   getItem,
+  permanentlyDeleteItem,
 } from '../../services/inventory-service'
 import { armReminder, cancelReminder } from '../../services/reminder-service'
 import type { InventoryItem, ReminderStatus } from '../../types/inventory'
@@ -53,6 +53,7 @@ Page({
     actionLoading: false,
     errorMessage: '',
     item: null as ReturnType<typeof decorateItem> | null,
+    decrementAmount: '1',
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -70,7 +71,7 @@ Page({
     this.setData({ loading: !this.data.item, errorMessage: '' })
     try {
       const item = await getItem(this.data.itemId)
-      this.setData({ item: decorateItem(item), loading: false })
+      this.setData({ item: decorateItem(item), loading: false, decrementAmount: '1' })
       wx.setNavigationBarTitle({ title: item.name })
     } catch (error) {
       this.setData({ loading: false, errorMessage: getErrorMessage(error) })
@@ -81,14 +82,31 @@ Page({
     wx.navigateTo({ url: `/pages/item-form/index?id=${this.data.itemId}` })
   },
 
+  restoreItem() {
+    wx.navigateTo({ url: `/pages/item-form/index?id=${this.data.itemId}&restore=1` })
+  },
+
+  handleDecrementInput(event: WechatMiniprogram.Input) {
+    this.setData({ decrementAmount: event.detail.value })
+  },
+
   async decrement() {
     const item = this.data.item
     if (!item || this.data.actionLoading) return
-    if (item.quantity === 1) {
+    const amount = Number(this.data.decrementAmount)
+    if (!Number.isInteger(amount) || amount < 1) {
+      wx.showToast({ title: '请输入正整数', icon: 'none' })
+      return
+    }
+    if (amount > item.quantity) {
+      wx.showToast({ title: '不能超过当前数量', icon: 'none' })
+      return
+    }
+    if (amount === item.quantity) {
       const result = await wx.showModal({
-        title: '这已经是最后一件',
-        content: '数量减为 0 后，将直接标记为已用完。',
-        confirmText: '标记用完',
+        title: '将库存减为 0？',
+        content: '确认后，这件物品将标记为已用完。',
+        confirmText: '确认用完',
         confirmColor: '#245B49',
       })
       if (result.confirm) await this.complete()
@@ -97,13 +115,13 @@ Page({
 
     this.setData({ actionLoading: true })
     try {
-      const result = await decrementItem(item._id, item.version)
+      const result = await decrementItem(item._id, item.version, amount)
       this.setData({
         'item.quantity': result.quantity,
         'item.version': result.version,
         actionLoading: false,
       })
-      wx.showToast({ title: '数量已减一', icon: 'success' })
+      wx.showToast({ title: `数量已减 ${amount}`, icon: 'success' })
     } catch (error) {
       this.handleActionError(error)
     }
@@ -112,7 +130,7 @@ Page({
   async confirmComplete() {
     const result = await wx.showModal({
       title: '标记为已用完？',
-      content: '物品会从当前库存移入历史记录。',
+      content: '物品会从当前库存移入已用完记录。',
       confirmText: '已用完',
       confirmColor: '#245B49',
     })
@@ -126,29 +144,7 @@ Page({
     try {
       await completeItem(item._id, item.version)
       track('item_used_up')
-      wx.showToast({ title: '已移入历史', icon: 'success' })
-      wx.navigateBack()
-    } catch (error) {
-      this.handleActionError(error)
-    }
-  },
-
-  async confirmDiscard() {
-    const item = this.data.item
-    if (!item || this.data.actionLoading) return
-    const result = await wx.showModal({
-      title: '标记为已丢弃？',
-      content: '这条记录会移入历史，并保留当前数量。',
-      confirmText: '确认丢弃',
-      confirmColor: '#A33F32',
-    })
-    if (!result.confirm) return
-
-    this.setData({ actionLoading: true })
-    try {
-      await discardItem(item._id, item.version)
-      track('item_discarded')
-      wx.showToast({ title: '已移入历史', icon: 'success' })
+      wx.showToast({ title: '已标记为用完', icon: 'success' })
       wx.navigateBack()
     } catch (error) {
       this.handleActionError(error)
@@ -159,8 +155,8 @@ Page({
     const item = this.data.item
     if (!item || this.data.actionLoading) return
     const result = await wx.showModal({
-      title: '删除这条误录记录？',
-      content: '删除后无法恢复；用完或丢弃请使用上方处理操作。',
+      title: '删除这件物品？',
+      content: '删除后会移入回收站，30 天内可以重新编辑并入库。',
       confirmText: '删除',
       confirmColor: '#A33F32',
     })
@@ -170,6 +166,27 @@ Page({
     try {
       await deleteItem(item._id, item.version)
       wx.showToast({ title: '已删除', icon: 'success' })
+      wx.navigateBack()
+    } catch (error) {
+      this.handleActionError(error)
+    }
+  },
+
+  async confirmPermanentDelete() {
+    const item = this.data.item
+    if (!item || this.data.actionLoading) return
+    const result = await wx.showModal({
+      title: '彻底删除这件物品？',
+      content: '彻底删除后无法恢复。',
+      confirmText: '彻底删除',
+      confirmColor: '#A33F32',
+    })
+    if (!result.confirm) return
+
+    this.setData({ actionLoading: true })
+    try {
+      await permanentlyDeleteItem(item._id, item.version)
+      wx.showToast({ title: '已彻底删除', icon: 'success' })
       wx.navigateBack()
     } catch (error) {
       this.handleActionError(error)

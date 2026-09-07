@@ -7,14 +7,10 @@
   <view wx:if="{{loading}}" class="form-loading">正在读取物品信息…</view>
 
   <block wx:elif="{{!loadFailed}}">
-    <view class="form-intro">
-      <text class="form-intro__step">{{itemId ? '更新标签' : '贴一张日期标签'}}</text>
-      <text class="form-intro__title">{{itemId ? '修改物品信息' : '记下它什么时候到期'}}</text>
-      <text class="form-intro__description">名称和到期时间必填，其余可稍后补充。</text>
-    </view>
-
     <view class="form-sheet">
     <view class="form-section">
+      <text class="form-section__eyebrow">01</text>
+      <text class="form-section__title">基础信息</text>
       <view class="field">
         <text class="field-label">物品名称 <text class="required-mark">*</text></text>
         <input
@@ -30,7 +26,7 @@
 
       <view class="field-row">
         <view class="field field--quantity">
-          <text class="field-label">数量</text>
+          <text class="field-label">数量 <text class="required-mark">*</text></text>
           <input
             class="field-control"
             value="{{quantity}}"
@@ -41,7 +37,7 @@
           />
         </view>
         <view class="field field--unit">
-          <text class="field-label">单位</text>
+          <text class="field-label">单位 <text class="required-mark">*</text></text>
           <input
             class="field-control"
             value="{{unit}}"
@@ -55,6 +51,7 @@
     </view>
 
     <view class="form-section form-section--dated">
+      <text class="form-section__eyebrow">02</text>
       <text class="form-section__title">到期信息 <text class="required-mark">*</text></text>
       <view class="mode-switch" role="tablist">
         <button
@@ -72,7 +69,7 @@
       </view>
 
       <view wx:if="{{mode === 'direct'}}" class="field field--mode-content">
-        <text class="field-label">到期日期</text>
+        <text class="field-label">到期日期 <text class="required-mark">*</text></text>
         <picker mode="date" value="{{expiryDate}}" end="2200-12-31" data-field="expiryDate" bindchange="handleDateChange">
           <view class="field-control date-control {{!expiryDate ? 'field-placeholder' : ''}}">
             <text>{{expiryDate || '选择日期'}}</text>
@@ -83,7 +80,7 @@
 
       <block wx:else>
         <view class="field field--mode-content">
-          <text class="field-label">生产日期</text>
+          <text class="field-label">生产日期 <text class="required-mark">*</text></text>
           <picker mode="date" value="{{productionDate}}" end="{{today}}" data-field="productionDate" bindchange="handleDateChange">
             <view class="field-control date-control {{!productionDate ? 'field-placeholder' : ''}}">
               <text>{{productionDate || '选择日期'}}</text>
@@ -93,7 +90,7 @@
         </view>
         <view class="field-row">
           <view class="field field--shelf-value">
-            <text class="field-label">保质期</text>
+            <text class="field-label">保质期 <text class="required-mark">*</text></text>
             <input
               class="field-control"
               value="{{shelfLifeValue}}"
@@ -105,7 +102,7 @@
             />
           </view>
           <view class="field field--shelf-unit">
-            <text class="field-label">单位</text>
+            <text class="field-label">单位 <text class="required-mark">*</text></text>
             <picker mode="selector" range="{{shelfLifeOptions}}" range-key="label" value="{{shelfLifeUnitIndex}}" bindchange="handleShelfLifeUnitChange">
               <view class="field-control date-control">
                 <text>{{shelfLifeOptions[shelfLifeUnitIndex].label}}</text>
@@ -122,30 +119,33 @@
     </view>
 
     <view class="form-section">
-      <text class="form-section__title">分类与位置</text>
-      <view class="field-row">
-        <view class="field">
-          <text class="field-label">分类</text>
+      <text class="form-section__eyebrow">03</text>
+      <text class="form-section__title">分类与提醒</text>
+      <view class="field">
+          <text class="field-label">分类 <text class="required-mark">*</text></text>
           <picker mode="selector" range="{{categoryOptions}}" range-key="label" value="{{categoryIndex}}" bindchange="handleCategoryChange">
             <view class="field-control date-control">
               <text>{{categoryOptions[categoryIndex].label}}</text>
               <view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view>
             </view>
           </picker>
-        </view>
-        <view class="field">
-          <text class="field-label">存放位置</text>
-          <picker mode="selector" range="{{storageOptions}}" range-key="label" value="{{storageIndex}}" bindchange="handleStorageChange">
-            <view class="field-control date-control">
-              <text>{{storageOptions[storageIndex].label}}</text>
-              <view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view>
-            </view>
-          </picker>
-        </view>
       </view>
 
       <view class="field">
-        <text class="field-label">提前提醒天数</text>
+        <text class="field-label">存放位置</text>
+        <input
+          class="field-control"
+          value="{{storageLocation}}"
+          maxlength="20"
+          placeholder="如冰箱，床头柜，药箱等"
+          placeholder-class="field-placeholder"
+          data-field="storageLocation"
+          bindinput="handleTextInput"
+        />
+      </view>
+
+      <view class="field">
+        <text class="field-label">提前提醒天数 <text class="required-mark">*</text></text>
         <view class="number-suffix-control">
           <input
             class="number-suffix-control__input"
@@ -163,7 +163,7 @@
     </view>
 
     <button class="primary-button save-button" disabled="{{saving}}" bindtap="save" hover-class="pressable--pressed">
-      {{saving ? '正在保存…' : (itemId ? '保存修改' : '加入库存')}}
+      {{saving ? '正在保存…' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存'))}}
     </button>
   </block>
 </view>

@@ -4,6 +4,7 @@
     "pages/inventory/index",
     "pages/item-form/index",
     "pages/item-detail/index",
+    "pages/batch-operation/index",
     "pages/mine/index"
   ],
   "window": {

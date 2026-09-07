@@ -1,13 +1,8 @@
 export type Category = 'food' | 'medicine' | 'household' | 'other'
-export type StorageLocation =
-  | 'refrigerated'
-  | 'frozen'
-  | 'cabinet'
-  | 'medicine_box'
-  | 'other'
+export type StorageLocation = string
 export type ExpiryInputMode = 'direct' | 'shelf_life'
 export type ShelfLifeUnit = 'day' | 'month' | 'year'
-export type InventoryStatus = 'active' | 'used_up' | 'discarded'
+export type InventoryStatus = 'active' | 'used_up' | 'deleted' | 'discarded'
 export type InventoryViewStatus =
   | 'active_all'
   | 'expired'
@@ -47,6 +42,9 @@ export interface InventoryItem {
   createdAt?: string | Date
   updatedAt?: string | Date
   completedAt?: string | Date | null
+  deletedAt?: string | Date | null
+  purgeAfter?: string | Date | null
+  purgeDateText?: string
   expiryStatus: ExpiryStatus
   daysLeft: number
   expiryStatusText: string
@@ -103,8 +101,17 @@ export interface InventorySaveInput {
 
 export interface UserSettings {
   defaultReminderLeadDays: number
-  defaultStorageLocation: StorageLocation | null
   hasReminderJobs?: boolean
+}
+
+export interface BatchItemReference {
+  itemId: string
+  version: number
+}
+
+export interface BatchMutationResult {
+  succeeded: string[]
+  failed: Array<{ itemId: string; code: string; message: string }>
 }
 
 export type ApiResult<T> =

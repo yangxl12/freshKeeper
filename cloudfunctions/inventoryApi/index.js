@@ -10,6 +10,8 @@ const {
 } = require('./rules')
 const {
   assertNoClientIdentity,
+  validateBatchItems,
+  validateDecrementAmount,
   validateHistoryStatus,
   validateInventoryViewStatus,
   validateItemId,
@@ -44,7 +46,29 @@ const STORAGE_LABELS = {
 const STATUS_LABELS = {
   active: '使用中',
   used_up: '已用完',
-  discarded: '已丢弃',
+  deleted: '已删除',
+  discarded: '已删除',
+}
+
+const TRASH_RETENTION_DAYS = 30
+
+function shanghaiDateKey(value) {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function getPurgeDateText(item) {
+  if (item.purgeAfter) return shanghaiDateKey(item.purgeAfter)
+  return ''
 }
 
 function publicItem(item, today, extra = {}) {
@@ -57,8 +81,9 @@ function publicItem(item, today, extra = {}) {
     ...safeItem,
     ...getExpiryPresentation(item.expiryDate, today),
     categoryLabel: CATEGORY_LABELS[item.category] || '其他',
-    storageLabel: STORAGE_LABELS[item.storageLocation] || '其他',
+    storageLabel: STORAGE_LABELS[item.storageLocation] || item.storageLocation || '未填写',
     inventoryStatusLabel: STATUS_LABELS[item.inventoryStatus] || '未知',
+    purgeDateText: getPurgeDateText(item),
     ...extra,
   }
 }
@@ -116,11 +141,11 @@ async function getTransactionOwnedDoc(transaction, collectionName, ownerId, id) 
 async function cancelPendingReminder(transaction, ownerId, itemId, remove = false) {
   const job = await getTransactionOwnedDoc(transaction, REMINDERS, ownerId, itemId)
   if (!job) return
-  if (!['scheduled', 'failed', 'cancelled'].includes(job.status)) return
   if (remove) {
     await transaction.collection(REMINDERS).doc(itemId).remove()
     return
   }
+  if (!['scheduled', 'failed', 'cancelled'].includes(job.status)) return
   await transaction.collection(REMINDERS).doc(itemId).update({
     data: {
       status: 'cancelled',
@@ -318,9 +343,10 @@ async function save(ownerId, event) {
 async function decrement(ownerId, event) {
   const itemId = validateItemId(event.itemId)
   const version = validateVersion(event.version)
+  const amount = validateDecrementAmount(event.amount)
   const item = await getOwnedItem(ownerId, itemId)
-  const decision = getDecrementDecision(item.inventoryStatus, item.quantity)
-  assert(decision !== 'invalid_state', 'INVALID_STATE', '已处理物品不能减少数量')
+  const decision = getDecrementDecision(item.inventoryStatus, item.quantity, amount)
+  assert(decision !== 'invalid_state', 'INVALID_ARGUMENT', '减少数量不能超过当前库存')
   assert(item.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
   if (decision === 'requires_completion') {
     throw new AppError('REQUIRES_COMPLETION_CONFIRM', '这是最后一件，请确认是否标记为已用完')
@@ -337,7 +363,7 @@ async function decrement(ownerId, event) {
     })
     .update({
       data: {
-        quantity: command.inc(-1),
+        quantity: command.inc(-amount),
         version: command.inc(1),
         updatedAt: db.serverDate(),
       },
@@ -345,7 +371,7 @@ async function decrement(ownerId, event) {
   if (updatedCount(result) !== 1) {
     throw new AppError('CONFLICT', '记录已更新，请刷新后重试')
   }
-  return { quantity: item.quantity - 1, version: version + 1 }
+  return { quantity: item.quantity - amount, version: version + 1 }
 }
 
 async function transition(ownerId, event, targetStatus) {
@@ -374,18 +400,86 @@ async function transition(ownerId, event, targetStatus) {
   return { version: version + 1 }
 }
 
-async function remove(ownerId, event) {
+async function moveToTrash(ownerId, event) {
   const itemId = validateItemId(event.itemId)
   const version = validateVersion(event.version)
   await getOwnedItem(ownerId, itemId)
   await db.runTransaction(async (transaction) => {
     const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
     assert(current, 'NOT_FOUND', '物品不存在或已被删除')
+    assert(['active', 'used_up'].includes(current.inventoryStatus), 'INVALID_STATE', '该物品已经删除')
+    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
+    await transaction.collection(ITEMS).doc(itemId).update({
+      data: {
+        inventoryStatus: 'deleted',
+        version: version + 1,
+        completedAt: db.serverDate(),
+        deletedAt: db.serverDate(),
+        purgeAfter: new Date(Date.now() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000),
+        updatedAt: db.serverDate(),
+      },
+    })
+    await cancelPendingReminder(transaction, ownerId, itemId, true)
+  })
+  return { version: version + 1 }
+}
+
+async function removePermanently(ownerId, event) {
+  const itemId = validateItemId(event.itemId)
+  const version = validateVersion(event.version)
+  await getOwnedItem(ownerId, itemId)
+  await db.runTransaction(async (transaction) => {
+    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
+    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
+    assert(['deleted', 'discarded'].includes(current.inventoryStatus), 'INVALID_STATE', '只能彻底删除回收站中的物品')
     assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
     await transaction.collection(ITEMS).doc(itemId).remove()
     await cancelPendingReminder(transaction, ownerId, itemId, true)
   })
   return { deleted: true }
+}
+
+async function restore(ownerId, event) {
+  const input = event.data
+  const normalized = validateSaveInput(input)
+  const itemId = validateItemId(input.itemId)
+  const version = validateVersion(input.version)
+  await getOwnedItem(ownerId, itemId)
+  await db.runTransaction(async (transaction) => {
+    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
+    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
+    assert(['deleted', 'discarded'].includes(current.inventoryStatus), 'INVALID_STATE', '该物品不在回收站中')
+    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
+    await transaction.collection(ITEMS).doc(itemId).update({
+      data: {
+        ...normalized,
+        inventoryStatus: 'active',
+        version: version + 1,
+        completedAt: null,
+        deletedAt: null,
+        purgeAfter: null,
+        updatedAt: db.serverDate(),
+      },
+    })
+    await cancelPendingReminder(transaction, ownerId, itemId, true)
+  })
+  return { itemId, version: version + 1, expiryDate: normalized.expiryDate }
+}
+
+async function processBatch(ownerId, event, mutation) {
+  const items = validateBatchItems(event.items)
+  const succeeded = []
+  const failed = []
+  await Promise.all(items.map(async (item) => {
+    try {
+      await mutation(ownerId, item)
+      succeeded.push(item.itemId)
+    } catch (error) {
+      const safeError = normalizeError(error)
+      failed.push({ itemId: item.itemId, code: safeError.code, message: safeError.message })
+    }
+  }))
+  return { succeeded, failed }
 }
 
 async function listHistory(ownerId, event) {
@@ -417,6 +511,33 @@ async function listHistory(ownerId, event) {
   }
 }
 
+async function listTrash(ownerId, event) {
+  const today = currentDateKey()
+  const search = validateSearch(event.search)
+  const pageSize = validatePageSize(event.pageSize)
+  const signature = querySignature({ search, pageSize, scope: 'trash' })
+  const offset = decodeCursor(event.cursor, signature)
+  const where = {
+    ownerId,
+    inventoryStatus: command.in(['deleted', 'discarded']),
+  }
+  if (search) where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
+
+  const result = await db
+    .collection(ITEMS)
+    .where(where)
+    .orderBy('completedAt', 'desc')
+    .skip(offset)
+    .limit(pageSize + 1)
+    .get()
+  const hasMore = result.data.length > pageSize
+  return {
+    items: result.data.slice(0, pageSize).map((item) => publicItem(item, today)),
+    nextCursor: hasMore ? encodeCursor(offset + pageSize, signature) : null,
+    serverToday: today,
+  }
+}
+
 const handlers = {
   listActive,
   getOverview,
@@ -425,9 +546,15 @@ const handlers = {
   save,
   decrement,
   complete: (ownerId, event) => transition(ownerId, event, 'used_up'),
-  discard: (ownerId, event) => transition(ownerId, event, 'discarded'),
-  delete: remove,
+  discard: moveToTrash,
+  delete: moveToTrash,
+  permanentDelete: removePermanently,
+  restore,
+  batchComplete: (ownerId, event) => processBatch(ownerId, event, (id, item) => transition(id, item, 'used_up')),
+  batchDelete: (ownerId, event) => processBatch(ownerId, event, moveToTrash),
+  batchPermanentDelete: (ownerId, event) => processBatch(ownerId, event, removePermanently),
   listHistory,
+  listTrash,
 }
 
 exports.main = async (event = {}) => {

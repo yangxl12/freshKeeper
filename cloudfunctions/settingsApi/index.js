@@ -8,13 +8,6 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database()
 const SETTINGS = 'user_settings'
 const REMINDERS = 'reminder_jobs'
-const STORAGE_LOCATIONS = new Set([
-  'refrigerated',
-  'frozen',
-  'cabinet',
-  'medicine_box',
-  'other',
-])
 
 class AppError extends Error {
   constructor(code, message) {
@@ -53,15 +46,14 @@ async function getSettings(ownerId) {
       .count(),
   ])
   return {
-    defaultReminderLeadDays: settings?.defaultReminderLeadDays ?? 3,
-    defaultStorageLocation: settings?.defaultStorageLocation ?? null,
+    defaultReminderLeadDays: settings?.defaultReminderLeadDays ?? 1,
     hasReminderJobs: reminderCount.total > 0,
   }
 }
 
 function validateSettings(input) {
   assert(input && typeof input === 'object' && !Array.isArray(input), 'INVALID_ARGUMENT', '设置内容不正确')
-  const allowed = new Set(['defaultReminderLeadDays', 'defaultStorageLocation'])
+  const allowed = new Set(['defaultReminderLeadDays'])
   for (const key of Object.keys(input)) {
     assert(allowed.has(key), 'FORBIDDEN_FIELD', `设置字段 ${key} 不允许修改`)
   }
@@ -72,15 +64,8 @@ function validateSettings(input) {
     'INVALID_ARGUMENT',
     '默认提醒天数需为 0～30 的整数',
   )
-  assert(
-    input.defaultStorageLocation === null ||
-      STORAGE_LOCATIONS.has(input.defaultStorageLocation),
-    'INVALID_ARGUMENT',
-    '默认存放位置不正确',
-  )
   return {
     defaultReminderLeadDays: input.defaultReminderLeadDays,
-    defaultStorageLocation: input.defaultStorageLocation,
   }
 }
 
@@ -91,6 +76,7 @@ async function updateSettings(ownerId, event) {
     await db.collection(SETTINGS).where({ _id: ownerId, ownerId }).update({
       data: {
         ...normalized,
+        defaultStorageLocation: db.command.remove(),
         updatedAt: db.serverDate(),
       },
     })

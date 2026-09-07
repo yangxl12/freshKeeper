@@ -12,6 +12,8 @@ const validation = require('../../cloudfunctions/inventoryApi/validation') as {
   validateSaveInput(input: Record<string, unknown>): Record<string, unknown>
   validateSearch(value: unknown): string
   validateInventoryViewStatus(value: unknown): string
+  validateDecrementAmount(value: unknown): number
+  validateBatchItems(value: unknown): Array<{ itemId: string; version: number }>
 }
 const reminderRules = require('../../cloudfunctions/reminderApi/rules') as {
   canArmReminder(status?: string): boolean
@@ -30,6 +32,9 @@ const reminderTemplate = require('../../cloudfunctions/dispatchReminders/templat
     daysLeft: number,
     fields: Record<string, string>,
   ): Record<string, { value: string }>
+}
+const trashRules = require('../../cloudfunctions/cleanupTrash/rules') as {
+  shouldPurgeTrash(item: Record<string, unknown>, now?: Date): boolean
 }
 
 function validSaveInput() {
@@ -91,6 +96,29 @@ describe('cloud inventory domain', () => {
     expect(() =>
       validation.validateSaveInput({ ...validSaveInput(), category: 'unknown' }),
     ).toThrow(/分类/)
+  })
+
+  it('allows an optional free-text storage location', () => {
+    expect(validation.validateSaveInput({ ...validSaveInput(), storageLocation: '  床头柜  ' })).toMatchObject({
+      storageLocation: '床头柜',
+    })
+    expect(validation.validateSaveInput({ ...validSaveInput(), storageLocation: '' })).toMatchObject({
+      storageLocation: '',
+    })
+    expect(() => validation.validateSaveInput({ ...validSaveInput(), storageLocation: 'x'.repeat(21) })).toThrow(/20/)
+  })
+
+  it('validates decrement amounts and bounded batch references', () => {
+    expect(validation.validateDecrementAmount(undefined)).toBe(1)
+    expect(validation.validateDecrementAmount(3)).toBe(3)
+    expect(() => validation.validateDecrementAmount(0)).toThrow(/整数/)
+    expect(validation.validateBatchItems([{ itemId: 'a', version: 1 }])).toEqual([
+      { itemId: 'a', version: 1 },
+    ])
+    expect(() => validation.validateBatchItems([
+      { itemId: 'a', version: 1 },
+      { itemId: 'a', version: 1 },
+    ])).toThrow(/重复/)
   })
 
   it('escapes empty search semantics and limits search length', () => {
@@ -178,13 +206,42 @@ describe('inventory state transitions', () => {
   it('requires completion when decrementing the last active unit', () => {
     expect(inventoryRules.getDecrementDecision('active', 2)).toBe('decrement')
     expect(inventoryRules.getDecrementDecision('active', 1)).toBe('requires_completion')
+    expect(inventoryRules.getDecrementDecision('active', 5, 4)).toBe('decrement')
+    expect(inventoryRules.getDecrementDecision('active', 5, 5)).toBe('requires_completion')
+    expect(inventoryRules.getDecrementDecision('active', 5, 6)).toBe('invalid_state')
     expect(inventoryRules.getDecrementDecision('discarded', 2)).toBe('invalid_state')
   })
 
   it('only lets active inventory enter a supported terminal state', () => {
     expect(inventoryRules.canTransitionInventory('active', 'used_up')).toBe(true)
-    expect(inventoryRules.canTransitionInventory('active', 'discarded')).toBe(true)
+    expect(inventoryRules.canTransitionInventory('active', 'discarded')).toBe(false)
     expect(inventoryRules.canTransitionInventory('used_up', 'discarded')).toBe(false)
     expect(inventoryRules.canTransitionInventory('active', 'deleted')).toBe(false)
+  })
+})
+
+describe('trash retention', () => {
+  const now = new Date('2026-09-07T12:00:00.000Z')
+
+  it('only purges deleted records when their retention time has elapsed', () => {
+    expect(trashRules.shouldPurgeTrash({
+      inventoryStatus: 'deleted',
+      purgeAfter: '2026-09-07T11:59:59.000Z',
+    }, now)).toBe(true)
+    expect(trashRules.shouldPurgeTrash({
+      inventoryStatus: 'deleted',
+      purgeAfter: '2026-09-07T12:00:01.000Z',
+    }, now)).toBe(false)
+    expect(trashRules.shouldPurgeTrash({
+      inventoryStatus: 'used_up',
+      purgeAfter: '2026-09-01T00:00:00.000Z',
+    }, now)).toBe(false)
+  })
+
+  it('does not purge legacy discarded records before migration', () => {
+    expect(trashRules.shouldPurgeTrash({
+      inventoryStatus: 'discarded',
+      completedAt: '2026-08-08T12:00:00.000Z',
+    }, now)).toBe(false)
   })
 })

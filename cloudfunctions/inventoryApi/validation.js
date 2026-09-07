@@ -4,13 +4,6 @@ const { AppError, assert } = require('./error')
 const { calculateExpiryDate } = require('./date')
 
 const CATEGORIES = new Set(['food', 'medicine', 'household', 'other'])
-const STORAGE_LOCATIONS = new Set([
-  'refrigerated',
-  'frozen',
-  'cabinet',
-  'medicine_box',
-  'other',
-])
 const INPUT_MODES = new Set(['direct', 'shelf_life'])
 const SHELF_LIFE_UNITS = new Set(['day', 'month', 'year'])
 const HISTORY_STATUSES = new Set(['used_up', 'discarded'])
@@ -70,7 +63,9 @@ function validateSaveInput(input) {
   assert(Number.isInteger(input.quantity) && input.quantity >= 1 && input.quantity <= 9999, 'INVALID_ARGUMENT', '数量需为 1～9999 的整数')
   assert(unit.length >= 1 && unit.length <= 8, 'INVALID_ARGUMENT', '单位需为 1～8 个字符')
   assert(CATEGORIES.has(input.category), 'INVALID_ARGUMENT', '物品分类不正确')
-  assert(STORAGE_LOCATIONS.has(input.storageLocation), 'INVALID_ARGUMENT', '存放位置不正确')
+  assert(typeof input.storageLocation === 'string', 'INVALID_ARGUMENT', '存放位置不正确')
+  const storageLocation = input.storageLocation.trim()
+  assert(storageLocation.length <= 20, 'INVALID_ARGUMENT', '存放位置不能超过 20 个字符')
   assert(INPUT_MODES.has(input.expiryInputMode), 'INVALID_ARGUMENT', '到期录入方式不正确')
   assert(Number.isInteger(input.reminderLeadDays) && input.reminderLeadDays >= 0 && input.reminderLeadDays <= 30, 'INVALID_ARGUMENT', '提前提醒需为 0～30 天的整数')
 
@@ -85,7 +80,7 @@ function validateSaveInput(input) {
     quantity: input.quantity,
     unit,
     category: input.category,
-    storageLocation: input.storageLocation,
+    storageLocation,
     expiryInputMode: input.expiryInputMode,
     productionDate: input.expiryInputMode === 'shelf_life' ? input.productionDate : null,
     shelfLifeValue: input.expiryInputMode === 'shelf_life' ? input.shelfLifeValue : null,
@@ -103,6 +98,25 @@ function validateItemId(value) {
 function validateVersion(value) {
   assert(Number.isInteger(value) && value >= 1, 'INVALID_ARGUMENT', '记录版本不正确')
   return value
+}
+
+function validateDecrementAmount(value) {
+  if (value === undefined || value === null) return 1
+  assert(Number.isInteger(value) && value >= 1 && value <= 9999, 'INVALID_ARGUMENT', '减少数量需为 1～9999 的整数')
+  return value
+}
+
+function validateBatchItems(value) {
+  assert(Array.isArray(value) && value.length >= 1 && value.length <= 20, 'INVALID_ARGUMENT', '每批需选择 1～20 条物品')
+  const seen = new Set()
+  return value.map((item) => {
+    assertPlainObject(item, '批量物品信息不正确')
+    const itemId = validateItemId(item.itemId)
+    const version = validateVersion(item.version)
+    assert(!seen.has(itemId), 'INVALID_ARGUMENT', '批量物品不能重复')
+    seen.add(itemId)
+    return { itemId, version }
+  })
 }
 
 function validatePageSize(value) {
@@ -127,8 +141,10 @@ function validateOptionalCategory(value) {
 
 function validateOptionalStorage(value) {
   if (!value) return ''
-  assert(STORAGE_LOCATIONS.has(value), 'INVALID_ARGUMENT', '存放位置不正确')
-  return value
+  assert(typeof value === 'string', 'INVALID_ARGUMENT', '存放位置不正确')
+  const storageLocation = value.trim()
+  assert(storageLocation.length <= 20, 'INVALID_ARGUMENT', '存放位置不能超过 20 个字符')
+  return storageLocation
 }
 
 function validateHistoryStatus(value) {
@@ -146,6 +162,8 @@ function validateInventoryViewStatus(value) {
 module.exports = {
   assertNoClientIdentity,
   validateHistoryStatus,
+  validateBatchItems,
+  validateDecrementAmount,
   validateInventoryViewStatus,
   validateItemId,
   validateOptionalCategory,

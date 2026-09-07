@@ -27,6 +27,7 @@
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, storageLocation ASC, expiryDate ASC, createdAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, completedAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, completedAt DESC` |
+| `inventory_items` | `inventoryStatus ASC, purgeAfter ASC` |
 | `reminder_jobs` | `status ASC, remindDate ASC` |
 | `reminder_jobs` | `ownerId ASC, status ASC` |
 
@@ -40,8 +41,9 @@
 - `settingsApi`
 - `reminderApi`
 - `dispatchReminders`
+- `cleanupTrash`
 
-运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用前三个业务函数；`dispatchReminders` 禁止小程序端调用，只允许定时触发。
+运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用前三个业务函数；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
 
 为 `reminderApi` 配置环境变量：
 
@@ -62,6 +64,8 @@
 
 模板字段必须以公众平台实际审批结果为准。`dispatchReminders/config.json` 已声明 `subscribeMessage.send` 权限和每日 09:00 触发器；部署后仍需在控制台确认业务时区为 `Asia/Shanghai`，并确认该函数不能被客户端调用。
 
+`cleanupTrash/config.json` 声明每日 03:30 触发器。首次运行会把旧版 `discarded` 数据迁移为 `deleted`，并从迁移时重新给予完整 30 天保留期；后续仅彻底删除 `purgeAfter` 已到的 `deleted` 数据。部署后需确认触发器使用 `Asia/Shanghai` 时区，并确认该函数不能被客户端调用。
+
 ## 4. 发布前验证
 
 自动检查：
@@ -74,17 +78,21 @@ npm run check
 
 - A 用户不能查看、修改或删除 B 用户的物品、历史和提醒任务。
 - 同版本并发修改只有一次成功，另一请求返回冲突。
-- 修改到期日会更新未发送任务；用完、丢弃和删除会取消待发任务。
+- 修改到期日会更新未发送任务；用完和删除会取消待发任务。
+- 删除后记录进入回收站；重新编辑并入库后恢复为有效库存，旧提醒记录被清除。
+- 手动触发 `cleanupTrash`，验证旧 `discarded` 数据只迁移不删除；已满 30 天的 `deleted` 数据被彻底删除，未满 30 天和 `used_up` 数据保留。
 - 临时改为每分钟触发后连续运行两次，同一任务最多收到一条消息；验证完恢复每日 09:00。
 - 函数日志不出现完整物品名称、OPENID 或微信订阅原始报文。
 
 真机必须完成：
 
 - 两种日期录入各一次，覆盖新增、查看、编辑和二次确认删除。
-- 数量 `2 → 1`、数量 `1 → 已用完`、丢弃和历史查看。
-- 首页五张概览卡分别进入正确的库存状态，且数字满足“物品总数 = 已过期 + 临期 + 状态良好”。
+- 数量按任意正整数减少、减量等于当前数量时确认转为已用完、超量时阻止提交。
+- 首页临期、库存当前筛选和回收站三个批量入口均验证多选、全选、取消与二次确认删除。
+- 首页四张概览卡分别进入正确的库存状态，且数字满足“物品总数 = 已过期 + 临期 + 状态良好”。
 - 库存页搜索、种类、状态的两两与三项组合筛选，清空后恢复全部在库物品。
-- 选择“已用完”时按完成时间倒序展示；已丢弃只出现在“我的 → 历史记录”。
+- 选择“已用完”时按完成时间倒序展示；删除数据只出现在“我的 → 回收站”。
+- 回收站详情可重新编辑并入库，单条与批量彻底删除均不可恢复。
 - 拒绝订阅后继续新增和编辑；接受后收到一次消息并正确进入详情。
 - 杀掉微信进程后重新进入，确认数据仍存在。
 - 使用两个微信账号确认数据隔离。

@@ -96,6 +96,12 @@ Page({
     wx.navigateTo({ url: '/pages/item-form/index' })
   },
 
+  openBatchOperations() {
+    const app = getApp<IAppOption>()
+    app.globalData.pendingBatchIntent = { source: 'home', viewStatus: 'expiring' }
+    wx.navigateTo({ url: '/pages/batch-operation/index?source=home' })
+  },
+
   openItem(event: WechatMiniprogram.CustomEvent<{ itemId: string }>) {
     wx.navigateTo({ url: `/pages/item-detail/index?id=${event.detail.itemId}` })
   },

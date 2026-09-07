@@ -1,97 +1,77 @@
-import {
-  HISTORY_STATUS_OPTIONS,
-  STORAGE_OPTIONS,
-  toInventoryCardItem,
-} from '../../domain/inventory'
+import { toInventoryCardItem } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
-import { listHistory } from '../../services/inventory-service'
+import {
+  listHistory,
+  listTrash,
+  permanentlyDeleteItem,
+} from '../../services/inventory-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
-import type { InventoryItem, InventoryStatus, StorageLocation } from '../../types/inventory'
+import type { InventoryItem } from '../../types/inventory'
 
 const REMINDER_DAY_OPTIONS = Array.from({ length: 31 }, (_, value) => ({
   value,
   label: value === 0 ? '到期当天' : `提前 ${value} 天`,
 }))
-const DEFAULT_STORAGE_OPTIONS: ReadonlyArray<{
-  value: StorageLocation | null
-  label: string
-}> = [
-  { value: null, label: '未设置' },
-  ...STORAGE_OPTIONS.slice(1).map((option) => ({
-    value: option.value as StorageLocation,
-    label: option.label,
-  })),
-]
 
-let historySearchTimer: number | undefined
-let historyRequestSequence = 0
+let recordSearchTimer: number | undefined
+let recordRequestSequence = 0
 
-function decorateHistoryItem(item: InventoryItem) {
+function decorateRecordItem(item: InventoryItem) {
   return {
     ...toInventoryCardItem(item),
-    inventoryStatusLabel: item.inventoryStatus === 'used_up' ? '已用完' : '已丢弃',
+    recordLabel: item.inventoryStatus === 'used_up' ? '已用完' : '已删除',
   }
 }
 
 Page({
   data: {
+    settingsVisible: false,
     settingsLoading: true,
     settingsSaving: false,
     settingsError: '',
     reminderDayOptions: REMINDER_DAY_OPTIONS,
-    reminderDayIndex: 3,
-    savedReminderDayIndex: 3,
-    storageOptions: DEFAULT_STORAGE_OPTIONS,
-    storageIndex: 0,
-    savedStorageIndex: 0,
+    reminderDayIndex: 1,
+    savedReminderDayIndex: 1,
     hasReminderJobs: false,
     subscriptionMainSwitch: null as boolean | null,
     subscriptionSummary: '可在物品详情中逐件开启一次性提醒',
-    historyLoading: true,
-    historyLoadingMore: false,
-    historyError: '',
-    historySearch: '',
-    historyStatusOptions: HISTORY_STATUS_OPTIONS,
-    historyStatusIndex: 0,
-    historyItems: [] as ReturnType<typeof decorateHistoryItem>[],
-    historyNextCursor: null as string | null,
+    recordMode: 'used_up' as 'used_up' | 'trash',
+    recordLoading: true,
+    recordLoadingMore: false,
+    recordError: '',
+    recordSearch: '',
+    recordItems: [] as ReturnType<typeof decorateRecordItem>[],
+    recordNextCursor: null as string | null,
   },
 
   onShow() {
-    this.loadSettings()
-    this.loadHistory(true)
+    void this.loadSettings()
+    void this.loadRecords(true)
     this.readSubscriptionSetting()
   },
 
   onUnload() {
-    if (historySearchTimer) clearTimeout(historySearchTimer)
+    if (recordSearchTimer) clearTimeout(recordSearchTimer)
   },
 
   onPullDownRefresh() {
-    Promise.all([this.loadSettings(), this.loadHistory(true)]).finally(() => {
+    Promise.all([this.loadSettings(), this.loadRecords(true)]).finally(() => {
       wx.stopPullDownRefresh()
     })
     this.readSubscriptionSetting()
   },
 
   onReachBottom() {
-    if (this.data.historyNextCursor && !this.data.historyLoadingMore) {
-      this.loadHistory(false)
-    }
+    if (this.data.recordNextCursor && !this.data.recordLoadingMore) void this.loadRecords(false)
   },
 
   async loadSettings() {
     this.setData({ settingsLoading: true, settingsError: '' })
     try {
       const settings = await getSettings()
-      const storageIndex = DEFAULT_STORAGE_OPTIONS.findIndex(
-        (option) => option.value === settings.defaultStorageLocation,
-      )
       this.setData({
         reminderDayIndex: settings.defaultReminderLeadDays,
         savedReminderDayIndex: settings.defaultReminderLeadDays,
-        storageIndex: storageIndex >= 0 ? storageIndex : 0,
-        savedStorageIndex: storageIndex >= 0 ? storageIndex : 0,
         hasReminderJobs: Boolean(settings.hasReminderJobs),
         settingsLoading: false,
       }, () => this.updateSubscriptionSummary())
@@ -100,45 +80,46 @@ Page({
     }
   },
 
-  async saveSettings(nextReminderDayIndex: number, nextStorageIndex: number) {
+  openSettings() {
+    this.setData({
+      settingsVisible: true,
+      reminderDayIndex: this.data.savedReminderDayIndex,
+      settingsError: '',
+    })
+  },
+
+  closeSettings() {
+    if (this.data.settingsSaving) return
+    this.setData({
+      settingsVisible: false,
+      reminderDayIndex: this.data.savedReminderDayIndex,
+      settingsError: '',
+    })
+  },
+
+  stopPropagation() {},
+
+  handleReminderDaysChange(event: WechatMiniprogram.PickerChange) {
+    this.setData({ reminderDayIndex: Number(event.detail.value) })
+  },
+
+  async saveSettings() {
     if (this.data.settingsSaving) return
     this.setData({ settingsSaving: true, settingsError: '' })
     try {
       const settings = await updateSettings({
-        defaultReminderLeadDays: REMINDER_DAY_OPTIONS[nextReminderDayIndex].value,
-        defaultStorageLocation: DEFAULT_STORAGE_OPTIONS[nextStorageIndex].value,
+        defaultReminderLeadDays: REMINDER_DAY_OPTIONS[this.data.reminderDayIndex].value,
       })
-      const storageIndex = DEFAULT_STORAGE_OPTIONS.findIndex(
-        (option) => option.value === settings.defaultStorageLocation,
-      )
       this.setData({
         reminderDayIndex: settings.defaultReminderLeadDays,
         savedReminderDayIndex: settings.defaultReminderLeadDays,
-        storageIndex: storageIndex >= 0 ? storageIndex : 0,
-        savedStorageIndex: storageIndex >= 0 ? storageIndex : 0,
         settingsSaving: false,
+        settingsVisible: false,
       })
-      wx.showToast({ title: '默认设置已保存', icon: 'success' })
+      wx.showToast({ title: '设置已保存', icon: 'success' })
     } catch (error) {
-      this.setData({
-        reminderDayIndex: this.data.savedReminderDayIndex,
-        storageIndex: this.data.savedStorageIndex,
-        settingsSaving: false,
-        settingsError: getErrorMessage(error),
-      })
+      this.setData({ settingsSaving: false, settingsError: getErrorMessage(error) })
     }
-  },
-
-  handleReminderDaysChange(event: WechatMiniprogram.PickerChange) {
-    const reminderDayIndex = Number(event.detail.value)
-    this.setData({ reminderDayIndex })
-    this.saveSettings(reminderDayIndex, this.data.storageIndex)
-  },
-
-  handleStorageChange(event: WechatMiniprogram.PickerChange) {
-    const storageIndex = Number(event.detail.value)
-    this.setData({ storageIndex })
-    this.saveSettings(this.data.reminderDayIndex, storageIndex)
   },
 
   readSubscriptionSetting() {
@@ -156,14 +137,14 @@ Page({
 
   updateSubscriptionSummary() {
     let subscriptionSummary = this.data.hasReminderJobs
-      ? '已有物品保存了提醒任务；一次性发送额度以微信平台为准'
+      ? '已有物品保存了提醒任务'
       : '可在物品详情中逐件开启一次性提醒'
     if (this.data.subscriptionMainSwitch === false) {
-      subscriptionSummary = '微信通知总开关已关闭，请到设置中开启'
+      subscriptionSummary = '微信通知总开关已关闭'
     } else if (this.data.subscriptionMainSwitch === true) {
       subscriptionSummary = this.data.hasReminderJobs
-        ? '通知总开关已开启，已有物品保存了提醒任务'
-        : '通知总开关已开启；每件物品仍需单独授权'
+        ? '通知已开启，已有物品保存了提醒任务'
+        : '通知已开启，每件物品仍需单独授权'
     }
     this.setData({ subscriptionSummary })
   },
@@ -175,64 +156,98 @@ Page({
     })
   },
 
-  async loadHistory(reset: boolean) {
-    const requestSequence = ++historyRequestSequence
-    if (reset) this.setData({ historyLoading: this.data.historyItems.length === 0, historyError: '' })
-    else this.setData({ historyLoadingMore: true })
-
-    const status = HISTORY_STATUS_OPTIONS[this.data.historyStatusIndex]
-      ?.value as InventoryStatus | ''
-    try {
-      const result = await listHistory({
-        search: this.data.historySearch,
-        status,
-        cursor: reset ? null : this.data.historyNextCursor,
-      })
-      if (requestSequence !== historyRequestSequence) return
-      const pageItems = result.items.map(decorateHistoryItem)
+  async loadRecords(reset: boolean) {
+    const requestSequence = ++recordRequestSequence
+    if (reset) {
       this.setData({
-        historyItems: reset ? pageItems : [...this.data.historyItems, ...pageItems],
-        historyNextCursor: result.nextCursor,
-        historyLoading: false,
-        historyLoadingMore: false,
-        historyError: '',
+        recordLoading: this.data.recordItems.length === 0,
+        recordError: '',
+        recordItems: [],
+        recordNextCursor: null,
+      })
+    } else {
+      this.setData({ recordLoadingMore: true })
+    }
+
+    try {
+      const params = {
+        search: this.data.recordSearch,
+        cursor: reset ? null : this.data.recordNextCursor,
+      }
+      const result = this.data.recordMode === 'trash'
+        ? await listTrash(params)
+        : await listHistory({ ...params, status: 'used_up' })
+      if (requestSequence !== recordRequestSequence) return
+      const pageItems = result.items.map(decorateRecordItem)
+      this.setData({
+        recordItems: reset ? pageItems : [...this.data.recordItems, ...pageItems],
+        recordNextCursor: result.nextCursor,
+        recordLoading: false,
+        recordLoadingMore: false,
+        recordError: '',
       })
     } catch (error) {
-      if (requestSequence !== historyRequestSequence) return
-      const message = getErrorMessage(error)
+      if (requestSequence !== recordRequestSequence) return
       this.setData({
-        historyLoading: false,
-        historyLoadingMore: false,
-        historyError: this.data.historyItems.length ? `历史未更新：${message}` : message,
+        recordLoading: false,
+        recordLoadingMore: false,
+        recordError: getErrorMessage(error),
       })
     }
   },
 
-  handleHistorySearch(event: WechatMiniprogram.Input) {
-    this.setData({ historySearch: event.detail.value })
-    if (historySearchTimer) clearTimeout(historySearchTimer)
-    historySearchTimer = setTimeout(() => this.loadHistory(true), 300) as unknown as number
+  switchRecordMode(event: WechatMiniprogram.BaseEvent) {
+    const recordMode = event.currentTarget.dataset.mode as 'used_up' | 'trash'
+    if (recordMode === this.data.recordMode) return
+    if (recordSearchTimer) clearTimeout(recordSearchTimer)
+    this.setData({ recordMode, recordSearch: '', recordItems: [] }, () => void this.loadRecords(true))
   },
 
-  clearHistorySearch() {
-    if (historySearchTimer) clearTimeout(historySearchTimer)
-    this.setData({ historySearch: '' }, () => this.loadHistory(true))
+  handleRecordSearch(event: WechatMiniprogram.Input) {
+    this.setData({ recordSearch: event.detail.value })
+    if (recordSearchTimer) clearTimeout(recordSearchTimer)
+    recordSearchTimer = setTimeout(() => void this.loadRecords(true), 300) as unknown as number
   },
 
-  handleHistoryStatus(event: WechatMiniprogram.BaseEvent) {
-    const index = Number(event.currentTarget.dataset.index)
-    this.setData({ historyStatusIndex: index }, () => this.loadHistory(true))
+  clearRecordSearch() {
+    if (recordSearchTimer) clearTimeout(recordSearchTimer)
+    this.setData({ recordSearch: '' }, () => void this.loadRecords(true))
   },
 
-  openHistoryItem(event: WechatMiniprogram.CustomEvent<{ itemId: string }>) {
+  openRecordItem(event: WechatMiniprogram.CustomEvent<{ itemId: string }>) {
     wx.navigateTo({ url: `/pages/item-detail/index?id=${event.detail.itemId}` })
   },
 
-  retrySettings() {
-    this.loadSettings()
+  openTrashBatch() {
+    const app = getApp<IAppOption>()
+    app.globalData.pendingBatchIntent = { source: 'trash' }
+    wx.navigateTo({ url: '/pages/batch-operation/index?source=trash' })
   },
 
-  retryHistory() {
-    this.loadHistory(true)
+  async deleteTrashItem(event: WechatMiniprogram.BaseEvent) {
+    const itemId = String(event.currentTarget.dataset.id || '')
+    const version = Number(event.currentTarget.dataset.version)
+    const modal = await wx.showModal({
+      title: '彻底删除这件物品？',
+      content: '彻底删除后无法恢复。',
+      confirmText: '彻底删除',
+      confirmColor: '#A33F32',
+    })
+    if (!modal.confirm) return
+    try {
+      await permanentlyDeleteItem(itemId, version)
+      wx.showToast({ title: '已彻底删除', icon: 'success' })
+      void this.loadRecords(true)
+    } catch (error) {
+      wx.showToast({ title: getErrorMessage(error), icon: 'none' })
+    }
+  },
+
+  retrySettings() {
+    void this.loadSettings()
+  },
+
+  retryRecords() {
+    void this.loadRecords(true)
   },
 })

@@ -1,27 +1,38 @@
 import {
   CATEGORY_OPTIONS,
   SHELF_LIFE_OPTIONS,
-  STORAGE_OPTIONS,
 } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
-import { getItem, saveItem } from '../../services/inventory-service'
+import { getItem, restoreItem, saveItem } from '../../services/inventory-service'
 import { getSettings } from '../../services/settings-service'
 import type {
   Category,
   ExpiryInputMode,
   InventorySaveInput,
   ShelfLifeUnit,
-  StorageLocation,
 } from '../../types/inventory'
 import { track } from '../../utils/analytics'
 import { calculateExpiryDate, localTodayKey, parseDateKey } from '../../utils/date-key'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
-const FORM_STORAGE_OPTIONS = STORAGE_OPTIONS.slice(1)
-
+const LEGACY_STORAGE_LABELS: Record<string, string> = {
+  refrigerated: '冷藏',
+  frozen: '冷冻',
+  cabinet: '橱柜',
+  medicine_box: '药箱',
+  other: '其他',
+}
+const LEGACY_STORAGE_VALUES: Record<string, string> = {
+  冷藏: 'refrigerated',
+  冷冻: 'frozen',
+  橱柜: 'cabinet',
+  药箱: 'medicine_box',
+  其他: 'other',
+}
 Page({
   data: {
     itemId: '',
+    restoring: false,
     version: 0,
     loading: false,
     loadFailed: false,
@@ -34,21 +45,21 @@ Page({
     unit: '件',
     categoryOptions: FORM_CATEGORY_OPTIONS,
     categoryIndex: 0,
-    storageOptions: FORM_STORAGE_OPTIONS,
-    storageIndex: FORM_STORAGE_OPTIONS.findIndex((option) => option.value === 'other'),
+    storageLocation: '',
     expiryDate: '',
     productionDate: '',
     shelfLifeValue: '',
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
     shelfLifeUnitIndex: 0,
-    reminderLeadDays: '3',
+    reminderLeadDays: '1',
     expiryPreview: '',
   },
 
   onLoad(options: Record<string, string | undefined>) {
     const itemId = options.id || ''
-    this.setData({ itemId })
-    wx.setNavigationBarTitle({ title: itemId ? '编辑物品' : '新增物品' })
+    const restoring = options.restore === '1'
+    this.setData({ itemId, restoring })
+    wx.setNavigationBarTitle({ title: restoring ? '重新编辑' : itemId ? '编辑物品' : '新增物品' })
     if (itemId) this.loadItem(itemId)
     else this.loadDefaults()
   },
@@ -56,14 +67,8 @@ Page({
   async loadDefaults() {
     try {
       const settings = await getSettings()
-      const storageIndex = settings.defaultStorageLocation
-        ? FORM_STORAGE_OPTIONS.findIndex(
-            (option) => option.value === settings.defaultStorageLocation,
-          )
-        : FORM_STORAGE_OPTIONS.findIndex((option) => option.value === 'other')
       this.setData({
         reminderLeadDays: String(settings.defaultReminderLeadDays),
-        storageIndex: storageIndex >= 0 ? storageIndex : 0,
       })
     } catch (_error) {
       // 默认设置读取失败不阻塞录入，继续使用产品默认值。
@@ -77,9 +82,6 @@ Page({
       const categoryIndex = FORM_CATEGORY_OPTIONS.findIndex(
         (option) => option.value === item.category,
       )
-      const storageIndex = FORM_STORAGE_OPTIONS.findIndex(
-        (option) => option.value === item.storageLocation,
-      )
       const shelfLifeUnitIndex = SHELF_LIFE_OPTIONS.findIndex(
         (option) => option.value === item.shelfLifeUnit,
       )
@@ -90,7 +92,9 @@ Page({
         quantity: String(item.quantity),
         unit: item.unit,
         categoryIndex: categoryIndex >= 0 ? categoryIndex : 0,
-        storageIndex: storageIndex >= 0 ? storageIndex : 0,
+        storageLocation:
+          LEGACY_STORAGE_LABELS[item.storageLocation] ||
+          (item.storageLocation === '' ? '' : item.storageLabel),
         expiryDate: item.expiryDate,
         productionDate: item.productionDate || '',
         shelfLifeValue: item.shelfLifeValue ? String(item.shelfLifeValue) : '',
@@ -120,7 +124,7 @@ Page({
   },
 
   handleTextInput(event: WechatMiniprogram.Input) {
-    const field = event.currentTarget.dataset.field as 'name' | 'quantity' | 'unit' | 'shelfLifeValue' | 'reminderLeadDays'
+    const field = event.currentTarget.dataset.field as 'name' | 'quantity' | 'unit' | 'storageLocation' | 'shelfLifeValue' | 'reminderLeadDays'
     this.setData({ [field]: event.detail.value }, () => {
       if (field === 'shelfLifeValue') this.updateExpiryPreview()
     })
@@ -128,10 +132,6 @@ Page({
 
   handleCategoryChange(event: WechatMiniprogram.PickerChange) {
     this.setData({ categoryIndex: Number(event.detail.value) })
-  },
-
-  handleStorageChange(event: WechatMiniprogram.PickerChange) {
-    this.setData({ storageIndex: Number(event.detail.value) })
   },
 
   handleShelfLifeUnitChange(event: WechatMiniprogram.PickerChange) {
@@ -175,6 +175,7 @@ Page({
       return '数量需为 1～9999 的整数'
     }
     if (!unit || unit.length > 8) return '单位需为 1～8 个字符'
+    if (this.data.storageLocation.trim().length > 20) return '存放位置不能超过 20 个字符'
     if (!Number.isInteger(reminderLeadDays) || reminderLeadDays < 0 || reminderLeadDays > 30) {
       return '提前提醒需为 0～30 天的整数'
     }
@@ -201,10 +202,10 @@ Page({
     }
 
     const category = FORM_CATEGORY_OPTIONS[this.data.categoryIndex]?.value as Category
-    const storageLocation = FORM_STORAGE_OPTIONS[this.data.storageIndex]
-      ?.value as StorageLocation
     const shelfLifeUnit = SHELF_LIFE_OPTIONS[this.data.shelfLifeUnitIndex]
       ?.value as ShelfLifeUnit
+    const enteredStorageLocation = this.data.storageLocation.trim()
+    const storageLocation = LEGACY_STORAGE_VALUES[enteredStorageLocation] || enteredStorageLocation
     const input: InventorySaveInput = {
       itemId: this.data.itemId || undefined,
       version: this.data.itemId ? this.data.version : undefined,
@@ -224,9 +225,13 @@ Page({
 
     this.setData({ saving: true, errorMessage: '' })
     try {
-      await saveItem(input)
+      if (this.data.restoring) await restoreItem(input)
+      else await saveItem(input)
       if (!this.data.itemId) track('item_create_success')
-      wx.showToast({ title: this.data.itemId ? '修改成功' : '已加入库存', icon: 'success' })
+      wx.showToast({
+        title: this.data.restoring ? '已重新入库' : this.data.itemId ? '修改成功' : '已加入库存',
+        icon: 'success',
+      })
       wx.navigateBack()
     } catch (error) {
       this.setData({ saving: false, errorMessage: getErrorMessage(error) })

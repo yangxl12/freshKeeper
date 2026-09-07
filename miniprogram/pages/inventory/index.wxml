@@ -57,6 +57,8 @@
     </view>
   </view>
 
+  <button class="inventory-batch-button" disabled="{{loading || !items.length}}" bindtap="openBatchOperations" hover-class="pressable--pressed">批量操作</button>
+
   <view wx:if="{{errorMessage}}" class="error-banner">
     <text class="error-banner__text">{{errorMessage}}</text>
     <button class="error-banner__action" bindtap="retry" hover-class="pressable--pressed">重试</button>
@@ -96,6 +98,5 @@
   <view class="inventory__bottom-space"></view>
   <button class="add-button" bindtap="addItem" hover-class="pressable--pressed" aria-label="新增物品">
     <text class="add-button__plus" aria-hidden="true">＋</text>
-    <text>新增</text>
   </button>
 </view>

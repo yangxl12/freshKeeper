@@ -2,64 +2,41 @@
   padding-bottom: calc(190rpx + env(safe-area-inset-bottom));
 }
 
-.form-intro {
-  padding: 4rpx 4rpx 32rpx;
-}
-
-.form-intro__step,
-.form-intro__title,
-.form-intro__description {
-  display: block;
-}
-
-.form-intro__step {
-  color: #61776e;
-  font-size: 22rpx;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-}
-
-.form-intro__title {
-  margin-top: 6rpx;
-  color: #173b31;
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 42rpx;
-  font-weight: 700;
-  line-height: 1.28;
-}
-
-.form-intro__description {
-  margin-top: 10rpx;
-  color: #84918b;
-  font-size: 23rpx;
-}
-
 .form-sheet {
-  overflow: hidden;
-  border: 2rpx solid #dde5e0;
-  border-radius: 20rpx;
-  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
 }
 
 .form-section {
-  padding: 32rpx 28rpx 2rpx;
-  border-bottom: 2rpx solid #e5ebe7;
-}
-
-.form-section:last-child {
-  border-bottom: 0;
+  position: relative;
+  padding: 34rpx 28rpx 2rpx;
+  border: 2rpx solid #dde5e0;
+  border-radius: 16rpx;
+  background: #ffffff;
 }
 
 .form-section--dated {
-  background: #e8f2ed;
+  border-color: #cbdcd4;
+  background: #edf5f1;
 }
 
 .form-section__title {
   display: block;
-  margin-bottom: 26rpx;
+  margin-bottom: 30rpx;
   color: #173b31;
   font-size: 30rpx;
   font-weight: 650;
+}
+
+.form-section__eyebrow {
+  position: absolute;
+  top: 35rpx;
+  right: 28rpx;
+  color: #a2afa9;
+  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
+  font-size: 23rpx;
+  font-weight: 700;
 }
 
 .required-mark {
@@ -99,7 +76,7 @@
 .mode-switch {
   display: flex;
   padding: 6rpx;
-  border-radius: 16rpx;
+  border-radius: 12rpx;
   background: rgba(31, 93, 73, 0.09);
 }
 
@@ -107,7 +84,7 @@
   min-height: 88rpx;
   flex: 1;
   padding: 0 10rpx;
-  border-radius: 12rpx;
+  border-radius: 10rpx;
   background: transparent;
   color: #607269;
   font-size: 25rpx;

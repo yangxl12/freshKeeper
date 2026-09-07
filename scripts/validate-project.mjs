@@ -64,7 +64,8 @@ for (const templatePath of files.filter((file) => file.endsWith('.wxml'))) {
 }
 
 const cloudRoot = join(root, 'cloudfunctions')
-for (const entry of readdirSync(cloudRoot, { withFileTypes: true })) {
+const cloudFunctions = readdirSync(cloudRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+for (const entry of cloudFunctions) {
   if (!entry.isDirectory()) continue
   const directory = join(cloudRoot, entry.name)
   for (const required of ['index.js', 'package.json', 'package-lock.json', 'config.json']) {
@@ -86,4 +87,4 @@ if (errors.length) {
   process.exit(1)
 }
 
-console.log(`项目结构检查通过：${appConfig.pages.length} 个页面，4 个云函数，JSON 与云函数语法有效。`)
+console.log(`项目结构检查通过：${appConfig.pages.length} 个页面，${cloudFunctions.length} 个云函数，JSON 与云函数语法有效。`)

@@ -1,5 +1,7 @@
 import type {
   HistoryListResult,
+  BatchItemReference,
+  BatchMutationResult,
   InventoryItem,
   InventoryListResult,
   InventoryOverviewResult,
@@ -65,8 +67,9 @@ export function saveItem(input: InventorySaveInput): Promise<{
 export function decrementItem(
   itemId: string,
   version: number,
+  amount: number,
 ): Promise<{ quantity: number; version: number }> {
-  return callCloud('inventoryApi', { action: 'decrement', itemId, version })
+  return callCloud('inventoryApi', { action: 'decrement', itemId, version, amount })
 }
 
 export function completeItem(
@@ -83,8 +86,45 @@ export function discardItem(
   return callCloud('inventoryApi', { action: 'discard', itemId, version })
 }
 
-export function deleteItem(itemId: string, version: number): Promise<{ deleted: true }> {
+export function deleteItem(itemId: string, version: number): Promise<{ version: number }> {
   return callCloud('inventoryApi', { action: 'delete', itemId, version })
+}
+
+export function permanentlyDeleteItem(itemId: string, version: number): Promise<{ deleted: true }> {
+  return callCloud('inventoryApi', { action: 'permanentDelete', itemId, version })
+}
+
+export function restoreItem(input: InventorySaveInput): Promise<{
+  itemId: string
+  version: number
+  expiryDate: string
+}> {
+  return callCloud('inventoryApi', { action: 'restore', data: input })
+}
+
+export function batchCompleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
+  return callCloud('inventoryApi', { action: 'batchComplete', items })
+}
+
+export function batchDeleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
+  return callCloud('inventoryApi', { action: 'batchDelete', items })
+}
+
+export function batchPermanentlyDeleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
+  return callCloud('inventoryApi', { action: 'batchPermanentDelete', items })
+}
+
+export function listTrash(params: {
+  search?: string
+  cursor?: string | null
+  pageSize?: number
+} = {}): Promise<HistoryListResult> {
+  return callCloud('inventoryApi', {
+    action: 'listTrash',
+    search: params.search || '',
+    cursor: params.cursor || null,
+    pageSize: params.pageSize || 30,
+  })
 }
 
 export function listHistory(params: {
