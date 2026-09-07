@@ -28,4 +28,4 @@ tests/unit/        日期、临期状态、服务端校验和提醒状态测试
 docs/              产品、技术与部署文档
 ```
 
-产品范围以 [MVP 产品设计](./docs/mvp-product-design.md) 和 [MVP 技术方案](./docs/mvp-technical-design.md) 为准。
+产品范围以 [MVP 产品设计](./docs/mvp-product-design.md) 和 [MVP 技术方案](./docs/mvp-technical-design.md) 为准；首页与库存的下一版调整方向见 [MVP 产品设计文档 2](./docs/mvp-product-design-v2.md)。
