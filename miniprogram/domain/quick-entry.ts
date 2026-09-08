@@ -9,7 +9,110 @@ import type {
   RecentItemProfile,
 } from '../types/quick-entry'
 import { asInventorySaveInput } from '../types/quick-entry'
-import { calculateExpiryDate, parseDateKey } from '../utils/date-key'
+import {
+  addDays,
+  calculateExpiryDate,
+  daysInMonth,
+  formatDateKey,
+  localTodayKey,
+  parseDateKey,
+} from '../utils/date-key'
+
+const LOCAL_ENTRY_SEPARATOR = /[\n；;]+/
+const LOCAL_QUANTITY_PATTERN = /(\d{1,4})\s*(盒|瓶|袋|包|罐|个|件|支|箱|片|粒|份|桶|公斤|千克|克|斤|毫升|升)/
+const LOCAL_SHELF_LIFE_PATTERN = /保质期\s*(\d{1,4})\s*(天|日|个月|月|年)/
+const LOCAL_STORAGE_PATTERN = /(?:放|存放)(?:在|到)?\s*([^\s，,；;]{1,20})/
+const LOCAL_FULL_DATE_PATTERN = /(\d{4})\s*(?:年|[-/.])\s*(\d{1,2})\s*(?:月|[-/.])\s*(\d{1,2})\s*(?:日|号)?/
+const LOCAL_MONTH_DAY_PATTERN = /(\d{1,2})\s*月\s*(\d{1,2})\s*(?:日|号)?/
+const LOCAL_RELATIVE_DATE_PATTERN = /(今天|明天|后天|(\d{1,4})\s*天后)/
+
+function localDateKey(year: number, month: number, day: number): string | null {
+  if (!Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null
+  return formatDateKey({ year, month, day })
+}
+
+function nearestLocalMonthDay(today: string, month: number, day: number): string | null {
+  const year = Number(today.slice(0, 4))
+  const currentYear = localDateKey(year, month, day)
+  if (currentYear && currentYear >= today) return currentYear
+  return localDateKey(year + 1, month, day)
+}
+
+function localDateRole(text: string, index: number, rawText: string): 'expiry' | 'production' | 'unknown' {
+  const context = text.slice(Math.max(0, index - 8), index + rawText.length + 8)
+  if (/(生产|出厂|制造)/.test(context)) return 'production'
+  if (/(到期|过期|有效期|失效|EXP)/i.test(context)) return 'expiry'
+  return 'unknown'
+}
+
+function localDateCandidate(text: string, today: string) {
+  const full = LOCAL_FULL_DATE_PATTERN.exec(text)
+  if (full) {
+    const date = localDateKey(Number(full[1]), Number(full[2]), Number(full[3]))
+    return { date, role: localDateRole(text, full.index, full[0]), rawText: full[0], complete: Boolean(date), source: 'text' as const }
+  }
+  const monthDay = LOCAL_MONTH_DAY_PATTERN.exec(text)
+  if (monthDay) {
+    const date = nearestLocalMonthDay(today, Number(monthDay[1]), Number(monthDay[2]))
+    return { date, role: localDateRole(text, monthDay.index, monthDay[0]), rawText: monthDay[0], complete: Boolean(date), source: 'text' as const }
+  }
+  const relative = LOCAL_RELATIVE_DATE_PATTERN.exec(text)
+  if (relative) {
+    const offset = relative[1] === '今天' ? 0 : relative[1] === '明天' ? 1 : relative[1] === '后天' ? 2 : Number(relative[2])
+    const date = Number.isInteger(offset) && offset <= 3650 ? addDays(today, offset) : null
+    return { date, role: localDateRole(text, relative.index, relative[0]) === 'production' ? 'production' as const : 'expiry' as const, rawText: relative[0], complete: Boolean(date), source: 'text' as const }
+  }
+  return null
+}
+
+function localShelfLifeUnit(value: string) {
+  if (value === '年') return 'year' as const
+  if (value === '月' || value === '个月') return 'month' as const
+  return 'day' as const
+}
+
+function localItemName(text: string): string {
+  return text
+    .replace(LOCAL_FULL_DATE_PATTERN, ' ')
+    .replace(LOCAL_MONTH_DAY_PATTERN, ' ')
+    .replace(LOCAL_RELATIVE_DATE_PATTERN, ' ')
+    .replace(LOCAL_SHELF_LIFE_PATTERN, ' ')
+    .replace(LOCAL_QUANTITY_PATTERN, ' ')
+    .replace(LOCAL_STORAGE_PATTERN, ' ')
+    .replace(/(?:到期|过期|有效期至?|失效|生产日期?|出厂日期?|制造日期?)/gi, ' ')
+    .replace(/^(?:新增|添加|录入|买了?)\s*/, '')
+    .replace(/[，,。.!！?？、]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function parseQuickTextLocally(text: string, today = localTodayKey()): QuickEntryParseResult {
+  const normalized = text.trim()
+  if (!normalized) throw new Error('请输入要识别的内容')
+  if (normalized.length > 500) throw new Error('一次最多识别 500 个字符')
+  const entries = normalized.split(LOCAL_ENTRY_SEPARATOR).map((entry) => entry.trim()).filter(Boolean)
+  if (entries.length > 5) throw new Error('一次最多生成 5 条草稿，请分次录入')
+  return {
+    items: entries.map((entry) => {
+      const quantity = LOCAL_QUANTITY_PATTERN.exec(entry)
+      const shelfLife = LOCAL_SHELF_LIFE_PATTERN.exec(entry)
+      const storage = LOCAL_STORAGE_PATTERN.exec(entry)
+      const candidate = localDateCandidate(entry, today)
+      return {
+        name: localItemName(entry),
+        quantity: quantity ? Number(quantity[1]) : undefined,
+        unit: quantity?.[2],
+        storageLocation: storage?.[1],
+        expiryInputMode: shelfLife ? 'shelf_life' as const : undefined,
+        shelfLifeValue: shelfLife ? Number(shelfLife[1]) : undefined,
+        shelfLifeUnit: shelfLife ? localShelfLifeUnit(shelfLife[2]) : undefined,
+        dateCandidates: candidate ? [candidate] : [],
+      }
+    }),
+    serverToday: today,
+    parserVersion: 'local-v1',
+  }
+}
 
 export function normalizeRecentName(value: string): string {
   return value

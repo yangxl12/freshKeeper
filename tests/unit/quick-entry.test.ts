@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createDraftFromRecent,
   createSaveKey,
+  parseQuickTextLocally,
   refreshDraftValidation,
 } from '../../miniprogram/domain/quick-entry'
 import type { RecentItemProfile } from '../../miniprogram/types/quick-entry'
@@ -42,5 +43,37 @@ describe('quick entry drafts', () => {
     expect(draft.fields.quantity).toBe(1)
     expect(draft.fields.unit).toBe('件')
     expect(draft.status).toBe('needs_confirmation')
+  })
+
+  it('parses a common sentence locally when the recognition service is unavailable', () => {
+    const result = parseQuickTextLocally('鲜牛奶 2盒，9月12日到期，放冰箱', '2026-09-08')
+
+    expect(result).toEqual({
+      items: [{
+        name: '鲜牛奶',
+        quantity: 2,
+        unit: '盒',
+        storageLocation: '冰箱',
+        expiryInputMode: undefined,
+        shelfLifeValue: undefined,
+        shelfLifeUnit: undefined,
+        dateCandidates: [{
+          date: '2026-09-12',
+          role: 'expiry',
+          rawText: '9月12日',
+          complete: true,
+          source: 'text',
+        }],
+      }],
+      serverToday: '2026-09-08',
+      parserVersion: 'local-v1',
+    })
+  })
+
+  it('keeps ambiguous local dates for explicit confirmation', () => {
+    const [item] = parseQuickTextLocally('面包 1袋 9月20日', '2026-09-08').items
+
+    expect(item.name).toBe('面包')
+    expect(item.dateCandidates?.[0]).toMatchObject({ date: '2026-09-20', role: 'unknown' })
   })
 })

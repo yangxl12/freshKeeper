@@ -4,7 +4,18 @@ import type {
   QuickEntryParseResult,
   RecentItemProfile,
 } from '../types/quick-entry'
-import { callCloud } from './cloud-client'
+import { parseQuickTextLocally } from '../domain/quick-entry'
+import { callCloud, CloudServiceError } from './cloud-client'
+
+const LOCAL_TEXT_FALLBACK_CODES = new Set([
+  'AI_UNAVAILABLE',
+  'CLOUD_CALL_FAILED',
+  'CLOUD_NOT_ENABLED',
+  'INVALID_ACTION',
+  'INVALID_RESPONSE',
+  'QUICK_ENTRY_FAILED',
+  'QUICK_ENTRY_TIMEOUT',
+])
 
 export function listRecentProfiles(): Promise<{ items: RecentItemProfile[] }> {
   return callCloud('inventoryApi', { action: 'listRecentProfiles' })
@@ -14,8 +25,13 @@ export function getQuickEntryCapabilities(): Promise<QuickEntryCapabilities> {
   return callCloud('quickEntryApi', { action: 'getCapabilities' })
 }
 
-export function parseQuickText(text: string): Promise<QuickEntryParseResult> {
-  return callCloud('quickEntryApi', { action: 'parseText', text })
+export async function parseQuickText(text: string): Promise<QuickEntryParseResult> {
+  try {
+    return await callCloud('quickEntryApi', { action: 'parseText', text })
+  } catch (error) {
+    if (!(error instanceof CloudServiceError) || !LOCAL_TEXT_FALLBACK_CODES.has(error.code)) throw error
+    return parseQuickTextLocally(text)
+  }
 }
 
 export function transcribeVoice(fileID: string, mediaType: string) {

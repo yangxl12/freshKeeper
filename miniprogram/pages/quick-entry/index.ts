@@ -62,7 +62,8 @@ Page({
     expirySummaries: [] as string[],
     categoryOptions: FORM_CATEGORY_OPTIONS,
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
-    features: { recent: QUICK_ENTRY_FEATURES.recent, text: false, voice: false, datePhoto: false },
+    features: QUICK_ENTRY_FEATURES,
+    capabilities: { text: true, voice: false, datePhoto: false },
     defaultReminderLeadDays: 1,
     recognitionState: 'idle' as 'idle' | 'parsing' | 'transcribing' | 'recognizing_photo',
     voiceState: 'idle' as 'idle' | 'authorizing' | 'recording' | 'uploading',
@@ -93,12 +94,7 @@ Page({
     const capabilities = capabilityResult.status === 'fulfilled'
       ? capabilityResult.value
       : { text: false, voice: false, datePhoto: false }
-    const features = {
-      recent: QUICK_ENTRY_FEATURES.recent,
-      text: QUICK_ENTRY_FEATURES.text && capabilities.text,
-      voice: QUICK_ENTRY_FEATURES.voice && capabilities.voice,
-      datePhoto: QUICK_ENTRY_FEATURES.datePhoto && capabilities.datePhoto,
-    }
+    const features = QUICK_ENTRY_FEATURES
     const defaultReminderLeadDays = settingsResult.status === 'fulfilled'
       ? settingsResult.value.defaultReminderLeadDays
       : 1
@@ -111,7 +107,7 @@ Page({
       this.openManual()
       return
     }
-    this.setData({ loading: false, recentProfiles, features, defaultReminderLeadDays, loadingError })
+    this.setData({ loading: false, recentProfiles, features, capabilities: { ...capabilities, text: true }, defaultReminderLeadDays, loadingError })
   },
 
   async loadRecentProfiles() {
