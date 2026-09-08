@@ -49,7 +49,10 @@ Page({
       this.setData({ loading: false, recentProfiles: result.items })
     } catch (error) {
       if (error instanceof CloudServiceError && error.code === 'INVALID_ACTION') {
-        this.openManual()
+        this.setData({
+          loading: false,
+          loadingError: '快速录入服务尚未更新，请先使用完整填写',
+        })
         return
       }
       this.setData({ loading: false, loadingError: '最近物品暂时不可用，请直接完整填写' })
