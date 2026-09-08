@@ -65,6 +65,7 @@ export interface QuickEntryDraft {
   selected: boolean
   dateCandidates: DateCandidate[]
   confirmationFields?: string[]
+  expanded?: boolean
   evidence?: { kind: 'text' | 'photo'; localPath?: string; sourceText?: string }
   errorMessage?: string
 }
@@ -79,6 +80,7 @@ export interface RecentItemProfile {
   expiryInputMode: ExpiryInputMode
   shelfLifeValue: number | null
   shelfLifeUnit: ShelfLifeUnit | null
+  invalidFields?: string[]
 }
 
 export interface QuickEntryParseResult {
@@ -88,10 +90,25 @@ export interface QuickEntryParseResult {
     unit?: string
     category?: Category
     storageLocation?: string
+    expiryInputMode?: ExpiryInputMode
+    shelfLifeValue?: number
+    shelfLifeUnit?: ShelfLifeUnit
     dateCandidates?: DateCandidate[]
   }>
   serverToday: string
   parserVersion: string
+}
+
+export interface QuickEntryCapabilities {
+  text: boolean
+  voice: boolean
+  datePhoto: boolean
+}
+
+export interface DatePhotoResult {
+  candidates: DateCandidate[]
+  unsupported?: 'opened_period'
+  serverToday: string
 }
 
 export function asInventorySaveInput(fields: QuickEntryDraftFields): InventorySaveInput {

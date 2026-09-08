@@ -83,6 +83,7 @@ Page({
       productionDate: pendingDraft.productionDate || '',
       shelfLifeValue: pendingDraft.shelfLifeValue == null ? '' : String(pendingDraft.shelfLifeValue),
       shelfLifeUnitIndex: shelfLifeUnitIndex >= 0 ? shelfLifeUnitIndex : 0,
+      reminderLeadDays: String(pendingDraft.reminderLeadDays ?? 1),
     }, () => this.updateExpiryPreview())
   },
 

@@ -20,16 +20,28 @@ function timestamp(value) {
 
 function toRecentProfile(item) {
   const mode = VALID_MODES.has(item.expiryInputMode) ? item.expiryInputMode : 'direct'
+  const invalidFields = []
+  const quantity = Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 9999 ? item.quantity : 1
+  const unit = typeof item.unit === 'string' && item.unit.trim().length >= 1 && item.unit.trim().length <= 8 ? item.unit.trim() : '件'
+  const category = VALID_CATEGORIES.has(item.category) ? item.category : 'food'
+  const reminderLeadDays = Number.isInteger(item.reminderLeadDays) && item.reminderLeadDays >= 0 && item.reminderLeadDays <= 30 ? item.reminderLeadDays : 1
+  if (quantity !== item.quantity) invalidFields.push('quantity')
+  if (unit !== item.unit) invalidFields.push('unit')
+  if (category !== item.category) invalidFields.push('category')
+  if (reminderLeadDays !== item.reminderLeadDays) invalidFields.push('reminderLeadDays')
+  const shelfLifeUnit = mode === 'shelf_life' && VALID_UNITS.has(item.shelfLifeUnit) ? item.shelfLifeUnit : mode === 'shelf_life' ? 'day' : null
+  if (mode === 'shelf_life' && shelfLifeUnit !== item.shelfLifeUnit) invalidFields.push('shelfLifeUnit')
   return {
-    name: item.name,
-    quantity: item.quantity,
-    unit: item.unit,
-    category: VALID_CATEGORIES.has(item.category) ? item.category : 'other',
+    name: typeof item.name === 'string' ? item.name : '',
+    quantity,
+    unit,
+    category,
     storageLocation: typeof item.storageLocation === 'string' ? item.storageLocation : '',
-    reminderLeadDays: Number.isInteger(item.reminderLeadDays) ? item.reminderLeadDays : 1,
+    reminderLeadDays,
     expiryInputMode: mode,
     shelfLifeValue: mode === 'shelf_life' && Number.isInteger(item.shelfLifeValue) ? item.shelfLifeValue : null,
-    shelfLifeUnit: mode === 'shelf_life' && VALID_UNITS.has(item.shelfLifeUnit) ? item.shelfLifeUnit : null,
+    shelfLifeUnit,
+    invalidFields,
   }
 }
 

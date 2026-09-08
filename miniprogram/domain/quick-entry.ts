@@ -4,6 +4,8 @@ import type {
   QuickEntryDraft,
   QuickEntryDraftFields,
   QuickEntryDraftIssue,
+  QuickEntryParseResult,
+  QuickEntrySource,
   RecentItemProfile,
 } from '../types/quick-entry'
 import { asInventorySaveInput } from '../types/quick-entry'
@@ -18,8 +20,10 @@ export function normalizeRecentName(value: string): string {
 }
 
 export function createSaveKey(): string {
-  const random = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0')
-  return `${random()}-${random()}-4${random().slice(1, 4)}-${random().slice(0, 4)}-${random()}${random().slice(0, 4)}`
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
+    const value = Math.floor(Math.random() * 16)
+    return (token === 'x' ? value : (value & 0x3) | 0x8).toString(16)
+  })
 }
 
 export function defaultQuickEntryFields(reminderLeadDays = 1): QuickEntryDraftFields {
@@ -40,6 +44,20 @@ export function defaultQuickEntryFields(reminderLeadDays = 1): QuickEntryDraftFi
 
 function issue(code: QuickEntryDraftIssue['code'], field: string, message: string) {
   return { code, field, message }
+}
+
+function isValidCategory(value: unknown): value is Category {
+  return CATEGORY_OPTIONS.some((option) => option.value === value && value !== '')
+}
+
+function confirmationIssue(field: string): QuickEntryDraftIssue {
+  if (field === 'quantity') return issue('INVALID_FIELD', field, '原记录数量无效，已改为 1，请确认')
+  if (field === 'unit') return issue('INVALID_FIELD', field, '原记录单位无效，已改为“件”，请确认')
+  if (field === 'category') return issue('INVALID_FIELD', field, '原记录分类无效，已改为“食品”，请确认')
+  if (field === 'reminderLeadDays') return issue('INVALID_FIELD', field, '原记录提醒设置无效，已使用当前默认值，请确认')
+  if (field === 'shelfLifeUnit') return issue('INVALID_FIELD', field, '原记录保质期单位无效，已改为“天”，请确认')
+  if (field.startsWith('date:')) return issue('AMBIGUOUS_DATE', field, '请选择识别日期的含义')
+  return issue('INVALID_FIELD', field, '请确认修正后的字段')
 }
 
 export function validateQuickEntryFields(fields: QuickEntryDraftFields): QuickEntryDraftIssue[] {
@@ -74,61 +92,164 @@ export function validateQuickEntryFields(fields: QuickEntryDraftFields): QuickEn
 }
 
 export function createDraftFromRecent(profile: RecentItemProfile, reminderLeadDays = 1): QuickEntryDraft {
-  const quantityValid = Number.isInteger(profile.quantity) && profile.quantity >= 1
+  const confirmationFields: string[] = []
+  const quantityValid = Number.isInteger(profile.quantity) && profile.quantity >= 1 && profile.quantity <= 9999
   const quantity = quantityValid ? profile.quantity : 1
-  const category = CATEGORY_OPTIONS.some((option) => option.value === profile.category)
-    ? profile.category
-    : 'food'
+  if (!quantityValid) confirmationFields.push('quantity')
+  const unitValid = typeof profile.unit === 'string' && profile.unit.trim().length >= 1 && profile.unit.trim().length <= 8
+  if (!unitValid) confirmationFields.push('unit')
+  const categoryValid = isValidCategory(profile.category)
+  if (!categoryValid) confirmationFields.push('category')
+  const reminderValid = Number.isInteger(profile.reminderLeadDays) && profile.reminderLeadDays >= 0 && profile.reminderLeadDays <= 30
+  if (!reminderValid) confirmationFields.push('reminderLeadDays')
+  const category = categoryValid ? profile.category : 'food'
   const expiryInputMode = profile.expiryInputMode === 'shelf_life' ? 'shelf_life' : 'direct'
+  const shelfLifeUnitValid = profile.shelfLifeUnit === 'day' || profile.shelfLifeUnit === 'month' || profile.shelfLifeUnit === 'year'
+  if (expiryInputMode === 'shelf_life' && !shelfLifeUnitValid) confirmationFields.push('shelfLifeUnit')
+  for (const field of profile.invalidFields || []) {
+    if (!confirmationFields.includes(field)) confirmationFields.push(field)
+  }
   const fields: QuickEntryDraftFields = {
     ...defaultQuickEntryFields(reminderLeadDays),
-    name: profile.name,
+    name: typeof profile.name === 'string' ? profile.name : '',
     quantity,
-    unit: profile.unit || '件',
+    unit: unitValid ? profile.unit.trim() : '件',
     category,
     storageLocation: profile.storageLocation || '',
     expiryInputMode,
     shelfLifeValue: expiryInputMode === 'shelf_life' ? profile.shelfLifeValue : null,
-    shelfLifeUnit: expiryInputMode === 'shelf_life' ? profile.shelfLifeUnit || 'day' : null,
+    shelfLifeUnit: expiryInputMode === 'shelf_life' ? (shelfLifeUnitValid ? profile.shelfLifeUnit : 'day') : null,
     productionDate: null,
     expiryDate: null,
-    reminderLeadDays: Number.isInteger(profile.reminderLeadDays) ? profile.reminderLeadDays : reminderLeadDays,
+    reminderLeadDays: reminderValid ? profile.reminderLeadDays : reminderLeadDays,
   }
-  const issues = validateQuickEntryFields(fields)
-  if (!quantityValid) {
-    issues.push(issue('INVALID_FIELD', 'quantity', '原记录数量无效，已改为 1，请确认'))
-  }
-  return {
+  return refreshDraftValidation({
     draftId: createSaveKey(),
     saveKey: createSaveKey(),
     source: 'recent',
-    status: issues.length ? (quantityValid ? 'needs_input' : 'needs_confirmation') : 'savable',
+    status: 'needs_input',
     fields,
-    issues,
-    selected: !issues.length,
+    issues: [],
+    selected: false,
     dateCandidates: [],
-    confirmationFields: quantityValid ? [] : ['quantity'],
-  }
+    confirmationFields,
+  })
 }
 
 export function refreshDraftValidation(draft: QuickEntryDraft): QuickEntryDraft {
   const issues = validateQuickEntryFields(draft.fields)
-  if (draft.confirmationFields?.includes('quantity')) {
-    issues.push(issue('INVALID_FIELD', 'quantity', '原记录数量无效，已改为 1，请确认'))
-  }
+  const confirmationFields = draft.confirmationFields || []
+  issues.push(...confirmationFields.map(confirmationIssue))
+  const wasBlocked = draft.issues.length > 0 || confirmationFields.length > 0
   return {
     ...draft,
     issues,
     status: draft.status === 'saved' || draft.status === 'saving'
       ? draft.status
-      : draft.confirmationFields?.length
+      : confirmationFields.length
         ? 'needs_confirmation'
         : issues.length
           ? 'needs_input'
           : 'savable',
-    selected: issues.length ? false : draft.selected,
+    selected: issues.length ? false : (wasBlocked ? true : draft.selected),
     errorMessage: undefined,
   }
+}
+
+export function createDraftFromParsed(
+  item: QuickEntryParseResult['items'][number],
+  source: Extract<QuickEntrySource, 'text' | 'voice' | 'date_photo'>,
+  reminderLeadDays = 1,
+  recentProfile?: RecentItemProfile,
+  evidence?: QuickEntryDraft['evidence'],
+): QuickEntryDraft {
+  const recent = recentProfile
+  const fields = defaultQuickEntryFields(reminderLeadDays)
+  fields.name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : recent?.name || ''
+  fields.quantity = Number.isInteger(item.quantity) ? item.quantity as number : recent?.quantity || 1
+  fields.unit = typeof item.unit === 'string' && item.unit.trim() ? item.unit.trim() : recent?.unit || '件'
+  fields.category = isValidCategory(item.category) ? item.category : (isValidCategory(recent?.category) ? recent.category : 'food')
+  fields.storageLocation = typeof item.storageLocation === 'string' ? item.storageLocation.trim() : recent?.storageLocation || ''
+  fields.reminderLeadDays = recent && Number.isInteger(recent.reminderLeadDays) && recent.reminderLeadDays >= 0 && recent.reminderLeadDays <= 30
+    ? recent.reminderLeadDays
+    : reminderLeadDays
+  fields.expiryInputMode = item.expiryInputMode === 'shelf_life' || item.shelfLifeValue ? 'shelf_life' : 'direct'
+  fields.shelfLifeValue = Number.isInteger(item.shelfLifeValue) ? item.shelfLifeValue as number : null
+  fields.shelfLifeUnit = item.shelfLifeUnit || (fields.expiryInputMode === 'shelf_life' ? 'day' : null)
+
+  const candidates = Array.isArray(item.dateCandidates) ? item.dateCandidates : []
+  const completeCandidates = candidates.filter((candidate) => candidate.complete && parseDateKey(candidate.date || ''))
+  const expiryCandidates = completeCandidates.filter((candidate) => candidate.role === 'expiry')
+  const productionCandidates = completeCandidates.filter((candidate) => candidate.role === 'production')
+  const confirmationFields: string[] = []
+
+  if (expiryCandidates.length === 1) {
+    const expiryDate = expiryCandidates[0].date as string
+    fields.expiryInputMode = 'direct'
+    fields.expiryDate = expiryDate
+    if (productionCandidates.length === 1 && productionCandidates[0].date && expiryDate < productionCandidates[0].date) {
+      confirmationFields.push(`date:${candidates.indexOf(expiryCandidates[0])}`)
+      confirmationFields.push(`date:${candidates.indexOf(productionCandidates[0])}`)
+    } else if (productionCandidates.length === 1 && fields.shelfLifeValue && fields.shelfLifeUnit) {
+      try {
+        const calculated = calculateExpiryDate({
+          mode: 'shelf_life',
+          productionDate: productionCandidates[0].date as string,
+          shelfLifeValue: fields.shelfLifeValue,
+          shelfLifeUnit: fields.shelfLifeUnit,
+        })
+        if (calculated !== fields.expiryDate) {
+          confirmationFields.push(`date:${candidates.indexOf(expiryCandidates[0])}`)
+          confirmationFields.push(`date:${candidates.indexOf(productionCandidates[0])}`)
+        }
+      } catch (_error) {
+        confirmationFields.push(`date:${candidates.indexOf(productionCandidates[0])}`)
+      }
+    }
+  } else if (expiryCandidates.length > 1) {
+    expiryCandidates.forEach((candidate) => confirmationFields.push(`date:${candidates.indexOf(candidate)}`))
+  } else if (productionCandidates.length === 1) {
+    fields.expiryInputMode = 'shelf_life'
+    fields.productionDate = productionCandidates[0].date
+  } else if (productionCandidates.length > 1) {
+    productionCandidates.forEach((candidate) => confirmationFields.push(`date:${candidates.indexOf(candidate)}`))
+  }
+  completeCandidates
+    .filter((candidate) => candidate.role === 'unknown')
+    .forEach((candidate) => confirmationFields.push(`date:${candidates.indexOf(candidate)}`))
+
+  return refreshDraftValidation({
+    draftId: createSaveKey(),
+    saveKey: createSaveKey(),
+    source,
+    status: 'needs_input',
+    fields,
+    issues: [],
+    selected: true,
+    dateCandidates: candidates,
+    confirmationFields,
+    evidence,
+  })
+}
+
+export function assignDateCandidate(
+  draft: QuickEntryDraft,
+  candidateIndex: number,
+  role: 'expiry' | 'production',
+): QuickEntryDraft {
+  const candidate = draft.dateCandidates[candidateIndex]
+  if (!candidate || !candidate.complete || !parseDateKey(candidate.date || '')) return draft
+  const confirmationFields = (draft.confirmationFields || []).filter((field) => (
+    role === 'expiry' ? !field.startsWith('date:') : field !== `date:${candidateIndex}`
+  ))
+  return refreshDraftValidation({
+    ...draft,
+    confirmationFields,
+    dateCandidates: draft.dateCandidates.map((item, index) => index === candidateIndex ? { ...item, role } : item),
+    fields: role === 'expiry'
+      ? { ...draft.fields, expiryInputMode: 'direct', expiryDate: candidate.date, productionDate: null }
+      : { ...draft.fields, expiryInputMode: 'shelf_life', productionDate: candidate.date, expiryDate: null },
+  })
 }
 
 export function getDraftSummary(draft: QuickEntryDraft): string {
@@ -157,9 +278,7 @@ export function getExpirySummary(draft: QuickEntryDraft): string {
 
 export function draftToInventoryInput(draft: QuickEntryDraft) {
   const issues = validateQuickEntryFields(draft.fields)
-  if (draft.confirmationFields?.length) {
-    issues.push(issue('INVALID_FIELD', 'quantity', '请确认原记录中的修正字段'))
-  }
+  if (draft.confirmationFields?.length) issues.push(...draft.confirmationFields.map(confirmationIssue))
   if (issues.length) return { input: null, issues }
   return { input: asInventorySaveInput(draft.fields), issues: [] }
 }

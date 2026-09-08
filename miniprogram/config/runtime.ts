@@ -10,7 +10,7 @@ export const REMINDER_TEMPLATE_ID = 'jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8
 /** 快速录入能力开关；P1 provider 完成隐私评审后再逐项开启。 */
 export const QUICK_ENTRY_FEATURES = {
   recent: true,
-  text: false,
-  voice: false,
-  datePhoto: false,
+  text: true,
+  voice: true,
+  datePhoto: true,
 } as const

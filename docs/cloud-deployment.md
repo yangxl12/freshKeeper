@@ -27,6 +27,7 @@
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, storageLocation ASC, expiryDate ASC, createdAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, completedAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, completedAt DESC` |
+| `inventory_items` | `ownerId ASC, inventoryStatus ASC, updatedAt DESC` |
 | `inventory_items` | `inventoryStatus ASC, purgeAfter ASC` |
 | `reminder_jobs` | `status ASC, remindDate ASC` |
 | `reminder_jobs` | `ownerId ASC, status ASC` |
@@ -42,6 +43,7 @@
 - `reminderApi`
 - `dispatchReminders`
 - `cleanupTrash`
+- `quickEntryApi`
 
 编译或上传小程序不会同步更新云函数。只要 `cloudfunctions/` 有改动，发布对应客户端前必须单独部署相关函数；否则新客户端仍会调用旧接口。也可以使用开发者工具 CLI：
 
@@ -51,7 +53,20 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
 
 部署 `settingsApi` 后，应在“我的 → 提醒设置”中修改默认提醒天数并保存一次，确认云端只校验提醒天数；保存时会同时清除当前用户历史设置中的废弃默认存放位置字段。
 
-运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用前三个业务函数；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
+运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用 `inventoryApi`、`settingsApi`、`reminderApi` 和 `quickEntryApi`；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
+
+### 3.1 快速录入识别服务
+
+`quickEntryApi` 通过 HTTPS JSON 适配器调用识别服务。未配置的能力不会显示在客户端。按需配置：
+
+| 变量 | 用途 |
+| --- | --- |
+| `QUICK_ENTRY_TEXT_ENDPOINT` / `QUICK_ENTRY_TEXT_API_KEY` / `QUICK_ENTRY_TEXT_MODEL` | 文字结构化解析 |
+| `QUICK_ENTRY_STT_ENDPOINT` / `QUICK_ENTRY_STT_API_KEY` / `QUICK_ENTRY_STT_MODEL` | 语音转写 |
+| `QUICK_ENTRY_OCR_ENDPOINT` / `QUICK_ENTRY_OCR_API_KEY` / `QUICK_ENTRY_OCR_MODEL` | 日期照片识别 |
+| `QUICK_ENTRY_TIMEOUT_MS` | 外部请求超时，默认 8000 毫秒 |
+
+适配器统一使用 `Authorization: Bearer <API_KEY>` 和 JSON 请求。文字接口接收 `text/serverToday`，返回技术方案定义的 `items[].dateFacts`；语音、图片接口接收 `mediaType/mediaBase64`，分别返回 `{ text }` 和 `{ candidates }` 或 `{ dateFacts }`。上线前必须完成服务商隐私评审、媒体删除和真机权限验收。
 
 为 `reminderApi` 配置环境变量：
 

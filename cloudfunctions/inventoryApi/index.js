@@ -95,16 +95,28 @@ function publicItem(item, today, extra = {}) {
 }
 
 async function listRecentProfiles(ownerId) {
-  const [activeResult, usedUpResult] = await Promise.all(
-    ['active', 'used_up'].map((inventoryStatus) =>
-      db.collection(ITEMS)
+  const statuses = ['active', 'used_up']
+  const offsets = { active: 0, used_up: 0 }
+  const completed = { active: false, used_up: false }
+  const rows = []
+  while (!completed.active || !completed.used_up) {
+    const pages = await Promise.all(statuses.map(async (inventoryStatus) => {
+      if (completed[inventoryStatus]) return { inventoryStatus, data: [] }
+      const result = await db.collection(ITEMS)
         .where({ ownerId, inventoryStatus })
         .orderBy('updatedAt', 'desc')
+        .skip(offsets[inventoryStatus])
         .limit(30)
-        .get(),
-    ),
-  )
-  return { items: mergeRecentItems([...activeResult.data, ...usedUpResult.data]) }
+        .get()
+      offsets[inventoryStatus] += result.data.length
+      if (result.data.length < 30) completed[inventoryStatus] = true
+      return { inventoryStatus, data: result.data }
+    }))
+    pages.forEach((page) => rows.push(...page.data))
+    const items = mergeRecentItems(rows)
+    if (items.length >= 6 || pages.every((page) => page.data.length === 0)) return { items }
+  }
+  return { items: mergeRecentItems(rows) }
 }
 
 function escapeRegExp(value) {
@@ -369,32 +381,38 @@ async function saveIdempotent(ownerId, idempotencyKey, normalized) {
   const creationFingerprint = fingerprint(normalized)
   const creationRequestId = fingerprint(`${ownerId}:${idempotencyKey}`)
   const itemId = stableItemId(ownerId, idempotencyKey)
-  return db.runTransaction(async (transaction) => {
-    const existingResult = await transaction.collection(ITEMS).where({ _id: itemId }).limit(1).get()
-    const existing = existingResult.data[0]
-    if (existing) {
-      assert(existing.ownerId === ownerId, 'IDEMPOTENCY_COLLISION', '快速录入请求编号发生冲突，请重新录入')
-      assert(existing.creationRequestId === creationRequestId, 'IDEMPOTENCY_COLLISION', '快速录入请求编号发生冲突，请重新录入')
-      assert(existing.creationFingerprint === creationFingerprint, 'IDEMPOTENCY_CONFLICT', '同一快速录入请求的数据已变化')
-      return { itemId: existing._id, version: existing.version, expiryDate: existing.expiryDate }
-    }
+  const resolveExisting = (existing) => {
+    assert(existing.ownerId === ownerId, 'IDEMPOTENCY_COLLISION', '快速录入请求编号发生冲突，请重新录入')
+    assert(existing.creationRequestId === creationRequestId, 'IDEMPOTENCY_COLLISION', '快速录入请求编号发生冲突，请重新录入')
+    assert(existing.creationFingerprint === creationFingerprint, 'IDEMPOTENCY_CONFLICT', '同一快速录入请求的数据已变化')
+    return { itemId: existing._id, version: existing.version, expiryDate: existing.expiryDate }
+  }
+  try {
+    return await db.runTransaction(async (transaction) => {
+      const existingResult = await transaction.collection(ITEMS).where({ _id: itemId }).limit(1).get()
+      const existing = existingResult.data[0]
+      if (existing) return resolveExisting(existing)
 
-    await transaction.collection(ITEMS).doc(itemId).set({
-      data: {
-        _id: itemId,
-        ownerId,
-        ...normalized,
-        inventoryStatus: 'active',
-        version: 1,
-        createdAt: db.serverDate(),
-        updatedAt: db.serverDate(),
-        completedAt: null,
-        creationRequestId,
-        creationFingerprint,
-      },
+      await transaction.collection(ITEMS).doc(itemId).set({
+        data: {
+          ownerId,
+          ...normalized,
+          inventoryStatus: 'active',
+          version: 1,
+          createdAt: db.serverDate(),
+          updatedAt: db.serverDate(),
+          completedAt: null,
+          creationRequestId,
+          creationFingerprint,
+        },
+      })
+      return { itemId, version: 1, expiryDate: normalized.expiryDate }
     })
-    return { itemId, version: 1, expiryDate: normalized.expiryDate }
-  })
+  } catch (error) {
+    const existingResult = await db.collection(ITEMS).where({ _id: itemId }).limit(1).get()
+    if (existingResult.data[0]) return resolveExisting(existingResult.data[0])
+    throw error
+  }
 }
 
 async function decrement(ownerId, event) {
@@ -497,6 +515,7 @@ async function removePermanently(ownerId, event) {
 }
 
 async function restore(ownerId, event) {
+  assert(event.idempotencyKey === undefined, 'INVALID_ARGUMENT', '重新入库不能包含快速录入请求编号')
   const input = event.data
   const normalized = validateSaveInput(input)
   const itemId = validateItemId(input.itemId)

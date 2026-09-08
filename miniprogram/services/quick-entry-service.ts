@@ -1,5 +1,6 @@
 import type {
-  DateCandidate,
+  DatePhotoResult,
+  QuickEntryCapabilities,
   QuickEntryParseResult,
   RecentItemProfile,
 } from '../types/quick-entry'
@@ -7,6 +8,10 @@ import { callCloud } from './cloud-client'
 
 export function listRecentProfiles(): Promise<{ items: RecentItemProfile[] }> {
   return callCloud('inventoryApi', { action: 'listRecentProfiles' })
+}
+
+export function getQuickEntryCapabilities(): Promise<QuickEntryCapabilities> {
+  return callCloud('quickEntryApi', { action: 'getCapabilities' })
 }
 
 export function parseQuickText(text: string): Promise<QuickEntryParseResult> {
@@ -22,9 +27,24 @@ export function transcribeVoice(fileID: string, mediaType: string) {
 }
 
 export function recognizeDatePhoto(fileID: string, mediaType: string) {
-  return callCloud<{ candidates: DateCandidate[]; serverToday: string }>('quickEntryApi', {
+  return callCloud<DatePhotoResult>('quickEntryApi', {
     action: 'recognizeDatePhoto',
     fileID,
     mediaType,
+  })
+}
+
+
+export function uploadQuickEntryMedia(localPath: string, kind: 'audio' | 'image'): Promise<string> {
+  const extension = localPath.match(/\.([A-Za-z0-9]+)(?:\?|$)/)?.[1]?.toLowerCase() || (kind === 'audio' ? 'mp3' : 'jpg')
+  const random = Math.random().toString(16).slice(2)
+  const cloudPath = `quick-entry/${kind}/${Date.now()}-${random}.${extension}`
+  return new Promise((resolve, reject) => {
+    wx.cloud.uploadFile({
+      cloudPath,
+      filePath: localPath,
+      success: (result) => resolve(result.fileID),
+      fail: reject,
+    })
   })
 }

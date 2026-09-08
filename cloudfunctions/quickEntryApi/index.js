@@ -1,37 +1,12 @@
 'use strict'
 
+const crypto = require('node:crypto')
 const cloud = require('wx-server-sdk')
-const { assertNoClientIdentity } = require('../inventoryApi/validation')
+const { currentDateKey, normalizePhotoResult, normalizeTextResult } = require('./date-facts')
+const { providerConfigured, requestProvider } = require('./provider')
+const { assert, assertNoClientIdentity, validateMedia, validateText } = require('./validation')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
-
-class QuickEntryError extends Error {
-  constructor(code, message) {
-    super(message)
-    this.code = code
-  }
-}
-
-function assert(condition, code, message) {
-  if (!condition) throw new QuickEntryError(code, message)
-}
-
-function validateText(value) {
-  assert(typeof value === 'string', 'INVALID_ARGUMENT', '录入文字不正确')
-  const text = value.trim()
-  assert(text.length >= 1, 'INVALID_ARGUMENT', '请输入要识别的内容')
-  assert(text.length <= 500, 'INVALID_ARGUMENT', '一次最多识别 500 个字符')
-  return text
-}
-
-function validateMedia(event) {
-  assert(typeof event.fileID === 'string' && event.fileID.length >= 1 && event.fileID.length <= 512, 'MEDIA_INVALID', '临时媒体无效')
-  assert(['audio', 'image'].includes(event.mediaType), 'MEDIA_INVALID', '媒体类型不正确')
-}
-
-function providerConfigured(kind) {
-  return Boolean(process.env[`QUICK_ENTRY_${kind}_ENDPOINT`] && process.env[`QUICK_ENTRY_${kind}_API_KEY`])
-}
 
 async function removeTemporaryFile(fileID) {
   try {
@@ -41,38 +16,54 @@ async function removeTemporaryFile(fileID) {
   }
 }
 
+async function downloadMedia(fileID, maxBytes) {
+  const result = await cloud.downloadFile({ fileID })
+  const buffer = result.fileContent
+  assert(Buffer.isBuffer(buffer) && buffer.length > 0 && buffer.length <= maxBytes, 'MEDIA_INVALID', '临时媒体大小不正确')
+  return buffer
+}
+
+async function getCapabilities() {
+  return {
+    text: providerConfigured('TEXT'),
+    voice: providerConfigured('STT') && providerConfigured('TEXT'),
+    datePhoto: providerConfigured('OCR'),
+  }
+}
+
 async function parseText(event) {
-  validateText(event.text)
-  assert(providerConfigured('TEXT'), 'AI_UNAVAILABLE', '文字识别服务暂未配置，请使用完整填写')
-  throw new QuickEntryError('AI_UNAVAILABLE', '文字识别服务暂未配置，请使用完整填写')
+  const text = validateText(event.text)
+  const serverToday = currentDateKey()
+  return normalizeTextResult(await requestProvider('TEXT', { text, serverToday }), serverToday)
 }
 
 async function transcribeVoice(event) {
-  validateMedia(event)
-  assert(event.mediaType === 'audio', 'MEDIA_INVALID', '录音媒体类型不正确')
+  const fileID = validateMedia(event, 'audio')
   try {
-    assert(providerConfigured('STT'), 'AI_UNAVAILABLE', '语音识别服务暂未配置，请使用文字填写')
-    throw new QuickEntryError('AI_UNAVAILABLE', '语音识别服务暂未配置，请使用文字填写')
+    const buffer = await downloadMedia(fileID, 4 * 1024 * 1024)
+    const result = await requestProvider('STT', { mediaType: 'audio', mediaBase64: buffer.toString('base64') })
+    const body = result?.data && typeof result.data === 'object' ? result.data : result
+    return { text: validateText(body?.text), serverToday: currentDateKey() }
   } finally {
-    await removeTemporaryFile(event.fileID)
+    await removeTemporaryFile(fileID)
   }
 }
 
 async function recognizeDatePhoto(event) {
-  validateMedia(event)
-  assert(event.mediaType === 'image', 'MEDIA_INVALID', '图片媒体类型不正确')
+  const fileID = validateMedia(event, 'image')
   try {
-    assert(providerConfigured('OCR'), 'AI_UNAVAILABLE', '日期识别服务暂未配置，请手动选择日期')
-    throw new QuickEntryError('AI_UNAVAILABLE', '日期识别服务暂未配置，请手动选择日期')
+    const buffer = await downloadMedia(fileID, 10 * 1024 * 1024)
+    const serverToday = currentDateKey()
+    return normalizePhotoResult(await requestProvider('OCR', { mediaType: 'image', mediaBase64: buffer.toString('base64'), serverToday }), serverToday)
   } finally {
-    await removeTemporaryFile(event.fileID)
+    await removeTemporaryFile(fileID)
   }
 }
 
-const handlers = { parseText, transcribeVoice, recognizeDatePhoto }
+const handlers = { getCapabilities, parseText, transcribeVoice, recognizeDatePhoto }
 
 exports.main = async (event = {}) => {
-  const requestId = require('node:crypto').randomUUID()
+  const requestId = crypto.randomUUID()
   const startedAt = Date.now()
   const action = typeof event.action === 'string' ? event.action : ''
   try {
