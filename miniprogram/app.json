@@ -15,11 +15,6 @@
     "navigationBarTextStyle": "black",
     "backgroundColor": "#F5F6F2"
   },
-  "permission": {
-    "scope.record": {
-      "desc": "用于将本次语音转换为可编辑的快速录入文字"
-    }
-  },
   "tabBar": {
     "color": "#929E98",
     "selectedColor": "#176348",

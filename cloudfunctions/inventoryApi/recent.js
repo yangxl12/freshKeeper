@@ -59,4 +59,27 @@ function mergeRecentItems(rows, limit = 6) {
   return result
 }
 
-module.exports = { mergeRecentItems, normalizeRecentName, toRecentProfile }
+async function readRecentProfiles(fetchPage, limit = 6) {
+  const states = ['active', 'used_up'].map(status => ({ status, offset: 0, done: false, lastTime: Infinity }))
+  const rows = []
+  let cutoff = -Infinity
+  while (states.some(state => !state.done && state.lastTime >= cutoff)) {
+    await Promise.all(states.filter(state => !state.done && state.lastTime >= cutoff).map(async state => {
+      const page = await fetchPage(state.status, state.offset, 30)
+      state.offset += page.length
+      state.done = page.length < 30
+      state.lastTime = page.length ? timestamp(page[page.length - 1].updatedAt) : -Infinity
+      rows.push(...page)
+    }))
+    const unique = new Set()
+    const sorted = [...rows].sort((a, b) => timestamp(b.updatedAt) - timestamp(a.updatedAt))
+    for (const row of sorted) {
+      const key = normalizeRecentName(row.name)
+      if (key) unique.add(key)
+      if (unique.size >= limit) { cutoff = timestamp(row.updatedAt); break }
+    }
+  }
+  return { items: mergeRecentItems(rows, limit) }
+}
+
+module.exports = { mergeRecentItems, normalizeRecentName, toRecentProfile, readRecentProfiles }

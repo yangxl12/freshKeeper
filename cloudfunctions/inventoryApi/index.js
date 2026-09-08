@@ -24,7 +24,7 @@ const {
   validateSearch,
   validateVersion,
 } = require('./validation')
-const { mergeRecentItems } = require('./recent')
+const { readRecentProfiles } = require('./recent')
 const { fingerprint, stableItemId } = require('./idempotency')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
@@ -95,30 +95,12 @@ function publicItem(item, today, extra = {}) {
 }
 
 async function listRecentProfiles(ownerId) {
-  const statuses = ['active', 'used_up']
-  const offsets = { active: 0, used_up: 0 }
-  const completed = { active: false, used_up: false }
-  const rows = []
-  while (!completed.active || !completed.used_up) {
-    const pages = await Promise.all(statuses.map(async (inventoryStatus) => {
-      if (completed[inventoryStatus]) return { inventoryStatus, data: [] }
-      const result = await db.collection(ITEMS)
-        .where({ ownerId, inventoryStatus })
-        .orderBy('updatedAt', 'desc')
-        .skip(offsets[inventoryStatus])
-        .limit(30)
-        .get()
-      offsets[inventoryStatus] += result.data.length
-      if (result.data.length < 30) completed[inventoryStatus] = true
-      return { inventoryStatus, data: result.data }
-    }))
-    pages.forEach((page) => rows.push(...page.data))
-    const items = mergeRecentItems(rows)
-    if (items.length >= 6 || pages.every((page) => page.data.length === 0)) return { items }
-  }
-  return { items: mergeRecentItems(rows) }
+  return readRecentProfiles(async (inventoryStatus, offset, limit) => {
+    const result = await db.collection(ITEMS).where({ ownerId, inventoryStatus })
+      .orderBy('updatedAt', 'desc').skip(offset).limit(limit).get()
+    return result.data
+  })
 }
-
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

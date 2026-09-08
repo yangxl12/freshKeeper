@@ -66,7 +66,7 @@ describe('quick entry drafts', () => {
         }],
       }],
       serverToday: '2026-09-08',
-      parserVersion: 'local-v1',
+      parserVersion: 'rules-v2',
     })
   })
 

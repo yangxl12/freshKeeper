@@ -59,6 +59,20 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
 
 `quickEntryApi` 通过 HTTPS JSON 适配器调用识别服务。未配置的能力不会显示在客户端。按需配置：
 
+当前版本文字快录内置确定性解析器，无需第三方密钥。客户端和云函数使用同一实现，`npm run check:project` 会检查两份文件一致；修改后执行 `node scripts/sync-quick-parser.mjs --write`。
+
+语音和日期照片已增加腾讯云官方 SDK 接入，无需另建代理服务。在腾讯云账号开通“一句话识别”和“通用文字识别（高精度版）”后，给 **quickEntryApi 的云端环境变量**配置：
+
+| 变量 | 用途 |
+| --- | --- |
+| `QUICK_ENTRY_TENCENT_SECRET_ID` | 仅具有 ASR/OCR 所需权限的账号 SecretId |
+| `QUICK_ENTRY_TENCENT_SECRET_KEY` | 对应 SecretKey，禁止写到小程序或提交 Git |
+| `QUICK_ENTRY_TENCENT_REGION` | 可选，默认 `ap-guangzhou` |
+
+已有自定义 HTTPS 服务时，以下 ENDPOINT 配置优先于腾讯云适配器。STT 不再依赖外部 TEXT 服务开通。能力发现仅证明配置存在，发布前仍需实际调用验证服务权限、余额和输出。
+
+参考官方接口：[一句话识别](https://cloud.tencent.com/document/api/1093/35646)、[通用文字识别（高精度版）](https://cloud.tencent.com/document/product/866/34937)。
+
 | 变量 | 用途 |
 | --- | --- |
 | `QUICK_ENTRY_TEXT_ENDPOINT` / `QUICK_ENTRY_TEXT_API_KEY` / `QUICK_ENTRY_TEXT_MODEL` | 文字结构化解析 |
@@ -67,6 +81,16 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
 | `QUICK_ENTRY_TIMEOUT_MS` | 外部请求超时，默认 8000 毫秒 |
 
 适配器统一使用 `Authorization: Bearer <API_KEY>` 和 JSON 请求。文字接口接收 `text/serverToday`，返回技术方案定义的 `items[].dateFacts`；语音、图片接口接收 `mediaType/mediaBase64`，分别返回 `{ text }` 和 `{ candidates }` 或 `{ dateFacts }`。上线前必须完成服务商隐私评审、媒体删除和真机权限验收。
+
+日期照片响应还支持 `shelfLifeValue/shelfLifeUnit/sourceText`；`dateFacts` 中的 `shelf_life` 也会被保留。腾讯云 OCR 仅提取日期及保质期，不从照片推测商品名称。低置信度结果保持待补充。
+
+### 3.2 临时媒体和微信后台配置
+
+- 客户端先调用 `createMediaUpload` 获取当前用户专属临时路径，存储目录为 `quick-entry/<用户标识的哈希>/<audio|image>/`。云函数在下载、识别、删除前核对归属；不接受其他用户的路径。
+- 存储安全规则须允许用户上传、删除自己的文件，并禁止其他用户读取。云函数处理完成在 `finally` 删除；客户端在成功或失败后再尝试删除。为 `quick-entry/` 配置最短可用生命周期清理，兜底网络中断、云函数硬超时或微信进程终止后的孤立文件；不要将其当成长期商品图库。
+- 微信公众平台“用户隐私保护指引”声明本次语音转写、日期照片识别的数据用途、腾讯云处理方和临时处理范围，并同步审核材料。代码不能代替后台提交。
+- 麦克风使用 `wx.authorize({scope:'scope.record'})`，相机由用户点击后创建 `camera`，相册通过单张 `chooseMedia`。`app.json.permission` 不支持 `scope.record`/`scope.camera` 声明，不能用无效配置代替后台隐私指引。
+- 真机逐项检查首次授权、拒绝后改用文字/手动、移出取消录音、30 秒停止、相机/相册拒绝、弱网重试和安全区。两个账号分别验证近期列表和媒体归属。
 
 为 `reminderApi` 配置环境变量：
 

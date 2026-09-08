@@ -13,6 +13,7 @@ import type {
 } from '../../types/inventory'
 import { track } from '../../utils/analytics'
 import { calculateExpiryDate, localTodayKey, parseDateKey } from '../../utils/date-key'
+import { createSaveKey } from '../../domain/quick-entry'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
 const LEGACY_STORAGE_LABELS: Record<string, string> = {
@@ -24,6 +25,10 @@ const LEGACY_STORAGE_LABELS: Record<string, string> = {
 }
 Page({
   data: {
+    quickSource: false,
+    quickSaveKey: '',
+    originalExpiryDate: '',
+    originalCreatedAt: 0,
     itemId: '',
     restoring: false,
     version: 0,
@@ -55,6 +60,12 @@ Page({
     const pendingDraft = !itemId && !restoring ? app.globalData.pendingQuickFormDraft : null
     if (pendingDraft) app.globalData.pendingQuickFormDraft = null
     this.setData({ itemId, restoring })
+    if (options.source === 'quick-entry' && !itemId && !restoring) {
+      this.setData({ quickSource: true, quickSaveKey: createSaveKey() })
+      this.getOpenerEventChannel?.().on?.('quickDraftIdentity', (data: { saveKey?: string }) => {
+        if (data.saveKey) this.setData({ quickSaveKey: data.saveKey })
+      })
+    }
     wx.setNavigationBarTitle({ title: restoring ? '重新编辑' : itemId ? '编辑物品' : '新增物品' })
     if (itemId) this.loadItem(itemId)
     else this.loadDefaults(pendingDraft)
@@ -99,6 +110,8 @@ Page({
       )
       this.setData({
         version: item.version,
+        originalExpiryDate: item.expiryDate,
+        originalCreatedAt: item.createdAt ? new Date(item.createdAt).getTime() : 0,
         mode: item.expiryInputMode,
         name: item.name,
         quantity: String(item.quantity),
@@ -236,8 +249,17 @@ Page({
     this.setData({ saving: true, errorMessage: '' })
     try {
       if (this.data.restoring) await restoreItem(input)
-      else await saveItem(input)
+      else await saveItem(input, this.data.quickSource ? { idempotencyKey: this.data.quickSaveKey } : undefined)
+      if (this.data.quickSource) {
+        this.getOpenerEventChannel?.().emit?.('quickDraftSaved')
+        track('quick_entry_manual_save', { result: 'success' })
+      }
       if (!this.data.itemId) track('item_create_success')
+      const finalExpiryDate = this.data.mode === 'direct' ? this.data.expiryDate : this.data.expiryPreview
+      if (this.data.itemId && !this.data.restoring && finalExpiryDate !== this.data.originalExpiryDate) {
+        const age = Date.now() - this.data.originalCreatedAt
+        track('item_expiry_corrected', { within24h: this.data.originalCreatedAt > 0 && age >= 0 && age <= 86400000 ? 1 : 0 })
+      }
       wx.showToast({
         title: this.data.restoring ? '已重新入库' : this.data.itemId ? '修改成功' : '已加入库存',
         icon: 'success',

@@ -10,109 +10,11 @@ import type {
 } from '../types/quick-entry'
 import { asInventorySaveInput } from '../types/quick-entry'
 import {
-  addDays,
   calculateExpiryDate,
-  daysInMonth,
-  formatDateKey,
-  localTodayKey,
   parseDateKey,
 } from '../utils/date-key'
 
-const LOCAL_ENTRY_SEPARATOR = /[\n；;]+/
-const LOCAL_QUANTITY_PATTERN = /(\d{1,4})\s*(盒|瓶|袋|包|罐|个|件|支|箱|片|粒|份|桶|公斤|千克|克|斤|毫升|升)/
-const LOCAL_SHELF_LIFE_PATTERN = /保质期\s*(\d{1,4})\s*(天|日|个月|月|年)/
-const LOCAL_STORAGE_PATTERN = /(?:放|存放)(?:在|到)?\s*([^\s，,；;]{1,20})/
-const LOCAL_FULL_DATE_PATTERN = /(\d{4})\s*(?:年|[-/.])\s*(\d{1,2})\s*(?:月|[-/.])\s*(\d{1,2})\s*(?:日|号)?/
-const LOCAL_MONTH_DAY_PATTERN = /(\d{1,2})\s*月\s*(\d{1,2})\s*(?:日|号)?/
-const LOCAL_RELATIVE_DATE_PATTERN = /(今天|明天|后天|(\d{1,4})\s*天后)/
-
-function localDateKey(year: number, month: number, day: number): string | null {
-  if (!Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null
-  return formatDateKey({ year, month, day })
-}
-
-function nearestLocalMonthDay(today: string, month: number, day: number): string | null {
-  const year = Number(today.slice(0, 4))
-  const currentYear = localDateKey(year, month, day)
-  if (currentYear && currentYear >= today) return currentYear
-  return localDateKey(year + 1, month, day)
-}
-
-function localDateRole(text: string, index: number, rawText: string): 'expiry' | 'production' | 'unknown' {
-  const context = text.slice(Math.max(0, index - 8), index + rawText.length + 8)
-  if (/(生产|出厂|制造)/.test(context)) return 'production'
-  if (/(到期|过期|有效期|失效|EXP)/i.test(context)) return 'expiry'
-  return 'unknown'
-}
-
-function localDateCandidate(text: string, today: string) {
-  const full = LOCAL_FULL_DATE_PATTERN.exec(text)
-  if (full) {
-    const date = localDateKey(Number(full[1]), Number(full[2]), Number(full[3]))
-    return { date, role: localDateRole(text, full.index, full[0]), rawText: full[0], complete: Boolean(date), source: 'text' as const }
-  }
-  const monthDay = LOCAL_MONTH_DAY_PATTERN.exec(text)
-  if (monthDay) {
-    const date = nearestLocalMonthDay(today, Number(monthDay[1]), Number(monthDay[2]))
-    return { date, role: localDateRole(text, monthDay.index, monthDay[0]), rawText: monthDay[0], complete: Boolean(date), source: 'text' as const }
-  }
-  const relative = LOCAL_RELATIVE_DATE_PATTERN.exec(text)
-  if (relative) {
-    const offset = relative[1] === '今天' ? 0 : relative[1] === '明天' ? 1 : relative[1] === '后天' ? 2 : Number(relative[2])
-    const date = Number.isInteger(offset) && offset <= 3650 ? addDays(today, offset) : null
-    return { date, role: localDateRole(text, relative.index, relative[0]) === 'production' ? 'production' as const : 'expiry' as const, rawText: relative[0], complete: Boolean(date), source: 'text' as const }
-  }
-  return null
-}
-
-function localShelfLifeUnit(value: string) {
-  if (value === '年') return 'year' as const
-  if (value === '月' || value === '个月') return 'month' as const
-  return 'day' as const
-}
-
-function localItemName(text: string): string {
-  return text
-    .replace(LOCAL_FULL_DATE_PATTERN, ' ')
-    .replace(LOCAL_MONTH_DAY_PATTERN, ' ')
-    .replace(LOCAL_RELATIVE_DATE_PATTERN, ' ')
-    .replace(LOCAL_SHELF_LIFE_PATTERN, ' ')
-    .replace(LOCAL_QUANTITY_PATTERN, ' ')
-    .replace(LOCAL_STORAGE_PATTERN, ' ')
-    .replace(/(?:到期|过期|有效期至?|失效|生产日期?|出厂日期?|制造日期?)/gi, ' ')
-    .replace(/^(?:新增|添加|录入|买了?)\s*/, '')
-    .replace(/[，,。.!！?？、]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-export function parseQuickTextLocally(text: string, today = localTodayKey()): QuickEntryParseResult {
-  const normalized = text.trim()
-  if (!normalized) throw new Error('请输入要识别的内容')
-  if (normalized.length > 500) throw new Error('一次最多识别 500 个字符')
-  const entries = normalized.split(LOCAL_ENTRY_SEPARATOR).map((entry) => entry.trim()).filter(Boolean)
-  if (entries.length > 5) throw new Error('一次最多生成 5 条草稿，请分次录入')
-  return {
-    items: entries.map((entry) => {
-      const quantity = LOCAL_QUANTITY_PATTERN.exec(entry)
-      const shelfLife = LOCAL_SHELF_LIFE_PATTERN.exec(entry)
-      const storage = LOCAL_STORAGE_PATTERN.exec(entry)
-      const candidate = localDateCandidate(entry, today)
-      return {
-        name: localItemName(entry),
-        quantity: quantity ? Number(quantity[1]) : undefined,
-        unit: quantity?.[2],
-        storageLocation: storage?.[1],
-        expiryInputMode: shelfLife ? 'shelf_life' as const : undefined,
-        shelfLifeValue: shelfLife ? Number(shelfLife[1]) : undefined,
-        shelfLifeUnit: shelfLife ? localShelfLifeUnit(shelfLife[2]) : undefined,
-        dateCandidates: candidate ? [candidate] : [],
-      }
-    }),
-    serverToday: today,
-    parserVersion: 'local-v1',
-  }
-}
+export { parseText as parseQuickTextLocally } from './quick-text'
 
 export function normalizeRecentName(value: string): string {
   return value
@@ -190,6 +92,13 @@ export function validateQuickEntryFields(fields: QuickEntryDraftFields): QuickEn
     if (!SHELF_LIFE_OPTIONS.some((option) => option.value === fields.shelfLifeUnit)) {
       issues.push(issue('INVALID_FIELD', 'shelfLifeUnit', '请选择保质期单位'))
     }
+    if (!issues.some((item) => ['productionDate', 'shelfLifeValue', 'shelfLifeUnit'].includes(item.field || ''))) {
+      try {
+        calculateExpiryDate({ mode: 'shelf_life', ...fields })
+      } catch (_error) {
+        issues.push(issue('INVALID_FIELD', 'shelfLifeValue', '计算结果超出有效日期范围，请修改保质期'))
+      }
+    }
   }
   return issues
 }
@@ -241,6 +150,8 @@ export function createDraftFromRecent(profile: RecentItemProfile, reminderLeadDa
 
 export function refreshDraftValidation(draft: QuickEntryDraft): QuickEntryDraft {
   const issues = validateQuickEntryFields(draft.fields)
+  if (draft.dateConflict) issues.push(issue('DATE_CONFLICT', 'expiryDate', draft.dateConflict))
+  if (draft.dateInvalid) issues.push(issue('DATE_CONFLICT', 'expiryDate', '到期日期早于生产日期，请手动修正或重拍'))
   const confirmationFields = draft.confirmationFields || []
   issues.push(...confirmationFields.map(confirmationIssue))
   const wasBlocked = draft.issues.length > 0 || confirmationFields.length > 0
@@ -266,14 +177,15 @@ export function createDraftFromParsed(
   recentProfile?: RecentItemProfile,
   evidence?: QuickEntryDraft['evidence'],
 ): QuickEntryDraft {
-  const recent = recentProfile
+  const recentDraft = recentProfile ? createDraftFromRecent(recentProfile, reminderLeadDays) : undefined
+  const recent = recentDraft?.fields
   const fields = defaultQuickEntryFields(reminderLeadDays)
   fields.name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : recent?.name || ''
   fields.quantity = Number.isInteger(item.quantity) ? item.quantity as number : recent?.quantity || 1
   fields.unit = typeof item.unit === 'string' && item.unit.trim() ? item.unit.trim() : recent?.unit || '件'
   fields.category = isValidCategory(item.category) ? item.category : (isValidCategory(recent?.category) ? recent.category : 'food')
   fields.storageLocation = typeof item.storageLocation === 'string' ? item.storageLocation.trim() : recent?.storageLocation || ''
-  fields.reminderLeadDays = recent && Number.isInteger(recent.reminderLeadDays) && recent.reminderLeadDays >= 0 && recent.reminderLeadDays <= 30
+  fields.reminderLeadDays = recent && recent.reminderLeadDays != null && Number.isInteger(recent.reminderLeadDays) && recent.reminderLeadDays >= 0 && recent.reminderLeadDays <= 30
     ? recent.reminderLeadDays
     : reminderLeadDays
   fields.expiryInputMode = item.expiryInputMode === 'shelf_life' || item.shelfLifeValue ? 'shelf_life' : 'direct'
@@ -284,15 +196,19 @@ export function createDraftFromParsed(
   const completeCandidates = candidates.filter((candidate) => candidate.complete && parseDateKey(candidate.date || ''))
   const expiryCandidates = completeCandidates.filter((candidate) => candidate.role === 'expiry')
   const productionCandidates = completeCandidates.filter((candidate) => candidate.role === 'production')
-  const confirmationFields: string[] = []
+  const confirmationFields: string[] = (recentDraft?.confirmationFields || []).filter(field => item[field as keyof typeof item] == null)
+  let dateConflict: string | undefined
+  let dateInvalid = false
 
   if (expiryCandidates.length === 1) {
     const expiryDate = expiryCandidates[0].date as string
     fields.expiryInputMode = 'direct'
     fields.expiryDate = expiryDate
+    fields.productionDate = productionCandidates.length === 1 ? productionCandidates[0].date : null
     if (productionCandidates.length === 1 && productionCandidates[0].date && expiryDate < productionCandidates[0].date) {
       confirmationFields.push(`date:${candidates.indexOf(expiryCandidates[0])}`)
       confirmationFields.push(`date:${candidates.indexOf(productionCandidates[0])}`)
+      dateInvalid = true
     } else if (productionCandidates.length === 1 && fields.shelfLifeValue && fields.shelfLifeUnit) {
       try {
         const calculated = calculateExpiryDate({
@@ -302,6 +218,7 @@ export function createDraftFromParsed(
           shelfLifeUnit: fields.shelfLifeUnit,
         })
         if (calculated !== fields.expiryDate) {
+          dateConflict = `日期有冲突：标注到期 ${fields.expiryDate}，按保质期计算 ${calculated}，请选择或手动修正`
           confirmationFields.push(`date:${candidates.indexOf(expiryCandidates[0])}`)
           confirmationFields.push(`date:${candidates.indexOf(productionCandidates[0])}`)
         }
@@ -331,6 +248,8 @@ export function createDraftFromParsed(
     selected: true,
     dateCandidates: candidates,
     confirmationFields,
+    dateConflict,
+    dateInvalid,
     evidence,
   })
 }
@@ -342,12 +261,14 @@ export function assignDateCandidate(
 ): QuickEntryDraft {
   const candidate = draft.dateCandidates[candidateIndex]
   if (!candidate || !candidate.complete || !parseDateKey(candidate.date || '')) return draft
+  if (draft.dateInvalid) return draft
   const confirmationFields = (draft.confirmationFields || []).filter((field) => (
-    role === 'expiry' ? !field.startsWith('date:') : field !== `date:${candidateIndex}`
+    role === 'expiry' || draft.dateConflict ? !field.startsWith('date:') : field !== `date:${candidateIndex}`
   ))
   return refreshDraftValidation({
     ...draft,
     confirmationFields,
+    dateConflict: undefined,
     dateCandidates: draft.dateCandidates.map((item, index) => index === candidateIndex ? { ...item, role } : item),
     fields: role === 'expiry'
       ? { ...draft.fields, expiryInputMode: 'direct', expiryDate: candidate.date, productionDate: null }
@@ -359,7 +280,7 @@ export function getDraftSummary(draft: QuickEntryDraft): string {
   const fields = draft.fields
   const quantity = fields.quantity == null ? '待补数量' : `${fields.quantity}${fields.unit || '件'}`
   const location = fields.storageLocation ? ` · ${fields.storageLocation}` : ''
-  return `${quantity}${location}`
+  return `${quantity} · ${categoryLabel(fields.category)}${location} · 提前${fields.reminderLeadDays ?? 1}天提醒`
 }
 
 export function getExpirySummary(draft: QuickEntryDraft): string {
@@ -380,10 +301,21 @@ export function getExpirySummary(draft: QuickEntryDraft): string {
 }
 
 export function draftToInventoryInput(draft: QuickEntryDraft) {
-  const issues = validateQuickEntryFields(draft.fields)
-  if (draft.confirmationFields?.length) issues.push(...draft.confirmationFields.map(confirmationIssue))
+  const issues = refreshDraftValidation(draft).issues
   if (issues.length) return { input: null, issues }
   return { input: asInventorySaveInput(draft.fields), issues: [] }
+}
+
+export function draftToManualFields(draft: QuickEntryDraft): Partial<import('../types/inventory').InventorySaveInput> {
+  const blocked = new Set(refreshDraftValidation(draft).issues.map(item => item.field))
+  const fields = { ...draft.fields }
+  if (draft.dateConflict || draft.dateInvalid || draft.confirmationFields?.some(field => field.startsWith('date:'))) {
+    fields.expiryDate = null
+    fields.productionDate = null
+  }
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(fields)) if (!blocked.has(key)) result[key] = value
+  return result
 }
 
 export function categoryLabel(category: Category | null): string {

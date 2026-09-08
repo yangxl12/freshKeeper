@@ -1,14 +1,21 @@
 'use strict'
 
 const { assert, fail } = require('./validation')
+const tencent = require('./tencent-provider')
 
 function providerConfigured(kind) {
-  return Boolean(process.env[`QUICK_ENTRY_${kind}_ENDPOINT`] && process.env[`QUICK_ENTRY_${kind}_API_KEY`])
+  return Boolean(process.env[`QUICK_ENTRY_${kind}_ENDPOINT`] && process.env[`QUICK_ENTRY_${kind}_API_KEY`]) || (['STT', 'OCR'].includes(kind) && tencent.configured())
 }
 
 async function requestProvider(kind, payload) {
   assert(providerConfigured(kind), 'AI_UNAVAILABLE', '识别服务暂未配置，请使用完整填写')
   const endpoint = process.env[`QUICK_ENTRY_${kind}_ENDPOINT`]
+  if (!endpoint && ['STT', 'OCR'].includes(kind)) {
+    try { return await tencent.request(kind, payload) } catch (error) {
+      if (['NO_SPEECH', 'INVALID_PROVIDER_RESPONSE'].includes(error.code)) throw error
+      fail('AI_UNAVAILABLE', '识别服务暂时不可用，请重试或改用手动填写')
+    }
+  }
   assert(/^https:\/\//i.test(endpoint), 'AI_UNAVAILABLE', '识别服务地址配置不正确')
   const timeout = Math.min(30000, Math.max(1000, Number(process.env.QUICK_ENTRY_TIMEOUT_MS) || 8000))
   const controller = new AbortController()

@@ -4,7 +4,8 @@ const crypto = require('node:crypto')
 const cloud = require('wx-server-sdk')
 const { currentDateKey, normalizePhotoResult, normalizeTextResult } = require('./date-facts')
 const { providerConfigured, requestProvider } = require('./provider')
-const { assert, assertNoClientIdentity, validateMedia, validateText } = require('./validation')
+const { assert, assertNoClientIdentity, validateMedia, validateText, mediaOwnerPrefix } = require('./validation')
+const { parseText: parseLocally } = require('./quick-text')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
@@ -25,8 +26,8 @@ async function downloadMedia(fileID, maxBytes) {
 
 async function getCapabilities() {
   return {
-    text: providerConfigured('TEXT'),
-    voice: providerConfigured('STT') && providerConfigured('TEXT'),
+    text: true,
+    voice: providerConfigured('STT'),
     datePhoto: providerConfigured('OCR'),
   }
 }
@@ -34,11 +35,12 @@ async function getCapabilities() {
 async function parseText(event) {
   const text = validateText(event.text)
   const serverToday = currentDateKey()
+  if (!providerConfigured('TEXT')) return parseLocally(text, serverToday)
   return normalizeTextResult(await requestProvider('TEXT', { text, serverToday }), serverToday)
 }
 
 async function transcribeVoice(event) {
-  const fileID = validateMedia(event, 'audio')
+  const fileID = validateMedia(event, 'audio', cloud.getWXContext().OPENID)
   try {
     const buffer = await downloadMedia(fileID, 4 * 1024 * 1024)
     const result = await requestProvider('STT', { mediaType: 'audio', mediaBase64: buffer.toString('base64') })
@@ -50,7 +52,7 @@ async function transcribeVoice(event) {
 }
 
 async function recognizeDatePhoto(event) {
-  const fileID = validateMedia(event, 'image')
+  const fileID = validateMedia(event, 'image', cloud.getWXContext().OPENID)
   try {
     const buffer = await downloadMedia(fileID, 10 * 1024 * 1024)
     const serverToday = currentDateKey()
@@ -60,7 +62,13 @@ async function recognizeDatePhoto(event) {
   }
 }
 
-const handlers = { getCapabilities, parseText, transcribeVoice, recognizeDatePhoto }
+async function createMediaUpload(event) {
+  assert(['audio', 'image'].includes(event.mediaType), 'MEDIA_INVALID', '媒体类型不正确')
+  const extension = event.mediaType === 'audio' ? 'mp3' : 'jpg'
+  return { cloudPath: `${mediaOwnerPrefix(cloud.getWXContext().OPENID)}${event.mediaType}/${Date.now()}-${crypto.randomUUID()}.${extension}` }
+}
+
+const handlers = { getCapabilities, parseText, transcribeVoice, recognizeDatePhoto, createMediaUpload }
 
 exports.main = async (event = {}) => {
   const requestId = crypto.randomUUID()

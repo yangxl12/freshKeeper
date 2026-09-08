@@ -68,6 +68,9 @@ export interface QuickEntryDraft {
   expanded?: boolean
   evidence?: { kind: 'text' | 'photo'; localPath?: string; sourceText?: string }
   errorMessage?: string
+  submittedInput?: InventorySaveInput
+  dateConflict?: string
+  dateInvalid?: boolean
 }
 
 export interface RecentItemProfile {
@@ -107,6 +110,9 @@ export interface QuickEntryCapabilities {
 
 export interface DatePhotoResult {
   candidates: DateCandidate[]
+  shelfLifeValue?: number
+  shelfLifeUnit?: ShelfLifeUnit
+  sourceText?: string
   unsupported?: 'opened_period'
   serverToday: string
 }

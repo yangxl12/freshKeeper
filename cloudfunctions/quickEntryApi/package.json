@@ -7,6 +7,8 @@
     "node": "20"
   },
   "dependencies": {
+    "tencentcloud-sdk-nodejs-asr": "4.1.308",
+    "tencentcloud-sdk-nodejs-ocr": "4.1.308",
     "wx-server-sdk": "4.0.2"
   }
 }

@@ -4,6 +4,7 @@ import {
   createDraftFromParsed,
   createDraftFromRecent,
   draftToInventoryInput,
+  draftToManualFields,
   getDraftSummary,
   getExpirySummary,
   normalizeRecentName,
@@ -18,33 +19,41 @@ import {
   recognizeDatePhoto,
   transcribeVoice,
   uploadQuickEntryMedia,
+  removeMedia,
 } from '../../services/quick-entry-service'
 import { getSettings } from '../../services/settings-service'
-import type { InventorySaveInput, ShelfLifeUnit } from '../../types/inventory'
+import type { ShelfLifeUnit } from '../../types/inventory'
 import type { QuickEntryDraft, QuickEntryDraftFields, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
 import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
+import { todayKey } from '../../domain/quick-text'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
 let recorderManager: WechatMiniprogram.RecorderManager | null = null
 let recorderBound = false
 let activePage: any = null
 let cancelCurrentRecording = false
+let recordingOwner: any = null
 
 function bindRecorder(page: any) {
   activePage = page
   if (recorderBound) return
   recorderManager = wx.getRecorderManager()
   recorderManager.onStop((result: { tempFilePath: string }) => {
-    if (!activePage) return
+    const owner = recordingOwner
+    recordingOwner = null
+    if (!owner) return
+    owner.clearVoiceTimer()
     if (cancelCurrentRecording) {
       cancelCurrentRecording = false
-      activePage.setData({ voiceState: 'idle', voicePressing: false })
+      owner.setData({ voiceState: 'idle', voicePressing: false })
       return
     }
-    void activePage.handleRecordedFile(result.tempFilePath)
+    if (owner === activePage) void owner.handleRecordedFile(result.tempFilePath)
   })
   recorderManager.onError(() => {
+    recordingOwner?.clearVoiceTimer()
+    recordingOwner = null
     activePage?.setData({ voiceState: 'idle', voicePressing: false, inputError: '录音失败，请重试或改用文字输入' })
   })
   recorderBound = true
@@ -52,6 +61,13 @@ function bindRecorder(page: any) {
 
 Page({
   data: {
+    today: todayKey(),
+    focusNameId: '',
+    voiceSeconds: 0,
+    voiceCancelling: false,
+    photoTargetId: '',
+    photoStage: 'idle' as 'idle' | 'camera' | 'preview',
+    cameraError: false,
     loading: true,
     loadingError: '',
     inputError: '',
@@ -75,13 +91,42 @@ Page({
   },
 
   onLoad() {
+    this.recognitionId = 0
+    this.openedAt = Date.now()
     bindRecorder(this)
     track('quick_entry_open')
     void this.preparePage()
   },
 
   onUnload() {
+    track('quick_entry_session_end', { savedCount: this.savedCount, durationMs: Date.now() - this.openedAt })
+    this.cancelVoice()
+    this.cancelRecognition()
+    this.clearVoiceTimer()
     if (activePage === this) activePage = null
+  },
+
+  recognitionId: 0,
+  openedAt: 0,
+  savedCount: 0,
+  manualHandoff: false,
+  exitOnShow: false,
+  voiceTimer: null as ReturnType<typeof setInterval> | null,
+  voiceBounds: null as { left: number; right: number; top: number; bottom: number } | null,
+
+  onShow() {
+    this.manualHandoff = false
+    if (this.exitOnShow) { wx.disableAlertBeforeUnload?.(); wx.navigateBack(); return }
+    activePage = this
+    this.setData({ today: todayKey() })
+    this.syncUnloadPrompt()
+  },
+
+  onHide() { this.cancelVoice() },
+
+  cancelRecognition() {
+    this.recognitionId += 1
+    this.setData({ recognitionState: 'idle', voiceState: 'idle' })
   },
 
   async preparePage() {
@@ -130,7 +175,7 @@ Page({
   },
 
   commitDrafts(drafts: QuickEntryDraft[]) {
-    const selectableCount = drafts.filter((draft) => draft.selected && !draft.issues.length && ['savable', 'failed'].includes(draft.status)).length
+    const selectableCount = drafts.filter((draft) => draft.selected && !draft.issues.length && draft.status === 'savable').length
     this.setData({
       drafts,
       draftSummaries: drafts.map(getDraftSummary),
@@ -140,12 +185,14 @@ Page({
   },
 
   syncUnloadPrompt() {
+    if (this.manualHandoff) return
     const shouldWarn = Boolean(this.data.inputText.trim() || this.data.photoPreview || this.data.drafts.some((draft) => draft.status !== 'saved'))
     if (shouldWarn) wx.enableAlertBeforeUnload?.({ message: '放弃本次录入？' })
     else wx.disableAlertBeforeUnload?.()
   },
 
   handleQuickTextInput(event: WechatMiniprogram.Input) {
+    if (this.data.recognitionState === 'parsing' || this.data.recognitionState === 'transcribing') this.cancelRecognition()
     this.setData({ inputText: event.detail.value, inputError: '' }, () => this.syncUnloadPrompt())
   },
 
@@ -156,11 +203,17 @@ Page({
       this.setData({ inputError: '请输入物品和日期' })
       return
     }
-    if (this.data.recognitionState !== 'idle' || this.data.saving) return
+    if (this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle' || this.data.saving) return
+    if (this.data.drafts.some(draft => draft.status !== 'saved')) {
+      const replace = await new Promise<boolean>(resolve => wx.showModal({ title: '重新生成草稿？', content: '当前未保存草稿将被替换，原文仍会保留。', success: result => resolve(result.confirm), fail: () => resolve(false) }))
+      if (!replace) return
+    }
+    const recognitionId = ++this.recognitionId
     this.setData({ recognitionState: 'parsing', inputError: '' })
     const startedAt = Date.now()
     try {
       const result = await parseQuickText(text)
+      if (recognitionId !== this.recognitionId) return
       const drafts = result.items.map((item) => {
         const itemName = typeof item.name === 'string' ? normalizeRecentName(item.name) : ''
         const recent = itemName ? this.data.recentProfiles.find((profile) => normalizeRecentName(profile.name) === itemName) : undefined
@@ -168,28 +221,30 @@ Page({
       })
       this.setData({ recognitionState: 'idle', saveSummary: '' })
       this.commitDrafts(drafts)
+      this.setData({ focusNameId: drafts.find(draft => !draft.fields.name)?.draftId || '' })
       track('quick_parse_result', { result: 'success', durationMs: Date.now() - startedAt, draftCount: drafts.length })
       wx.pageScrollTo({ selector: '#draft-area', duration: 220 })
     } catch (error) {
+      if (recognitionId !== this.recognitionId) return
       this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
       track('quick_parse_result', { result: 'failed', durationMs: Date.now() - startedAt, failureCode: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
     }
   },
 
   selectRecent(event: WechatMiniprogram.CustomEvent) {
-    if (this.data.saving) return
+    if (this.data.saving || this.data.recognitionState !== 'idle') return
     const profile = this.data.recentProfiles[Number(event.currentTarget.dataset.index)]
     if (!profile) return
     const draft = createDraftFromRecent(profile, this.data.defaultReminderLeadDays)
     this.setData({ saveSummary: '' })
     this.commitDrafts([draft])
     track('recent_item_select')
-    wx.pageScrollTo({ selector: '#draft-area', duration: 220 })
+    wx.pageScrollTo({ selector: '#draft-date-0', duration: 220 })
   },
 
   updateDraft(index: number, mutator: (draft: QuickEntryDraft) => QuickEntryDraft) {
     const current = this.data.drafts[index]
-    if (!current || current.status === 'saving' || current.status === 'saved') return
+    if (this.data.saving || !current || ['saving', 'saved', 'failed'].includes(current.status)) return
     const drafts = [...this.data.drafts]
     drafts[index] = refreshDraftValidation(mutator(current))
     this.commitDrafts(drafts)
@@ -205,6 +260,7 @@ Page({
       confirmationFields: (draft.confirmationFields || []).filter((item) => item !== field),
       fields: { ...draft.fields, [field]: value },
     }))
+    track('draft_field_corrected', { field })
   },
 
   handleCategoryChange(event: WechatMiniprogram.PickerChange) {
@@ -224,7 +280,10 @@ Page({
   handleDateChange(event: WechatMiniprogram.PickerChange) {
     const index = Number(event.currentTarget.dataset.index)
     const field = event.currentTarget.dataset.field as 'expiryDate' | 'productionDate'
-    this.updateDraft(index, (draft) => ({ ...draft, fields: { ...draft.fields, [field]: String(event.detail.value) } }))
+    this.updateDraft(index, (draft) => ({ ...draft, dateInvalid: false, dateConflict: undefined,
+      confirmationFields: (draft.confirmationFields || []).filter(item => !item.startsWith('date:')),
+      fields: { ...draft.fields, [field]: String(event.detail.value), ...(field === 'expiryDate' ? { productionDate: null } : {}) } }))
+    track('draft_field_corrected', { field })
   },
 
   handleModeChange(event: WechatMiniprogram.BaseEvent) {
@@ -260,7 +319,7 @@ Page({
   },
 
   async startVoice() {
-    if (this.data.saving || this.data.recognitionState !== 'idle') return
+    if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     this.setData({ voicePressing: true, voiceState: 'authorizing', inputError: '' })
     try {
       await new Promise<void>((resolve, reject) => wx.authorize({ scope: 'scope.record', success: () => resolve(), fail: reject }))
@@ -270,8 +329,12 @@ Page({
         return
       }
       cancelCurrentRecording = false
+      recordingOwner = this
+      this.createSelectorQuery().select('.voice-button').boundingClientRect(rect => { if (rect && !Array.isArray(rect)) this.voiceBounds = rect }).exec()
       recorderManager?.start({ duration: 30000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: 'mp3' })
-      this.setData({ voiceState: 'recording' })
+      this.setData({ voiceState: 'recording', voiceSeconds: 0, voiceCancelling: false })
+      this.clearVoiceTimer()
+      this.voiceTimer = setInterval(() => this.setData({ voiceSeconds: Math.min(30, this.data.voiceSeconds + 1) }), 1000)
     } catch (_error) {
       this.setData({ voiceState: 'idle', voicePressing: false, inputError: '需要麦克风权限才能录音，也可以继续使用文字或完整填写' })
       track('voice_permission_result', { result: 'denied' })
@@ -281,6 +344,7 @@ Page({
 
   stopVoice() {
     this.setData({ voicePressing: false })
+    cancelCurrentRecording = this.data.voiceCancelling
     if (this.data.voiceState === 'recording') recorderManager?.stop()
   },
 
@@ -292,94 +356,189 @@ Page({
     }
   },
 
+  moveVoice(event: WechatMiniprogram.TouchEvent) {
+    const touch = event.touches[0]
+    const rect = this.voiceBounds
+    if (!touch || !rect || this.data.voiceState !== 'recording') return
+    this.setData({ voiceCancelling: touch.clientX < rect.left || touch.clientX > rect.right || touch.clientY < rect.top || touch.clientY > rect.bottom })
+  },
+
+  clearVoiceTimer() {
+    if (this.voiceTimer) clearInterval(this.voiceTimer)
+    this.voiceTimer = null
+  },
+
   async handleRecordedFile(localPath: string) {
+    const recognitionId = ++this.recognitionId
     this.setData({ voiceState: 'uploading', recognitionState: 'transcribing', inputError: '' })
     try {
       const fileID = await uploadQuickEntryMedia(localPath, 'audio')
+      if (recognitionId !== this.recognitionId) { await removeMedia(fileID); return }
       const result = await transcribeVoice(fileID, 'audio')
+      if (recognitionId !== this.recognitionId) return
       this.setData({ inputText: result.text, voiceState: 'idle', recognitionState: 'idle' })
       track('voice_transcribe_result', { result: 'success' })
       await this.generateDrafts('voice')
     } catch (error) {
+      if (recognitionId !== this.recognitionId) return
       this.setData({ voiceState: 'idle', recognitionState: 'idle', inputError: getErrorMessage(error) })
       track('voice_transcribe_result', { result: 'failed', failureCode: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
     }
   },
 
-  async chooseDatePhoto() {
-    if (this.data.saving || this.data.recognitionState !== 'idle') return
+  chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
+    if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
+    const index = event?.currentTarget?.dataset?.index
+    const target = index == null ? undefined : this.data.drafts[Number(index)]
+    if (target && ['saved', 'saving', 'failed'].includes(target.status)) return
+    if (!target && this.data.drafts.length >= 5) {
+      this.setData({ inputError: '一次最多 5 条草稿，请先处理当前草稿' })
+      return
+    }
+    this.setData({ photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
+  },
+
+  cameraFailed() {
+    this.setData({ cameraError: true, inputError: '相机不可用，可在设置中允许本次日期拍摄，或从相册选择、手动填写' })
+  },
+
+  openPermissionSettings() { wx.openSetting() },
+
+  takeDatePhoto() {
+    wx.createCameraContext().takePhoto({
+      quality: 'normal',
+      success: result => this.setData({ photoPreview: result.tempImagePath, photoStage: 'preview' }, () => this.syncUnloadPrompt()),
+      fail: () => this.cameraFailed(),
+    })
+  },
+
+  retakePhoto() { this.setData({ photoStage: 'camera', cameraError: false }) },
+
+  closePhoto() {
+    this.cancelRecognition()
+    this.setData({ photoStage: 'idle' })
+  },
+
+  async chooseAlbum() {
     try {
-      const media = await new Promise<WechatMiniprogram.ChooseMediaSuccessCallbackResult>((resolve, reject) => wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: ['camera', 'album'], success: resolve, fail: reject }))
+      const media = await new Promise<WechatMiniprogram.ChooseMediaSuccessCallbackResult>((resolve, reject) =>
+        wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: ['album'], success: resolve, fail: reject }))
       const localPath = media.tempFiles[0]?.tempFilePath
-      if (!localPath) return
-      this.setData({ photoPreview: localPath, recognitionState: 'recognizing_photo', inputError: '' }, () => this.syncUnloadPrompt())
+      if (localPath) this.setData({ photoPreview: localPath, photoStage: 'preview', inputError: '' }, () => this.syncUnloadPrompt())
+    } catch (error) {
+      if (!String((error as { errMsg?: string }).errMsg || '').includes('cancel')) {
+        this.setData({ inputError: '相册暂不可用，请检查权限，或继续手动填写日期' })
+      }
+    }
+  },
+
+  async recognizePhoto() {
+    const localPath = this.data.photoPreview
+    if (!localPath || this.data.saving || this.data.recognitionState !== 'idle') return
+    const recognitionId = ++this.recognitionId
+    const targetId = this.data.photoTargetId
+    this.setData({ recognitionState: 'recognizing_photo', inputError: '' })
+    try {
       const fileID = await uploadQuickEntryMedia(localPath, 'image')
+      if (recognitionId !== this.recognitionId) { await removeMedia(fileID); return }
       const result = await recognizeDatePhoto(fileID, 'image')
+      if (recognitionId !== this.recognitionId) return
       if (result.unsupported === 'opened_period') {
         this.setData({ recognitionState: 'idle', inputError: '当前版本暂不支持“开封后使用期”，请手动选择日期' })
         return
       }
-      const current = this.data.drafts[0]
-      const item = current ? {
-        name: current.fields.name,
-        quantity: current.fields.quantity ?? undefined,
-        unit: current.fields.unit,
-        category: current.fields.category || undefined,
-        storageLocation: current.fields.storageLocation,
-        expiryInputMode: current.fields.expiryInputMode,
-        shelfLifeValue: current.fields.shelfLifeValue ?? undefined,
-        shelfLifeUnit: current.fields.shelfLifeUnit ?? undefined,
+      const current = this.data.drafts.find(draft => draft.draftId === targetId)
+      if (targetId && (!current || ['saved', 'saving', 'failed'].includes(current.status))) {
+        this.setData({ recognitionState: 'idle', inputError: '原草稿已变化，请重新选择要补充日期的草稿' })
+        return
+      }
+      const draft = createDraftFromParsed({
+        ...(current ? {
+          name: current.fields.name, quantity: current.fields.quantity ?? undefined,
+          unit: current.fields.unit, category: current.fields.category || undefined,
+          storageLocation: current.fields.storageLocation,
+        } : {}),
+        shelfLifeValue: result.shelfLifeValue ?? current?.fields.shelfLifeValue ?? undefined,
+        shelfLifeUnit: result.shelfLifeUnit ?? current?.fields.shelfLifeUnit ?? undefined,
         dateCandidates: result.candidates,
-      } : { dateCandidates: result.candidates }
-      const draft = createDraftFromParsed(item, 'date_photo', this.data.defaultReminderLeadDays, undefined, { kind: 'photo', localPath })
+      }, 'date_photo', current?.fields.reminderLeadDays ?? this.data.defaultReminderLeadDays,
+      undefined, { kind: 'photo', localPath, sourceText: result.sourceText })
       if (current) {
         draft.draftId = current.draftId
         draft.saveKey = current.saveKey
-        draft.fields.reminderLeadDays = current.fields.reminderLeadDays
+        draft.confirmationFields = [...new Set([...(draft.confirmationFields || []), ...(current.confirmationFields || []).filter(field => !field.startsWith('date:'))])]
       }
-      this.setData({ recognitionState: 'idle' })
-      this.commitDrafts([draft])
+      const drafts = current ? this.data.drafts.map(item => item.draftId === targetId ? refreshDraftValidation(draft) : item) : [...this.data.drafts, draft]
+      this.setData({ recognitionState: 'idle', photoStage: 'idle', photoPreview: '', focusNameId: draft.fields.name ? '' : draft.draftId })
+      this.commitDrafts(drafts)
       track('date_photo_result', { result: 'success', candidateCount: result.candidates.length })
       wx.pageScrollTo({ selector: '#draft-area', duration: 220 })
     } catch (error) {
-      const message = getErrorMessage(error)
-      if (!message.toLowerCase().includes('cancel')) this.setData({ recognitionState: 'idle', inputError: message })
-      else this.setData({ recognitionState: 'idle' })
-      track('date_photo_result', { result: 'failed', failureCode: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
+      if (recognitionId !== this.recognitionId) return
+      this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
+      track('date_photo_result', { result: 'failed' })
     }
   },
 
-  continueManual() {
+  continueManual(event?: WechatMiniprogram.BaseEvent) {
     if (this.data.saving) return
-    const draft = this.data.drafts.find((item) => item.status !== 'saved')
-    const pendingQuickFormDraft: Partial<InventorySaveInput> | null = draft ? {
-      name: draft.fields.name,
-      quantity: draft.fields.quantity ?? 1,
-      unit: draft.fields.unit,
-      category: draft.fields.category || 'food',
-      storageLocation: draft.fields.storageLocation,
-      expiryInputMode: draft.fields.expiryInputMode,
-      productionDate: draft.fields.productionDate,
-      shelfLifeValue: draft.fields.shelfLifeValue,
-      shelfLifeUnit: draft.fields.shelfLifeUnit,
-      expiryDate: draft.fields.expiryDate,
-      reminderLeadDays: draft.fields.reminderLeadDays ?? 1,
-    } : null
-    getApp<IAppOption>().globalData.pendingQuickFormDraft = pendingQuickFormDraft
+    this.cancelRecognition()
+    const index = event?.currentTarget?.dataset?.index
+    const draft = index == null ? this.data.drafts.find(item => item.status !== 'saved') : this.data.drafts[Number(index)]
+    if (draft?.status === 'failed') {
+      this.setData({ inputError: '这条草稿保存结果尚未确认，请先重试确认，避免重复入库' })
+      return
+    }
+    getApp<IAppOption>().globalData.pendingQuickFormDraft = draft ? draftToManualFields(draft) : null
+    track('quick_entry_manual', { source: draft?.source || 'manual' })
+    this.manualHandoff = true
     wx.disableAlertBeforeUnload?.()
-    wx.redirectTo({ url: '/pages/item-form/index?source=quick-entry' })
+    wx.navigateTo({
+      url: '/pages/item-form/index?source=quick-entry',
+      success: result => {
+        result.eventChannel.emit('quickDraftIdentity', { saveKey: draft?.saveKey })
+        result.eventChannel.on('quickDraftSaved', () => {
+          this.savedCount += 1
+          if (draft) this.commitDrafts(this.data.drafts.map(item => item.draftId === draft.draftId ? { ...item, status: 'saved', selected: false, evidence: undefined } : item))
+          if (!this.data.drafts.some(item => item.status !== 'saved')) {
+            this.exitOnShow = true
+            this.setData({ inputText: '', photoPreview: '' }, () => this.syncUnloadPrompt())
+          }
+        })
+      },
+      fail: () => { getApp<IAppOption>().globalData.pendingQuickFormDraft = null; this.manualHandoff = false; this.syncUnloadPrompt() },
+    })
+  },
+
+  retryDraft(event: WechatMiniprogram.BaseEvent) {
+    const index = Number(event.currentTarget.dataset.index)
+    const draft = this.data.drafts[index]
+    if (!draft || draft.status !== 'failed' || this.data.saving) return
+    void this.persistDrafts([{ draft, index }])
+  },
+
+  confirmFallback(event: WechatMiniprogram.BaseEvent) {
+    const index = Number(event.currentTarget.dataset.index)
+    this.updateDraft(index, draft => ({ ...draft, confirmationFields: (draft.confirmationFields || []).filter(field => field.startsWith('date:')) }))
   },
 
   async saveDrafts() {
+    if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
+    const targets = this.data.drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => draft.selected && !draft.issues.length && draft.status === 'savable')
+    await this.persistDrafts(targets)
+  },
+
+  async persistDrafts(targets: Array<{ draft: QuickEntryDraft; index: number }>) {
     if (this.data.saving) return
-    const targets = this.data.drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => draft.selected && !draft.issues.length && ['savable', 'failed'].includes(draft.status))
     if (!targets.length) return
     const savingDrafts = this.data.drafts.map((draft, index) => targets.some((target) => target.index === index) ? { ...draft, status: 'saving' as const } : draft)
     this.setData({ saving: true, saveSummary: '' })
     this.commitDrafts(savingDrafts)
     const results = await Promise.allSettled(targets.map(({ draft }) => {
       const result = draftToInventoryInput(draft)
-      return result.input ? saveItem(result.input, { idempotencyKey: draft.saveKey }) : Promise.reject(new Error('草稿信息不完整'))
+      const input = draft.submittedInput || result.input
+      if (input) draft.submittedInput = input
+      return input ? saveItem(input, { idempotencyKey: draft.saveKey }) : Promise.reject(new Error('草稿信息不完整'))
     }))
     const updated = [...savingDrafts]
     let succeeded = 0
@@ -387,16 +546,17 @@ Page({
     results.forEach((result, resultIndex) => {
       const target = targets[resultIndex]
       if (result.status === 'fulfilled') {
-        updated[target.index] = { ...target.draft, status: 'saved', selected: false }
+        updated[target.index] = { ...target.draft, status: 'saved', selected: false, evidence: undefined }
         succeeded += 1
       } else {
-        updated[target.index] = { ...target.draft, status: 'failed', errorMessage: getErrorMessage(result.reason) }
+        updated[target.index] = { ...target.draft, status: 'failed', selected: false, errorMessage: getErrorMessage(result.reason) }
         failed += 1
       }
     })
     this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
+    this.savedCount += succeeded
     this.commitDrafts(updated)
-    track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draftCount: targets.length })
+    track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draftCount: targets.length, durationMs: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
     if (!updated.some((draft) => draft.status !== 'saved')) {
       wx.disableAlertBeforeUnload?.()
       wx.showToast({ title: '已加入库存', icon: 'success' })

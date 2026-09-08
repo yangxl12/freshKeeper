@@ -8,19 +8,35 @@
   <view wx:if="{{features.text || features.voice || features.datePhoto}}" class="quick-input-card">
     <view wx:if="{{features.text || features.voice}}" class="quick-input-row">
       <textarea class="quick-input" value="{{inputText}}" maxlength="500" auto-height placeholder="例如：牛奶 2 盒，9 月 12 日到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
-      <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{!capabilities.voice || saving || recognitionState !== 'idle'}}" bindtouchstart="startVoice" bindtouchend="stopVoice" bindtouchcancel="cancelVoice" aria-label="{{capabilities.voice ? '按住说话' : '语音识别待开通'}}">
+      <button wx:if="{{features.voice && capabilities.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle'}}" bindtouchstart="startVoice" bindtouchmove="moveVoice" bindtouchend="stopVoice" bindtouchcancel="cancelVoice" aria-label="按住说话">
         <text>{{!capabilities.voice ? '语音待开通' : (voiceState === 'recording' ? '松开' : '按住说')}}</text>
       </button>
     </view>
     <view class="quick-actions">
       <button wx:if="{{features.text}}" class="primary-button quick-action" disabled="{{saving || recognitionState !== 'idle' || !inputText}}" bindtap="generateDrafts">{{recognitionState === 'parsing' ? '正在生成…' : '生成草稿'}}</button>
-      <button wx:if="{{features.datePhoto}}" class="photo-button quick-action" disabled="{{!capabilities.datePhoto || saving || recognitionState !== 'idle'}}" bindtap="chooseDatePhoto">{{!capabilities.datePhoto ? '拍日期待开通' : (recognitionState === 'recognizing_photo' ? '正在识别…' : '拍日期')}}</button>
+      <button wx:if="{{features.datePhoto && capabilities.datePhoto}}" class="photo-button quick-action" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="chooseDatePhoto">拍日期</button>
     </view>
-    <image wx:if="{{photoPreview}}" class="photo-preview" src="{{photoPreview}}" mode="aspectFill" />
+    <view wx:if="{{voiceState === 'recording'}}" class="quick-entry__notice">{{voiceSeconds}} / 30 秒 · {{voiceCancelling ? '松开取消录音' : '松开识别，移出按钮取消'}}</view>
+    <text wx:if="{{features.voice && capabilities.voice}}" class="camera-help">麦克风仅用于识别本次录入内容，转写后可修改文字。</text>
+    <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionState === 'transcribing' ? '正在转写语音…' : '正在识别…'}}<button bindtap="cancelRecognition">取消本次识别</button></view>
   </view>
 
-  <view wx:if="{{(features.voice && !capabilities.voice) || (features.datePhoto && !capabilities.datePhoto)}}" class="quick-entry__notice">
-    文字快录可直接使用；语音和拍日期需开通识别服务后使用。
+  <view wx:if="{{photoStage !== 'idle'}}" class="date-camera-panel">
+    <text class="section-heading__title">将包装上的日期喷码放入框内</text>
+    <text class="camera-help">避开反光、阴影和弯曲边缘，让日期尽量占满画面。</text>
+    <view wx:if="{{photoStage === 'camera' && !cameraError}}" class="camera-frame">
+      <camera class="date-camera" mode="normal" device-position="back" flash="off" binderror="cameraFailed" />
+      <cover-view class="camera-guide">对准生产日期、保质期或到期日</cover-view>
+    </view>
+    <image wx:if="{{photoStage === 'preview'}}" class="date-photo-preview" src="{{photoPreview}}" mode="aspectFit" />
+    <view class="quick-actions">
+      <button wx:if="{{photoStage === 'camera' && !cameraError}}" bindtap="takeDatePhoto">拍摄日期</button>
+      <button wx:if="{{cameraError}}" bindtap="openPermissionSettings">前往设置</button>
+      <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="recognizePhoto">{{inputError ? '重试本次识别' : '识别这张照片'}}</button>
+      <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="retakePhoto">重拍</button>
+      <button disabled="{{recognitionState !== 'idle'}}" bindtap="chooseAlbum">从相册选择</button>
+    </view>
+    <button class="manual-button" bindtap="closePhoto">返回手动填写</button>
   </view>
 
   <view wx:if="{{inputError}}" class="quick-entry__notice" role="alert">{{inputError}}</view>
@@ -60,73 +76,78 @@
       <view class="draft-card__status-row">
         <text class="draft-card__status">{{draft.status === 'saved' ? '已加入库存' : (draft.status === 'saving' ? '正在保存' : (draft.status === 'failed' ? '保存失败，可重试' : (draft.issues.length ? '还需补充或确认' : '可以保存')))}}</text>
         <view class="draft-card__tools">
-          <button wx:if="{{draft.status !== 'saved'}}" class="draft-card__select" disabled="{{draft.issues.length > 0 || draft.status === 'saving'}}" data-index="{{draftIndex}}" bindtap="toggleSelected">{{draft.selected ? '已选' : '未选'}}</button>
+          <button wx:if="{{draft.status !== 'saved' && draft.status !== 'failed'}}" class="draft-card__select" disabled="{{saving || draft.issues.length > 0 || draft.status === 'saving'}}" data-index="{{draftIndex}}" bindtap="toggleSelected">{{draft.selected ? '已选' : '未选'}}</button>
           <button wx:if="{{draft.status !== 'saving'}}" class="draft-heading__delete" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
         </view>
       </view>
 
       <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
+      <button wx:if="{{draft.status === 'failed'}}" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="retryDraft">重试这条草稿</button>
       <view wx:for="{{draft.issues}}" wx:key="message" wx:for-item="issue" class="draft-card__issue">{{issue.message}}</view>
 
       <view class="field">
         <text class="field-label">物品名称 <text class="required-mark">*</text></text>
-        <input class="field-control" disabled="{{draft.status === 'saving' || draft.status === 'saved'}}" value="{{draft.fields.name}}" maxlength="40" placeholder="例如：鲜牛奶" data-index="{{draftIndex}}" data-field="name" bindinput="handleTextInput" />
+        <input class="field-control" focus="{{focusNameId === draft.draftId}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.name}}" maxlength="40" placeholder="例如：鲜牛奶" data-index="{{draftIndex}}" data-field="name" bindinput="handleTextInput" />
       </view>
 
-      <view class="date-focus-block">
+      <view id="draft-date-{{draftIndex}}" class="date-focus-block">
         <view class="field-label-row">
           <text class="field-label">到期信息 <text class="required-mark">*</text></text>
-          <button wx:if="{{features.datePhoto && capabilities.datePhoto && draft.status !== 'saving' && draft.status !== 'saved'}}" class="inline-photo-button" bindtap="chooseDatePhoto">拍日期</button>
+          <button wx:if="{{features.datePhoto && capabilities.datePhoto && draft.status !== 'saving' && draft.status !== 'saved' && draft.status !== 'failed'}}" class="inline-photo-button" data-index="{{draftIndex}}" bindtap="chooseDatePhoto">拍日期</button>
         </view>
         <view class="mode-switch">
-          <button class="mode-switch__item {{draft.fields.expiryInputMode === 'direct' ? 'mode-switch__item--active' : ''}}" disabled="{{draft.status === 'saving' || draft.status === 'saved'}}" data-index="{{draftIndex}}" data-mode="direct" bindtap="handleModeChange">直接选到期日</button>
-          <button class="mode-switch__item {{draft.fields.expiryInputMode === 'shelf_life' ? 'mode-switch__item--active' : ''}}" disabled="{{draft.status === 'saving' || draft.status === 'saved'}}" data-index="{{draftIndex}}" data-mode="shelf_life" bindtap="handleModeChange">按保质期计算</button>
+          <button class="mode-switch__item {{draft.fields.expiryInputMode === 'direct' ? 'mode-switch__item--active' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" data-index="{{draftIndex}}" data-mode="direct" bindtap="handleModeChange">直接选到期日</button>
+          <button class="mode-switch__item {{draft.fields.expiryInputMode === 'shelf_life' ? 'mode-switch__item--active' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" data-index="{{draftIndex}}" data-mode="shelf_life" bindtap="handleModeChange">按保质期计算</button>
         </view>
         <view wx:if="{{draft.fields.expiryInputMode === 'direct'}}" class="field field--compact">
-          <picker disabled="{{draft.status === 'saving' || draft.status === 'saved'}}" mode="date" value="{{draft.fields.expiryDate || ''}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="expiryDate" bindchange="handleDateChange">
+          <picker disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="date" value="{{draft.fields.expiryDate || ''}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="expiryDate" bindchange="handleDateChange">
             <view class="field-control date-control {{!draft.fields.expiryDate ? 'field-placeholder' : ''}}"><text>{{draft.fields.expiryDate || '选择本批次到期日期'}}</text><view class="line-icon line-icon--calendar date-control__icon"></view></view>
           </picker>
         </view>
         <block wx:else>
           <view class="field field--compact">
-            <picker disabled="{{draft.status === 'saving' || draft.status === 'saved'}}" mode="date" value="{{draft.fields.productionDate || ''}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="productionDate" bindchange="handleDateChange">
+            <picker disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="date" value="{{draft.fields.productionDate || ''}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="productionDate" bindchange="handleDateChange">
               <view class="field-control date-control {{!draft.fields.productionDate ? 'field-placeholder' : ''}}"><text>{{draft.fields.productionDate || '选择本批次生产日期'}}</text><view class="line-icon line-icon--calendar date-control__icon"></view></view>
             </picker>
           </view>
           <view class="field-row">
-            <input class="field-control field-row__item" disabled="{{draft.status === 'saving' || draft.status === 'saved'}}" value="{{draft.fields.shelfLifeValue || ''}}" type="number" placeholder="保质期" data-index="{{draftIndex}}" data-field="shelfLifeValue" bindinput="handleTextInput" />
-            <picker class="field-row__item" disabled="{{draft.status === 'saving' || draft.status === 'saved'}}" mode="selector" range="{{shelfLifeOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleShelfLifeUnitChange"><view class="field-control date-control"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron date-control__arrow"></view></view></picker>
+            <input class="field-control field-row__item" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.shelfLifeValue || ''}}" type="number" placeholder="保质期" data-index="{{draftIndex}}" data-field="shelfLifeValue" bindinput="handleTextInput" />
+            <picker class="field-row__item" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="selector" range="{{shelfLifeOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleShelfLifeUnitChange"><view class="field-control date-control"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron date-control__arrow"></view></view></picker>
           </view>
         </block>
         <view class="expiry-summary"><text>预计到期</text><text class="expiry-summary__value">{{expirySummaries[draftIndex]}}</text></view>
+        <view wx:if="{{expirySummaries[draftIndex] < today}}" class="draft-card__error">该物品已过期，请确认日期</view>
       </view>
 
       <view wx:if="{{draft.dateCandidates.length}}" class="candidate-list">
+        <image wx:if="{{draft.evidence.kind === 'photo' && draft.evidence.localPath}}" class="date-photo-preview" src="{{draft.evidence.localPath}}" mode="aspectFit" />
         <view wx:for="{{draft.dateCandidates}}" wx:key="rawText" wx:for-item="candidate" wx:for-index="candidateIndex" class="candidate-item">
           <view class="candidate-item__text"><text>{{candidate.rawText || '识别日期'}}</text><text>{{candidate.date || '日期不完整'}}</text></view>
-          <view wx:if="{{candidate.complete && (candidate.role === 'unknown' || draft.confirmationFields.length)}}" class="candidate-item__actions">
+          <view wx:if="{{candidate.complete && !draft.dateInvalid && draft.status !== 'saved' && draft.status !== 'failed' && draft.status !== 'saving' && (candidate.role === 'unknown' || draft.confirmationFields.length)}}" class="candidate-item__actions">
             <button data-index="{{draftIndex}}" data-candidate="{{candidateIndex}}" data-role="expiry" bindtap="chooseCandidate">设为到期</button>
             <button data-index="{{draftIndex}}" data-candidate="{{candidateIndex}}" data-role="production" bindtap="chooseCandidate">设为生产</button>
           </view>
         </view>
       </view>
+      <button wx:if="{{draft.confirmationFields.length && draft.status !== 'saved'}}" class="manual-button" data-index="{{draftIndex}}" bindtap="confirmFallback">确认已修正的非日期字段</button>
+      <button wx:if="{{drafts.length > 1 && draft.status !== 'saved' && draft.status !== 'failed'}}" class="manual-button" data-index="{{draftIndex}}" bindtap="continueManual">完整填写这条草稿</button>
 
       <button class="draft-card__summary" data-index="{{draftIndex}}" bindtap="toggleDetails">
         <text>{{draftSummaries[draftIndex]}}</text><text>{{draft.expanded ? '收起' : '更多信息'}}</text>
       </button>
       <view wx:if="{{draft.expanded}}" class="draft-card__details">
         <view class="field-row">
-          <view class="field field-row__item"><text class="field-label">数量</text><input class="field-control" value="{{draft.fields.quantity || ''}}" type="number" data-index="{{draftIndex}}" data-field="quantity" bindinput="handleTextInput" /></view>
-          <view class="field field-row__item"><text class="field-label">单位</text><input class="field-control" value="{{draft.fields.unit}}" data-index="{{draftIndex}}" data-field="unit" maxlength="8" bindinput="handleTextInput" /></view>
+          <view class="field field-row__item"><text class="field-label">数量</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.quantity || ''}}" type="number" data-index="{{draftIndex}}" data-field="quantity" bindinput="handleTextInput" /></view>
+          <view class="field field-row__item"><text class="field-label">单位</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.unit}}" data-index="{{draftIndex}}" data-field="unit" maxlength="8" bindinput="handleTextInput" /></view>
         </view>
-        <view class="field"><text class="field-label">分类</text><picker mode="selector" range="{{categoryOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleCategoryChange"><view class="field-control date-control"><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text><view class="line-icon line-icon--chevron date-control__arrow"></view></view></picker></view>
-        <view class="field"><text class="field-label">存放位置</text><input class="field-control" value="{{draft.fields.storageLocation}}" placeholder="例如：冰箱" data-index="{{draftIndex}}" data-field="storageLocation" bindinput="handleTextInput" /></view>
-        <view class="field"><text class="field-label">提前提醒天数</text><view class="number-suffix-control"><input class="number-suffix-control__input" value="{{draft.fields.reminderLeadDays || 0}}" type="number" maxlength="2" data-index="{{draftIndex}}" data-field="reminderLeadDays" bindinput="handleTextInput" /><text>天</text></view></view>
+        <view class="field"><text class="field-label">分类</text><picker disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" mode="selector" range="{{categoryOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleCategoryChange"><view class="field-control date-control"><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text><view class="line-icon line-icon--chevron date-control__arrow"></view></view></picker></view>
+        <view class="field"><text class="field-label">存放位置</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.storageLocation}}" placeholder="例如：冰箱" data-index="{{draftIndex}}" data-field="storageLocation" bindinput="handleTextInput" /></view>
+        <view class="field"><text class="field-label">提前提醒天数</text><view class="number-suffix-control"><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="number-suffix-control__input" value="{{draft.fields.reminderLeadDays || 0}}" type="number" maxlength="2" data-index="{{draftIndex}}" data-field="reminderLeadDays" bindinput="handleTextInput" /><text>天</text></view></view>
       </view>
     </view>
 
     <view wx:if="{{saveSummary}}" class="quick-entry__notice">{{saveSummary}}</view>
     <button class="manual-button manual-button--lower" disabled="{{saving}}" bindtap="continueManual">改用完整填写</button>
-    <button class="primary-button save-button" disabled="{{saving || selectableCount === 0}}" bindtap="saveDrafts">{{saving ? '正在加入…' : (selectableCount > 1 ? '加入库存（' + selectableCount + '）' : '确认加入库存')}}</button>
+    <button class="primary-button save-button" disabled="{{saving || selectableCount === 0 || recognitionState !== 'idle'}}" bindtap="saveDrafts">{{saving ? '正在加入…' : (drafts.length > 1 ? '加入库存（' + selectableCount + '）' : '确认加入库存')}}</button>
   </view>
 </view>

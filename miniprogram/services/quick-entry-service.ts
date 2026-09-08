@@ -34,27 +34,25 @@ export async function parseQuickText(text: string): Promise<QuickEntryParseResul
   }
 }
 
-export function transcribeVoice(fileID: string, mediaType: string) {
-  return callCloud<{ text: string; serverToday: string }>('quickEntryApi', {
+export async function transcribeVoice(fileID: string, mediaType: string) {
+  try { return await callCloud<{ text: string; serverToday: string }>('quickEntryApi', {
     action: 'transcribeVoice',
     fileID,
     mediaType,
-  })
+  }) } finally { await removeMedia(fileID) }
 }
 
-export function recognizeDatePhoto(fileID: string, mediaType: string) {
-  return callCloud<DatePhotoResult>('quickEntryApi', {
+export async function recognizeDatePhoto(fileID: string, mediaType: string) {
+  try { return await callCloud<DatePhotoResult>('quickEntryApi', {
     action: 'recognizeDatePhoto',
     fileID,
     mediaType,
-  })
+  }) } finally { await removeMedia(fileID) }
 }
 
 
-export function uploadQuickEntryMedia(localPath: string, kind: 'audio' | 'image'): Promise<string> {
-  const extension = localPath.match(/\.([A-Za-z0-9]+)(?:\?|$)/)?.[1]?.toLowerCase() || (kind === 'audio' ? 'mp3' : 'jpg')
-  const random = Math.random().toString(16).slice(2)
-  const cloudPath = `quick-entry/${kind}/${Date.now()}-${random}.${extension}`
+export async function uploadQuickEntryMedia(localPath: string, kind: 'audio' | 'image'): Promise<string> {
+  const { cloudPath } = await callCloud<{ cloudPath: string }>('quickEntryApi', { action: 'createMediaUpload', mediaType: kind })
   return new Promise((resolve, reject) => {
     wx.cloud.uploadFile({
       cloudPath,
@@ -63,4 +61,8 @@ export function uploadQuickEntryMedia(localPath: string, kind: 'audio' | 'image'
       fail: reject,
     })
   })
+}
+
+export async function removeMedia(fileID: string): Promise<void> {
+  try { await wx.cloud.deleteFile({ fileList: [fileID] }) } catch (_error) { /* Server also deletes in finally; storage lifecycle is the final fallback. */ }
 }
