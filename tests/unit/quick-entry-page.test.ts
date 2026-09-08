@@ -185,7 +185,7 @@ describe('quick entry page compatibility', () => {
     const page = pageInstance()
     page.data.capabilities.datePhoto = false
     page.chooseDatePhoto()
-    expect(globalThis.wx.showToast).toHaveBeenCalledWith({ title: '暂时未接入，敬请期待', icon: 'none' })
+    expect(globalThis.wx.showToast).toHaveBeenCalledWith({ title: '拍照识别未开通，请手动选日期', icon: 'none' })
     expect(page.data.photoStage).toBe('idle')
   })
 

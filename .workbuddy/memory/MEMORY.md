@@ -18,8 +18,9 @@
 ## 快速录入：语音 / OCR 能力开关
 
 - 按钮（语音「按住说」、「拍日期」、草稿卡内联「拍日期」）显示只由 `QUICK_ENTRY_FEATURES`（`miniprogram/config/runtime.ts`）决定，
-  **不再受云端 `capabilities` 控制**；服务能力没配（云函数 `providerConfigured('STT'/'OCR')` 返回 false）时点击/按住统一
-  `wx.showToast('暂时未接入，敬请期待')`，不申请权限、不启动识别。提示文案常量在页面 ts 里：`PENDING_INTEGRATION_TOAST`。
+  **不再受云端 `capabilities` 控制**；服务能力没配（云函数 `providerConfigured('STT'/'OCR')` 返回 false）时点击/按住不申请权限、不启动识别，
+  只提示：语音 `PENDING_INTEGRATION_TOAST`=「暂时未接入，敬请期待」，拍日期 `DATE_PHOTO_PENDING_TOAST`=
+  「拍照识别未开通，请手动选日期」（常量都在 `pages/quick-entry/index.ts`）。
 
 ## WXSS 限制（踩过的坑）
 

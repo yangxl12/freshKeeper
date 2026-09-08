@@ -13,11 +13,7 @@
       <text class="tabbar__label">首页</text>
     </button>
 
-    <button class="tabbar__add" bindtap="handleAdd" hover-class="tabbar__add--pressed" aria-label="新增物品">
-      <view class="tabbar__add-circle">
-        <text class="tabbar__add-plus" aria-hidden="true">+</text>
-      </view>
-    </button>
+    <view class="tabbar__add-slot" aria-hidden="true"></view>
 
     <button
       class="tabbar__item {{selected === 1 ? 'tabbar__item--active' : ''}}"
@@ -32,4 +28,10 @@
       <text class="tabbar__label">我的</text>
     </button>
   </view>
+
+  <button class="tabbar__add" bindtap="handleAdd" hover-class="tabbar__add--pressed" aria-label="新增物品">
+    <view class="tabbar__add-circle">
+      <text class="tabbar__add-plus" aria-hidden="true">+</text>
+    </view>
+  </button>
 </view>

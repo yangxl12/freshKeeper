@@ -30,6 +30,7 @@ import { todayKey } from '../../domain/quick-text'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
 const PENDING_INTEGRATION_TOAST = '暂时未接入，敬请期待'
+const DATE_PHOTO_PENDING_TOAST = '拍照识别未开通，请手动选日期'
 let recorderManager: WechatMiniprogram.RecorderManager | null = null
 let recorderBound = false
 let activePage: any = null
@@ -399,7 +400,7 @@ Page({
   chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     if (!this.data.capabilities.datePhoto) {
-      wx.showToast({ title: PENDING_INTEGRATION_TOAST, icon: 'none' })
+      wx.showToast({ title: DATE_PHOTO_PENDING_TOAST, icon: 'none' })
       return
     }
     const index = event?.currentTarget?.dataset?.index

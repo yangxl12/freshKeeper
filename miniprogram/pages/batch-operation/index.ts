@@ -26,9 +26,23 @@ interface BatchIntent {
 
 const CHUNK_SIZE = 20
 
+const VIEW_STATUS_TITLE: Record<InventoryViewStatus, string> = {
+  active_all: '全部在库批量操作',
+  expiring: '临期物品批量操作',
+  expired: '已过期物品批量操作',
+  safe: '状态良好物品批量操作',
+  used_up: '已用完物品批量操作',
+}
+
+/** 入口来源 + 当前筛选状态决定本页在批量什么数据；导航栏标题固定为“批量操作”。 */
+function resolveScopeTitle(source: BatchSource, viewStatus: InventoryViewStatus) {
+  return source === 'trash' ? '回收站批量操作' : VIEW_STATUS_TITLE[viewStatus] || VIEW_STATUS_TITLE.active_all
+}
+
 Page({
   data: {
     source: 'inventory' as BatchSource,
+    viewStatus: 'active_all' as InventoryViewStatus,
     title: '批量操作',
     items: [] as BatchListItem[],
     selectedCount: 0,
@@ -44,11 +58,12 @@ Page({
     const app = getApp<IAppOption>()
     const intent = app.globalData.pendingBatchIntent
     if (intent?.source === source) app.globalData.pendingBatchIntent = null
-    const canComplete = source !== 'trash' && intent?.viewStatus !== 'used_up'
-    const title = source === 'home' ? '临期物品批量操作' : source === 'trash' ? '回收站批量操作' : '库存批量操作'
-    this.setData({ source, title, canComplete })
-    wx.setNavigationBarTitle({ title })
-    void this.loadAll(intent || { source })
+    const viewStatus: InventoryViewStatus = intent?.viewStatus || (source === 'home' ? 'expiring' : 'active_all')
+    const canComplete = source !== 'trash' && viewStatus !== 'used_up'
+    const title = resolveScopeTitle(source, viewStatus)
+    this.setData({ source, title, viewStatus, canComplete })
+    wx.setNavigationBarTitle({ title: '批量操作' })
+    void this.loadAll({ ...(intent || {}), source, viewStatus })
   },
 
   async loadAll(intent: BatchIntent) {

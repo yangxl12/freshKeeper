@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="bKfa6EzGxm3Svp3xgB7LE8">
+<head data-page-node-id="koaoxOJ67M5qJGkyiidUoc">
+<meta charset="utf-8" data-page-node-id="23QAhhdKHD7au8Ux7CQIXz" />
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="TJn8N9qLnNKvvxVUCdTEok" />
+<title>保质记 UI 预览</title>
+<style>
+  :root {
+    --bg: #f5f6f2;
+    --card: #ffffff;
+    --line: #e3eae6;
+    --ink: #173b31;
+    --muted: #84918b;
+    --green: #1f5d49;
+    --green-soft: #e8f2ed;
+    --danger: #b84a3e;
+    --warn: #a96524;
+    --warn-soft: #f7ecdf;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 24px 48px;
+    background: #eef1ec;
+    color: var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; }
+  p.lead { margin: 0 0 26px; color: #6b7a73; font-size: 13px; }
+  .stage { display: flex; gap: 26px; flex-wrap: wrap; }
+  .phone {
+    position: relative;
+    width: 320px;
+    height: 640px;
+    border: 10px solid #1e2b26;
+    border-radius: 40px;
+    background: var(--bg);
+    overflow: hidden;
+    box-shadow: 0 22px 50px rgba(23, 59, 49, .22);
+  }
+  .screen { height: 100%; overflow-y: auto; padding: 18px 16px 96px; }
+  .screen::-webkit-scrollbar { width: 0; }
+  .navbar {
+    display: flex; align-items: center; justify-content: center;
+    height: 44px; margin: -18px -16px 8px; background: #f5f6f2;
+    font-size: 14px; font-weight: 600;
+  }
+  .brand { font-family: "Songti SC", serif; font-size: 24px; font-weight: 700; }
+  .brand-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 14px; }
+  .stat {
+    position: relative; overflow: hidden; padding: 14px 4px 12px; border: 1px solid var(--line);
+    border-radius: 12px; background: #fff; text-align: center;
+  }
+  .stat::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: #9eb8ad; }
+  .stat.total::before { background: var(--green); }
+  .stat.expiring::before { background: #d29552; }
+  .stat.expired::before { background: #c76b60; }
+  .stat.used::before { background: #9aa7a1; }
+  .stat .label { font-size: 11px; color: #6b7a73; }
+  .stat .num { display: block; margin-top: 3px; font-size: 22px; font-weight: 700; }
+  .stat.expiring .num { color: var(--warn); }
+  .stat.expired .num { color: var(--danger); }
+  .stat.used .num { color: #6b7a73; }
+  .stat.on { border-color: var(--green); background: #f2f8f5; }
+
+  .lib-head { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 2px 6px; }
+  .lib-head b { font-size: 15px; }
+  .chip { padding: 3px 10px; border: 1px solid #cbd8d2; border-radius: 999px; background: #fff; color: var(--green); font-size: 11px; }
+
+  .panel { padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+  .search { display: flex; align-items: center; height: 36px; padding: 0 12px; border: 1px solid #dde6e1; border-radius: 999px; background: #f7faf8; color: var(--muted); font-size: 12px; }
+  .flabel { display: block; margin: 12px 0 5px; color: #68766f; font-size: 11px; font-weight: 600; letter-spacing: .08em; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .grid.quad { grid-template-columns: repeat(4, 1fr); }
+  .opt { padding: 8px 0; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: #62716a; font-size: 11px; text-align: center; }
+  .opt.on { border-color: var(--green); background: var(--green-soft); color: #174b3c; font-weight: 700; }
+  .factions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 6px; border-top: 1px solid #edf1ee; color: var(--muted); font-size: 11px; }
+  .factions span + span { color: var(--green); font-weight: 600; }
+
+  .card2 { position: relative; overflow: hidden; margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 4px 12px rgba(23,59,49,.05); }
+  .card2::before { content: ""; position: absolute; top: 12px; bottom: 12px; left: 0; width: 3px; border-radius: 0 3px 3px 0; background: #9eb8ad; }
+  .card2.warn::before { background: #d29552; }
+  .card2 .body { padding: 13px 14px 10px 16px; }
+  .card2 .top { display: flex; align-items: baseline; justify-content: space-between; }
+  .card2 .name { font-size: 15px; font-weight: 700; }
+  .card2 .remain { padding: 3px 8px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 11px; font-weight: 600; }
+  .card2.warn .remain { background: var(--warn-soft); color: var(--warn); }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .tag { padding: 2px 7px; border-radius: 5px; background: #f2f6f4; color: #53645d; font-size: 11px; }
+  .tag.q { background: var(--green-soft); color: var(--green); font-weight: 600; }
+  .tag.m { background: transparent; color: #93a099; padding-left: 0; }
+  .acts { display: flex; align-items: center; padding: 0 8px; border-top: 1px solid #eef2f0; background: #fbfdfc; }
+  .acts .a { padding: 9px 12px; color: var(--green); font-size: 12px; font-weight: 600; }
+  .acts .more { margin-left: auto; color: #6b7a73; letter-spacing: 1px; }
+
+  .tabbar { position: absolute; inset: auto 0 0; height: 56px; border-top: 1px solid #edf1ee; background: #fff; display: flex; align-items: stretch; }
+  .tabbar .t { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #929e98; font-size: 11px; }
+  .tabbar .t.on { color: #176348; font-weight: 700; }
+  .tabbar .dot { width: 20px; height: 20px; border-radius: 5px; background: currentColor; opacity: .55; }
+  .tabbar .t.on .dot { opacity: 1; }
+  .fab { position: absolute; left: 50%; top: -16px; transform: translateX(-50%); width: 48px; height: 48px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 6px 14px rgba(31,93,73,.34); }
+  .tabbar .mid { position: relative; width: 76px; }
+
+  .mask { position: absolute; inset: 0; background: rgba(18,38,32,.38); display: flex; align-items: flex-end; justify-content: center; padding: 0 16px 22px; }
+  .sheet { width: 100%; border-radius: 16px; background: #fff; padding: 18px 16px 14px; }
+  .sheet h3 { margin: 0; font-size: 16px; }
+  .sheet .sub { margin-top: 3px; color: var(--muted); font-size: 12px; }
+  .stepper { display: flex; align-items: center; justify-content: center; margin-top: 16px; }
+  .stepper .b { width: 46px; height: 46px; border: 1px solid #d8e2dd; border-radius: 50%; background: #f7faf8; color: var(--green); font-size: 22px; display: flex; align-items: center; justify-content: center; }
+  .stepper input { width: 96px; height: 46px; margin: 0 12px; border: 1px solid #dde6e1; border-radius: 10px; text-align: center; font-size: 20px; font-weight: 700; }
+  .hint { margin-top: 8px; color: var(--muted); font-size: 11px; text-align: center; }
+  .row2 { display: flex; gap: 10px; margin-top: 16px; }
+  .btn { flex: 1; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; }
+  .btn.primary { background: var(--green); color: #fff; }
+  .btn.ghost { border: 1px solid #cbd8d2; color: var(--green); background: #fff; }
+  .as-item { display: flex; align-items: center; height: 52px; padding: 0 14px; font-size: 14px; font-weight: 600; }
+  .as-item .ic { width: 20px; height: 20px; border-radius: 6px; margin-right: 10px; background: #eef4f1; }
+  .as-item.danger { color: var(--danger); }
+  .as-item.danger .ic { background: #fbeceb; }
+  .as-cancel { width: 100%; height: 48px; border-top: 1px solid #eef2f0; background: #fff; color: #6b7a73; font-size: 14px; }
+
+  .hero { padding: 15px 14px 13px; border: 1px solid #ecdcbe; border-radius: 14px; background: #fff; }
+  .hero .tl { display: flex; justify-content: space-between; color: #6b7a73; font-size: 11px; }
+  .hero .pill { padding: 3px 9px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 11px; }
+  .hero .nm { display: block; margin-top: 8px; font-size: 21px; font-weight: 700; }
+  .hero .stats { display: flex; margin-top: 13px; padding-top: 11px; border-top: 1px solid #eef2f0; }
+  .hero .st { flex: 1; }
+  .hero .st + .st { padding-left: 10px; border-left: 1px solid #eef2f0; }
+  .hero .st span { display: block; color: var(--muted); font-size: 11px; }
+  .hero .st b { font-size: 15px; }
+  .info { margin-top: 12px; padding: 13px 14px 4px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+  .info h4 { margin: 0 0 4px; font-size: 14px; }
+  .irow { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f3; font-size: 13px; }
+  .irow:last-child { border-bottom: 0; }
+  .irow span { color: #6b7a73; }
+  .irow b { font-weight: 600; }
+  .actionbar { position: absolute; left: 12px; right: 12px; bottom: 20px; display: flex; padding: 5px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 8px 20px rgba(23,59,49,.14); }
+  .actionbar div { flex: 1; height: 42px; display: flex; align-items: center; justify-content: center; color: var(--green); font-size: 13px; font-weight: 600; }
+  .actionbar div + div { border-left: 1px solid #eef2f0; }
+  .actionbar div.danger { color: var(--danger); }
+
+  .profile { display: flex; align-items: center; padding: 16px 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+  .avatar { position: relative; overflow: hidden; width: 54px; height: 54px; margin-right: 14px; border-radius: 50%; background: #eef2f0; display: flex; align-items: flex-end; justify-content: center; }
+  .avatar .h { width: 18px; height: 18px; border-radius: 50%; background: #a9b8b1; }
+  .avatar .b2 { position: absolute; bottom: -8px; width: 34px; height: 21px; border-radius: 34px 34px 0 0; background: #a9b8b1; }
+  .profile .nm { display: block; font-size: 17px; font-weight: 700; }
+  .profile .hp { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+  .entries { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; overflow: hidden; }
+  .entry { display: flex; align-items: center; height: 58px; padding: 0 14px; border-top: 1px solid #f1f5f3; }
+  .entry:first-child { border-top: 0; }
+  .entry .ic { width: 26px; height: 26px; margin-right: 12px; border-radius: 9px; background: #eef4f1; }
+  .entry .lb { font-size: 14px; font-weight: 600; }
+  .entry .vl { flex: 1; margin-left: 10px; color: #93a099; font-size: 11px; text-align: right; }
+  .entry .cv { width: 7px; height: 7px; margin-left: 8px; border-top: 2px solid #c3cec9; border-right: 2px solid #c3cec9; transform: rotate(45deg); }
+  .caption { margin: 10px 0 0; color: #6b7a73; font-size: 11px; text-align: center; }
+</style>
+</head>
+<body data-page-node-id="ztgHB4qbRhSimZ97DSjYHb">
+<h1 data-page-node-id="ODtRMIOU68VLdToOUIkObX">保质记 · 改版 UI 预览</h1>
+<p class="lead" data-page-node-id="btbL026espicyK5FnrbmPH">三屏静态预览：首页（含数量弹窗）／物品详情／我的。底部为自定义 Tab 栏，中间圆形 + 为全局新增入口。</p>
+
+<div class="stage" data-page-node-id="DwAjAkEqse1zDZgNgARyQ1">
+  <!-- 首页 -->
+  <div class="phone" data-page-node-id="YCdaJg67bKRmLXRODklLgF">
+    <div class="screen" data-page-node-id="skRdZYoutHqd8WZ4pD5JsL">
+      <div class="navbar" data-page-node-id="kTx6D3r4J3811pIEKGUHcl">保质记</div>
+      <div class="brand" data-page-node-id="C5cGXkDkPSWeA3yKDqE5Ko">保质记<span class="brand-sub" data-page-node-id="AVlGVXdorUH53Yc2bR33dQ">共 12 件在库</span></div>
+      <div class="stat-row" data-page-node-id="cnjDMTHhzZN2QtkmUq8AwU">
+        <div class="stat total on" data-page-node-id="cuBfX7NPlBjAUdBF1QYdVk"><span class="label" data-page-node-id="YrgSUHC0q98dAzWNBYZrzH">在库</span><span class="num" data-page-node-id="Gb38KTpQo8d21XUjUy0K6X">12</span></div>
+        <div class="stat expiring" data-page-node-id="QDzBbPWWpLwumgf8r3mtou"><span class="label" data-page-node-id="V6kUfRY5yww7PyAI3RTNQE">临期</span><span class="num" data-page-node-id="Wd5lqwGZ7IShBHTJvxkE3g">3</span></div>
+        <div class="stat expired" data-page-node-id="lEi7m8ietzW5q2BDK3WZ7o"><span class="label" data-page-node-id="rU6BViqqtWVALHmzWXg1GC">已过期</span><span class="num" data-page-node-id="psUVSWk04CD8KeF1iepS4V">1</span></div>
+        <div class="stat used" data-page-node-id="1zrIQPDHbqgaS4LUPRCVen"><span class="label" data-page-node-id="NlRyok6q0d9SHRDEIzvEuy">已用完</span><span class="num" data-page-node-id="L6ChnDmHShipo5S0bdODwX">8</span></div>
+      </div>
+
+      <div class="lib-head" data-page-node-id="XWp7jeJcOCT6ikDz26CWhL"><b data-page-node-id="iWTx6bQqehXAUO3KHp5DWN">物品清单</b><span class="chip" data-page-node-id="OnmEVln18AJUmFusuthFdw">批量操作</span></div>
+      <div class="panel" data-page-node-id="v4vT7YGTqwujERttRnwY5Z">
+        <div class="search" data-page-node-id="xtncq8OxcLwCFqDIh5m4fW">🔍 搜索名称或存放位置</div>
+        <span class="flabel" data-page-node-id="1shnq99i9bDsek0qKPZbfE">种类</span>
+        <div class="grid" data-page-node-id="8LcngMFfry0I9TPq6LLk8F"><div class="opt on" data-page-node-id="bgJ1YnS7vpm0NcbFwX3CEI">全部</div><div class="opt" data-page-node-id="nvO3CE3glbhGXuULid13xF">食品</div><div class="opt" data-page-node-id="TVBrDEgSkl3a9pibxAro2c">药品</div><div class="opt" data-page-node-id="cPtmpLY1v3NCVTRFJdiZMa">日化</div><div class="opt" data-page-node-id="zV0mqpQZidTstLBrP9HIfk">其他</div></div>
+        <span class="flabel" data-page-node-id="Sl6HM5oFqTCaeppNzwEkE4">状态</span>
+        <div class="grid" data-page-node-id="chUWbm4Skj8vXDTHzffxU5"><div class="opt on" data-page-node-id="32wNwcMCu47EsFbQoE6V0j">全部在库</div><div class="opt" data-page-node-id="MbhBRM6ijN0O0Ioc3l3fRE">临期</div><div class="opt" data-page-node-id="TEiZ32qpl0Q9PUXZB9aBpW">已过期</div><div class="opt" data-page-node-id="RQEtSt6aijCslNRzW7Qjf6">状态良好</div><div class="opt" data-page-node-id="AcMInYQSmFsiCB6ricrvN2">已用完</div></div>
+        <span class="flabel" data-page-node-id="fXXUQbr55xSBwOX2aqUn9T">排序</span>
+        <div class="grid quad" data-page-node-id="QIRsjfqSRuJHbYPCHXZo79"><div class="opt on" data-page-node-id="W9Ce5Oh5YKJyKyl6FRjJKF">过期正序</div><div class="opt" data-page-node-id="x4gvqRdLOadNdKYhzoxmgd">过期倒序</div><div class="opt" data-page-node-id="agTcKI6lAosNFaAEnpnWry">录入正序</div><div class="opt" data-page-node-id="bQv2QCiERr14Y928y56DVq">录入倒序</div></div>
+        <div class="factions" data-page-node-id="osaDsT9VtmL72Wa5yVTd4d"><span data-page-node-id="AFreWMSeSPO7bKuGmflBlA">搜索、筛选与排序同时生效</span><span data-page-node-id="b8bgqex1b0RLJLZ2QCG1Ho">清除全部</span></div>
+      </div>
+
+      <div class="card2 warn" data-page-node-id="M2dasRTOBphKO5OGx1NzVi">
+        <div class="body" data-page-node-id="GT8476HhFJViId3VLzwc2A">
+          <div class="top" data-page-node-id="rm9QBBX0NIrotxIuZfwD2P"><span class="name" data-page-node-id="DR58uohAmmPeBcrnhDfnpY">光明纯牛奶</span><span class="remain" data-page-node-id="WUOQq3XYHVjSxYN8dvmcGO">剩余 3 天</span></div>
+          <div class="tags" data-page-node-id="B7jWxo3swmFiYCCdbdqImS"><span class="tag q" data-page-node-id="hettHGGEmRUvSIriuxMItr">数量 2盒</span><span class="tag" data-page-node-id="BnUeCDei4PxuizAhNaQumV">冷藏</span><span class="tag m" data-page-node-id="w91qvzwlqDwmSshxuv39KP">食品</span></div>
+        </div>
+        <div class="acts" data-page-node-id="STODjwyBNgPYApFxezxpgk"><span class="a" data-page-node-id="TsqDKiENygXMA7oaEIcGBN">数量</span><span class="a" data-page-node-id="ipVYUhvIpAOYz3Fe8XGyZa">编辑</span><span class="a more" data-page-node-id="OGVtM67AJDF54cbzEIc5eQ">···</span></div>
+      </div>
+
+      <div class="card2" data-page-node-id="Tjj9sqL0mkn0jywk5iQPPY">
+        <div class="body" data-page-node-id="eXYqMZbYuJlKv1EHDhSSnh">
+          <div class="top" data-page-node-id="DxCWJmEiIwtXfawiEHr7ij"><span class="name" data-page-node-id="H6lIEDfEWRX6KBE3zASxiC">布洛芬缓释胶囊</span><span class="remain" data-page-node-id="wGuZBD3U5RWieh5poPkfwA">剩余 180 天</span></div>
+          <div class="tags" data-page-node-id="ROPBWniUxO1bBt2QBAs9yE"><span class="tag q" data-page-node-id="AMoqjoU4PPo0P3VH2Hipa3">数量 1盒</span><span class="tag" data-page-node-id="1fjeFEYL3RJKV8O8QiIfoc">药箱</span><span class="tag m" data-page-node-id="hbZOoth6Jb1xPFmzyvtaAC">药品</span></div>
+        </div>
+        <div class="acts" data-page-node-id="wX2EDIgAQLn5l7FDOJtezs"><span class="a" data-page-node-id="WC6yNbQbrNgKVZ0h6aD0zQ">数量</span><span class="a" data-page-node-id="4u9S5kE3nzELsqlnDcjlmW">编辑</span><span class="a more" data-page-node-id="sR4OlfMKUmkT3sGac4NJqZ">···</span></div>
+      </div>
+
+      <div class="card2" data-page-node-id="bWOHdoANff6sgGyivk2bAy">
+        <div class="body" data-page-node-id="bpnMBvCJDvxonAFSYaNsFh">
+          <div class="top" data-page-node-id="AF46vbSKqyXjYUv4KHppu7"><span class="name" data-page-node-id="n7K2ZTbZoXoAgbRAkVi3MC">洗洁精</span><span class="remain" data-page-node-id="CdwA3EBviJqo1m9jBHSQF3">剩余 320 天</span></div>
+          <div class="tags" data-page-node-id="kw8aYyj782IS3iqHS59OQH"><span class="tag q" data-page-node-id="JAxWY50CflzprYERTI2y7u">数量 1瓶</span><span class="tag m" data-page-node-id="trqzU3psZdHtgeEy70Dwsg">日化</span></div>
+        </div>
+        <div class="acts" data-page-node-id="HsI1zlKOvdp5v32lVVm577"><span class="a" data-page-node-id="GLPRQUH139FecpEwtZscaF">数量</span><span class="a" data-page-node-id="qO5Tls7J6WM97WwGS1xxde">编辑</span><span class="a more" data-page-node-id="PUrDG4DPD7JeSQA7BzfNbN">···</span></div>
+      </div>
+
+      <!-- 数量弹窗 -->
+      <div class="mask" data-page-node-id="pFsisPmPEn0AUnxGGeavnJ">
+        <div class="sheet" data-page-node-id="MgWN426d2FqGnwMUVoM9Hc">
+          <h3 data-page-node-id="rlWOoRUxat91QUWnEKD4qa">调整数量</h3>
+          <div class="sub" data-page-node-id="IsGwqLav6RRLcNChADJ1qK">光明纯牛奶</div>
+          <div class="stepper" data-page-node-id="pzij5EHHNuEcS58aiiF8Vb">
+            <div class="b" data-page-node-id="SWAYPqwDrfj6pUtiAQrPyP">−</div>
+            <input value="2" data-page-node-id="MOisnBjmMQecvJGURD67vA" />
+            <div class="b" data-page-node-id="obHvnM8shK5iEun73GAtiI">＋</div>
+          </div>
+          <div class="hint" data-page-node-id="uDV6NwWUlREuvcuvXcQQAn">可输入 1～9999 的正整数</div>
+          <div class="row2" data-page-node-id="ykkxIzvFufydRcI2ByGRpE">
+            <div class="btn ghost" data-page-node-id="7YPCsZumADUC1CoqzKfetM">取消</div>
+            <div class="btn primary" data-page-node-id="g18R1Gtx84tBzyTfNtv0yf">保存</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabbar" data-page-node-id="RgFKEKVHjympdE5xngJL58">
+      <div class="t on" data-page-node-id="IeDIX7zfNzS2yrehGMN3iU"><div class="dot" data-page-node-id="G6OhTacFzgi0PXTDp5aGNo"></div>首页</div>
+      <div class="mid" data-page-node-id="INfyoGA7N5fefOkjDdJOm3"><div class="fab" data-page-node-id="50ZqXgUKmfWbSL6zuwzX1E">+</div></div>
+      <div class="t" data-page-node-id="4h8POkjdbjJ6cB46Z4eQoj"><div class="dot" data-page-node-id="pkofNiE05aT097Y9egm68p"></div>我的</div>
+    </div>
+  </div>
+
+  <!-- 详情页 -->
+  <div class="phone" data-page-node-id="pISX2OYCU1M86hfjYexeVc">
+    <div class="screen" data-page-node-id="6sRqnUuwmlFwspATPiq3C6">
+      <div class="navbar" data-page-node-id="0HquGwMiDOTlQ9z05i04LY">光明纯牛奶</div>
+      <div class="hero" data-page-node-id="wRo7AqlHJLstUBAv9nh4vO">
+        <div class="tl" data-page-node-id="j7rExkUk7yLA1bNjOjcz3w"><span data-page-node-id="VeiHz9iwMyUVug9MlglUSy">食品 · 冷藏</span><span class="pill" data-page-node-id="EWzYdDGXbWanZylBZxiSlA">3 天内到期</span></div>
+        <span class="nm" data-page-node-id="LKjoAZvOVe1uqK4IJVSHfj">光明纯牛奶</span>
+        <div class="stats" data-page-node-id="AU3rX4VCRpsumh9jIrnVrn">
+          <div class="st" data-page-node-id="4hvVM5AfS7n94Z9oaNPI2C"><span data-page-node-id="UFFQ9EnP1AZGh3k9t4UBXx">到期日期</span><b data-page-node-id="DWXf43dCDGruGkHNHqiQpy">2026-09-11</b></div>
+          <div class="st" data-page-node-id="me5K8dj3PYL2sc61NK3DIy"><span data-page-node-id="Zi5VKCo4GHD57CdDm0Vabt">剩余</span><b data-page-node-id="QE97EfeK65ZXEIeDB1zZcL">3 天</b></div>
+          <div class="st" data-page-node-id="GJ93a5ju9Ik7BSh3inuC5h"><span data-page-node-id="jiqa1EBEdrSuTvFAjLQi2i">数量</span><b data-page-node-id="5leGkFaLuSJxusb1WGaJiS">2盒</b></div>
+        </div>
+      </div>
+      <div class="info" data-page-node-id="mpeikIzMvDYB0ftgdxTjN7">
+        <h4 data-page-node-id="wedfFkqzd3LqkPeyWniW9i">物品信息</h4>
+        <div class="irow" data-page-node-id="4mWON93N1Lsg7Zrir8CYfX"><span data-page-node-id="QcSbhlhs3mXFJifUNe5Ojz">分类</span><b data-page-node-id="313J1D8Vn2Npc6zvENHjvT">食品</b></div>
+        <div class="irow" data-page-node-id="HqPlWdNgELqlwcQzHrPaFj"><span data-page-node-id="88oSb5WoThZn2817TQBgE1">存放位置</span><b data-page-node-id="be2VFs8HSwMis2tEy7maha">冷藏</b></div>
+        <div class="irow" data-page-node-id="bJJEhEtiGEZCfVQQKutBId"><span data-page-node-id="VVUvEfKRE9xZ4O46d30o1C">库存状态</span><b data-page-node-id="MGq3HfEMqu63KGSW6K0r2h">使用中</b></div>
+        <div class="irow" data-page-node-id="wxPruvwuT9RwoWXyhOBLDu"><span data-page-node-id="EofZm6WBRVq2uLF9JT6JPF">临期提醒</span><b data-page-node-id="qDL9063SHt0j9HEFzqprKc">未开启 · 提前 3 天</b></div>
+      </div>
+      <p class="caption" data-page-node-id="5l4LU6doshJQGFT0YeQbaT">底部一排：编辑 / 已用完 / 删除 / 提醒</p>
+    </div>
+    <div class="actionbar" data-page-node-id="aseRZv8123Kp45yXVtfrHJ"><div data-page-node-id="fzzTHhFYokKq6hpwGXVcRf">编辑</div><div data-page-node-id="ZspK4pHRz5EDzM9GlWAlOm">已用完</div><div class="danger" data-page-node-id="F44PhnkloPghIj6EAjzOw4">删除</div><div data-page-node-id="6xSVrdBdXHu2Cf4RXx7viu">提醒</div></div>
+  </div>
+
+  <!-- 我的 -->
+  <div class="phone" data-page-node-id="LLE4muK4If0EB27ez9Qg0U">
+    <div class="screen" data-page-node-id="XlKlSLYlj6MoeARgNpbtr0">
+      <div class="navbar" data-page-node-id="nFUz9Q5v6hTbkWvIiIcRBM">我的</div>
+      <div class="profile" data-page-node-id="kNZciQzBPHSr3EQqqheRTx">
+        <div class="avatar" data-page-node-id="3OUMmbUmRMgCzf3I7cYXTH"><div class="h" data-page-node-id="k2F3f3lAD5t0LuunIQe12R"></div><div class="b2" data-page-node-id="CbTnQI2vGPXuRhJHZT6R4B"></div></div>
+        <div data-page-node-id="I2rJ98AcM7tanIcO2uB5US"><span class="nm" data-page-node-id="PUg8v96EoByD2P4D6GzAAa">保质记用户</span><span class="hp" data-page-node-id="GPyWOjdrix2nk7x8oF46tK">点击设置微信昵称或自定义昵称</span></div>
+      </div>
+      <div class="entries" data-page-node-id="UkxkdS0ChlnqAgJG9mMhLx">
+        <div class="entry" data-page-node-id="CfEnBKCqU426swntIFjYQN"><div class="ic" data-page-node-id="QuvVn4wTqBQKviiQlOcaAE"></div><span class="lb" data-page-node-id="36frKSqzHpxHHxEIcnPYZz">提醒设置</span><span class="vl" data-page-node-id="eCJji81ljCW0OGsA9IgIza">默认提前 1 天</span><div class="cv" data-page-node-id="tEk3FQc9EJtyLKgB5U0QgT"></div></div>
+        <div class="entry" data-page-node-id="fStsMGwJ6NDoKT5j6ElW59"><div class="ic" data-page-node-id="fcRd99QjgSBjlHMvY8VhCK"></div><span class="lb" data-page-node-id="vscPdnXEB1PB3VpMBZbFpu">回收站</span><span class="vl" data-page-node-id="0olRu9yFDc8JW5PQoM3xZq">删除后保留 30 天</span><div class="cv" data-page-node-id="fEBBPDGIvdFwiOADHcLZ3h"></div></div>
+        <div class="entry" data-page-node-id="7j9eWeyFXTocqS2i1nI4En"><div class="ic" data-page-node-id="xjSeuAeX9Cu3VLc7vDli2X"></div><span class="lb" data-page-node-id="uks08tCMDJDXsZqMJQ14S0">意见反馈</span><span class="vl" data-page-node-id="xEpIkx7MM7AmSjiwd1i2pR">说说你的想法</span><div class="cv" data-page-node-id="g0BBcgN4wwVz7AMYhc7TLZ"></div></div>
+        <div class="entry" data-page-node-id="jfsPC6Yej0WzD9XLUYUS1g"><div class="ic" data-page-node-id="g30nhhmqOwdYpREGcQHk4n"></div><span class="lb" data-page-node-id="0OlsZSMdPhcqzLa9k3RyBc">使用帮助</span><span class="vl" data-page-node-id="DvL1HiiUDepmqcQt4Dx8La">常见问题</span><div class="cv" data-page-node-id="0hQGfK8Ah3ZwRHRK86RXYZ"></div></div>
+        <div class="entry" data-page-node-id="EhT7x5TCQaacCv58VaHFsP"><div class="ic" data-page-node-id="KUuLYsLrmcCit82FEROCxF"></div><span class="lb" data-page-node-id="yKIGGaS8MfK4E7QW2vX6BY">关于</span><span class="vl" data-page-node-id="p8Wk2ythQdtgHRpQ9zYHPq">保质记</span><div class="cv" data-page-node-id="bCF7gmhBbMD3OCx1XkgHex"></div></div>
+      </div>
+      <p class="caption" data-page-node-id="oSUT5YUceI5zHWmGOtIDuN">点击头像／昵称 → 选择微信头像、使用微信昵称或自行输入</p>
+      <p class="caption" data-page-node-id="CUPAL4caEtHTbdjHPYN4MN">五个入口均以弹窗承接（回收站可搜索与彻底删除）</p>
+    </div>
+    <div class="tabbar" data-page-node-id="ZAAlR7dCiNGt4PxaIDtXJ0">
+      <div class="t" data-page-node-id="AVTwAWaKX1DeDDA3AT7CPH"><div class="dot" data-page-node-id="ZvQezhXcKplXP1bU3XB9uv"></div>首页</div>
+      <div class="mid" data-page-node-id="87lCMnZCElp7LE5HK7GZlF"><div class="fab" data-page-node-id="xAJCl5HBQjEOqlTy3ICG37">+</div></div>
+      <div class="t on" data-page-node-id="ltIj74k5JEMELBs85feZT7"><div class="dot" data-page-node-id="NWUoZGEtZ6XTF7txjUmMpF"></div>我的</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

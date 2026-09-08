@@ -16,6 +16,7 @@ button::after {
   bottom: 0;
   left: 0;
   z-index: 900;
+  overflow: visible;
   padding-bottom: env(safe-area-inset-bottom);
   border-top: 2rpx solid #edf1ee;
   background: #ffffff;
@@ -54,22 +55,35 @@ button::after {
   font-weight: 700;
 }
 
-.tabbar__add {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 150rpx;
+.tabbar__add-slot {
+  flex: 0 0 150rpx;
   height: 104rpx;
 }
 
-.tabbar__add-circle {
+/* 悬浮在 bar 之上的新增按钮：单独定位 + 允许溢出，避免被按钮/容器裁掉凸起部分 */
+.tabbar__add {
+  position: fixed;
+  right: 0;
+  bottom: calc(54rpx + env(safe-area-inset-bottom));
+  left: 0;
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 92rpx;
-  height: 92rpx;
-  margin-top: -30rpx;
+  width: 100rpx;
+  height: 100rpx;
+  margin: 0 auto;
+  overflow: visible;
+  background: transparent;
+}
+
+.tabbar__add-circle {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100rpx;
+  height: 100rpx;
   border-radius: 50%;
   background: #1f5d49;
   box-shadow: 0 10rpx 22rpx rgba(31, 93, 73, 0.34);
@@ -78,7 +92,7 @@ button::after {
 
 .tabbar__add-plus {
   color: #ffffff;
-  font-size: 54rpx;
+  font-size: 58rpx;
   font-weight: 300;
   line-height: 1;
 }
