@@ -27,7 +27,7 @@ let quickEntryPage: Record<string, unknown>
 const originalWx = globalThis.wx
 beforeEach(() => {
   vi.clearAllMocks()
-  globalThis.wx = { pageScrollTo: vi.fn(), enableAlertBeforeUnload: vi.fn(), disableAlertBeforeUnload: vi.fn(), showToast: vi.fn(), navigateBack: vi.fn(), navigateTo: vi.fn(), reportAnalytics: vi.fn() } as never
+  globalThis.wx = { setNavigationBarTitle: vi.fn(), pageScrollTo: vi.fn(), enableAlertBeforeUnload: vi.fn(), disableAlertBeforeUnload: vi.fn(), showToast: vi.fn(), navigateBack: vi.fn(), navigateTo: vi.fn(), reportAnalytics: vi.fn() } as never
 })
 
 beforeAll(async () => {

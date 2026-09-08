@@ -116,6 +116,7 @@ Page({
 
   onShow() {
     this.manualHandoff = false
+    wx.setNavigationBarTitle({ title: '快速录入' })
     if (this.exitOnShow) { wx.disableAlertBeforeUnload?.(); wx.navigateBack(); return }
     activePage = this
     this.setData({ today: todayKey() })
