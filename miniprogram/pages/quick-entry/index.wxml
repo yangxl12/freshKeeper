@@ -78,8 +78,8 @@
             </picker>
           </view>
           <view class="field-row">
-            <input class="field-control" value="{{draft.fields.shelfLifeValue || ''}}" type="number" placeholder="保质期" data-field="shelfLifeValue" bindinput="handleTextInput" />
-            <picker mode="selector" range="{{shelfLifeOptions}}" range-key="label" value="0" bindchange="handleShelfLifeUnitChange"><view class="field-control date-control"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view></view></picker>
+            <input class="field-control field-row__item" value="{{draft.fields.shelfLifeValue || ''}}" type="number" placeholder="保质期" data-field="shelfLifeValue" bindinput="handleTextInput" />
+            <picker class="field-row__item" mode="selector" range="{{shelfLifeOptions}}" range-key="label" value="0" bindchange="handleShelfLifeUnitChange"><view class="field-control date-control"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view></view></picker>
           </view>
         </block>
         <view class="expiry-summary"><text>预计到期</text><text class="expiry-summary__value">{{expirySummary}}</text></view>
@@ -88,8 +88,8 @@
       <view class="draft-card__summary"><text>{{draftSummary}}</text><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text></view>
       <view class="draft-card__details">
         <view class="field-row">
-          <view class="field"><text class="field-label">数量</text><input class="field-control" value="{{draft.fields.quantity || ''}}" type="number" data-field="quantity" bindinput="handleTextInput" /></view>
-          <view class="field"><text class="field-label">单位</text><input class="field-control" value="{{draft.fields.unit}}" data-field="unit" maxlength="8" bindinput="handleTextInput" /></view>
+          <view class="field field-row__item"><text class="field-label">数量</text><input class="field-control" value="{{draft.fields.quantity || ''}}" type="number" data-field="quantity" bindinput="handleTextInput" /></view>
+          <view class="field field-row__item"><text class="field-label">单位</text><input class="field-control" value="{{draft.fields.unit}}" data-field="unit" maxlength="8" bindinput="handleTextInput" /></view>
         </view>
         <view class="field"><text class="field-label">分类</text><picker mode="selector" range="{{categoryOptions}}" range-key="label" value="{{draft.fields.category === 'medicine' ? 1 : (draft.fields.category === 'household' ? 2 : (draft.fields.category === 'other' ? 3 : 0))}}" bindchange="handleCategoryChange"><view class="field-control date-control"><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text><view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view></view></picker></view>
         <view class="field"><text class="field-label">存放位置</text><input class="field-control" value="{{draft.fields.storageLocation}}" placeholder="例如：冰箱" placeholder-class="field-placeholder" data-field="storageLocation" bindinput="handleTextInput" /></view>

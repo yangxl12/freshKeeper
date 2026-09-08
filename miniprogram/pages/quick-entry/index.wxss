@@ -131,7 +131,7 @@
 .field-label-row__hint { color: #8a9d94; font-size: 21rpx; }
 .field--compact { margin-bottom: 20rpx; }
 .field-row { display: flex; gap: 16rpx; }
-.field-row > * { min-width: 0; flex: 1; }
+.field-row__item { min-width: 0; flex: 1; }
 .mode-switch { display: flex; margin-bottom: 18rpx; padding: 5rpx; border-radius: 11rpx; background: rgba(31, 93, 73, 0.09); }
 .mode-switch__item { min-height: 70rpx; flex: 1; padding: 0 8rpx; border-radius: 9rpx; background: transparent; color: #607269; font-size: 23rpx; line-height: 70rpx; }
 .mode-switch__item--active { background: #ffffff; box-shadow: 0 4rpx 12rpx rgba(23, 59, 49, 0.08); color: #1f5d49; font-weight: 650; }
