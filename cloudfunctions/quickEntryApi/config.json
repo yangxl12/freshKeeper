@@ -1,0 +1,6 @@
+{
+  "timeout": 30,
+  "envVariables": {
+    "QUICK_ENTRY_TIMEOUT_MS": "8000"
+  }
+}

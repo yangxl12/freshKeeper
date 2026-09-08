@@ -1,5 +1,6 @@
 interface IAppOption {
   globalData: {
+    pendingQuickFormDraft: Partial<import('./inventory').InventorySaveInput> | null
     pendingInventoryIntent: {
       viewStatus: import('./inventory').InventoryViewStatus
       source: 'home_card'

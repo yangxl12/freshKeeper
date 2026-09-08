@@ -93,6 +93,15 @@ function validateSaveInput(input) {
   }
 }
 
+function validateIdempotencyKey(value) {
+  assert(
+    typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value),
+    'INVALID_ARGUMENT',
+    '快速录入请求编号不正确',
+  )
+  return value.toLowerCase()
+}
+
 function validateItemId(value) {
   assert(typeof value === 'string' && value.length >= 1 && value.length <= 128, 'INVALID_ARGUMENT', '物品编号不正确')
   return value
@@ -167,6 +176,7 @@ module.exports = {
   validateDecrementAmount,
   validateInventoryViewStatus,
   validateItemId,
+  validateIdempotencyKey,
   validateOptionalCategory,
   validateOptionalStorage,
   validatePageSize,

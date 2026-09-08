@@ -1,0 +1,103 @@
+<view class="quick-entry page-shell">
+  <view wx:if="{{loading}}" class="quick-entry__loading">正在准备快速录入…</view>
+
+  <block wx:elif="{{!drafts.length}}">
+    <view class="quick-entry__heading">
+      <text class="quick-entry__kicker">QUICK ENTRY</text>
+      <text class="quick-entry__title">快速录入</text>
+      <text class="quick-entry__description">从最近使用的物品开始，只补这一次的到期信息。</text>
+    </view>
+
+    <view wx:if="{{loadingError}}" class="quick-entry__notice" role="alert">{{loadingError}}</view>
+
+    <view wx:if="{{recentProfiles.length}}" class="recent-section">
+      <view class="section-heading">
+        <text class="section-heading__title">最近使用</text>
+        <text class="section-heading__meta">{{recentProfiles.length}} 项</text>
+      </view>
+      <view class="recent-list">
+        <button wx:for="{{recentProfiles}}" wx:key="name" wx:for-item="profile" class="recent-item" data-index="{{index}}" bindtap="selectRecent" hover-class="recent-item--pressed">
+          <view class="recent-item__content">
+            <text class="recent-item__name">{{profile.name}}</text>
+            <text class="recent-item__meta">{{profile.quantity}}{{profile.unit}}<text wx:if="{{profile.storageLocation}}"> · {{profile.storageLocation}}</text></text>
+          </view>
+          <view class="line-icon line-icon--chevron-right recent-item__arrow" aria-hidden="true"></view>
+        </button>
+      </view>
+    </view>
+
+    <view wx:else class="quick-entry__empty">还没有可复用的最近物品</view>
+    <button class="manual-button" bindtap="continueManual" hover-class="pressable--pressed">完整填写</button>
+  </block>
+
+  <block wx:else>
+    <view id="draft-area" class="draft-heading">
+      <view>
+        <text class="quick-entry__kicker">CHECK BEFORE SAVING</text>
+        <text class="draft-heading__title">确认这次录入</text>
+      </view>
+      <button class="draft-heading__delete" bindtap="removeDraft" hover-class="pressable--pressed" aria-label="删除草稿">
+        <view class="line-icon line-icon--close" aria-hidden="true"></view>
+      </button>
+    </view>
+
+    <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" class="draft-card draft-card--{{draft.status}}">
+      <view class="draft-card__status-row">
+        <text class="draft-card__status">{{draft.status === 'saved' ? '已加入库存' : (draft.status === 'failed' ? '保存失败' : (draft.issues.length ? '还需补充' : '待确认'))}}</text>
+        <button wx:if="{{draft.status !== 'saved'}}" class="draft-card__select" disabled="{{draft.issues.length > 0 || draft.status === 'saving'}}" bindtap="toggleSelected" hover-class="pressable--pressed" aria-label="选择此草稿">
+          <text class="draft-card__check">{{draft.selected ? '已选' : '未选'}}</text>
+        </button>
+      </view>
+
+      <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
+      <view wx:for="{{draft.issues}}" wx:key="code" wx:for-item="issue" class="draft-card__issue">{{issue.message}}</view>
+
+      <view class="field">
+        <text class="field-label">物品名称 <text class="required-mark">*</text></text>
+        <input class="field-control" value="{{draft.fields.name}}" maxlength="40" placeholder="例如：鲜牛奶" placeholder-class="field-placeholder" data-field="name" bindinput="handleTextInput" />
+      </view>
+
+      <view class="date-focus-block">
+        <view class="field-label-row">
+          <text class="field-label">到期信息 <text class="required-mark">*</text></text>
+          <text class="field-label-row__hint">旧日期已清空</text>
+        </view>
+        <view class="mode-switch">
+          <button class="mode-switch__item {{draft.fields.expiryInputMode === 'direct' ? 'mode-switch__item--active' : ''}}" data-mode="direct" bindtap="handleModeChange">直接选到期日</button>
+          <button class="mode-switch__item {{draft.fields.expiryInputMode === 'shelf_life' ? 'mode-switch__item--active' : ''}}" data-mode="shelf_life" bindtap="handleModeChange">按保质期计算</button>
+        </view>
+        <view wx:if="{{draft.fields.expiryInputMode === 'direct'}}" class="field field--compact">
+          <picker mode="date" value="{{draft.fields.expiryDate || ''}}" end="2200-12-31" data-field="expiryDate" bindchange="handleDateChange">
+            <view class="field-control date-control {{!draft.fields.expiryDate ? 'field-placeholder' : ''}}"><text>{{draft.fields.expiryDate || '选择本批次到期日期'}}</text><view class="line-icon line-icon--calendar date-control__icon" aria-hidden="true"></view></view>
+          </picker>
+        </view>
+        <block wx:else>
+          <view class="field field--compact">
+            <picker mode="date" value="{{draft.fields.productionDate || ''}}" end="2200-12-31" data-field="productionDate" bindchange="handleDateChange">
+              <view class="field-control date-control {{!draft.fields.productionDate ? 'field-placeholder' : ''}}"><text>{{draft.fields.productionDate || '选择本批次生产日期'}}</text><view class="line-icon line-icon--calendar date-control__icon" aria-hidden="true"></view></view>
+            </picker>
+          </view>
+          <view class="field-row">
+            <input class="field-control" value="{{draft.fields.shelfLifeValue || ''}}" type="number" placeholder="保质期" data-field="shelfLifeValue" bindinput="handleTextInput" />
+            <picker mode="selector" range="{{shelfLifeOptions}}" range-key="label" value="0" bindchange="handleShelfLifeUnitChange"><view class="field-control date-control"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view></view></picker>
+          </view>
+        </block>
+        <view class="expiry-summary"><text>预计到期</text><text class="expiry-summary__value">{{expirySummary}}</text></view>
+      </view>
+
+      <view class="draft-card__summary"><text>{{draftSummary}}</text><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text></view>
+      <view class="draft-card__details">
+        <view class="field-row">
+          <view class="field"><text class="field-label">数量</text><input class="field-control" value="{{draft.fields.quantity || ''}}" type="number" data-field="quantity" bindinput="handleTextInput" /></view>
+          <view class="field"><text class="field-label">单位</text><input class="field-control" value="{{draft.fields.unit}}" data-field="unit" maxlength="8" bindinput="handleTextInput" /></view>
+        </view>
+        <view class="field"><text class="field-label">分类</text><picker mode="selector" range="{{categoryOptions}}" range-key="label" value="{{draft.fields.category === 'medicine' ? 1 : (draft.fields.category === 'household' ? 2 : (draft.fields.category === 'other' ? 3 : 0))}}" bindchange="handleCategoryChange"><view class="field-control date-control"><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text><view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view></view></picker></view>
+        <view class="field"><text class="field-label">存放位置</text><input class="field-control" value="{{draft.fields.storageLocation}}" placeholder="例如：冰箱" placeholder-class="field-placeholder" data-field="storageLocation" bindinput="handleTextInput" /></view>
+        <view class="field"><text class="field-label">提前提醒天数</text><view class="number-suffix-control"><input class="number-suffix-control__input" value="{{draft.fields.reminderLeadDays || 0}}" type="number" maxlength="2" data-field="reminderLeadDays" bindinput="handleTextInput" /><text>天</text></view></view>
+      </view>
+    </view>
+
+    <button class="manual-button manual-button--lower" bindtap="continueManual" hover-class="pressable--pressed">改用完整填写</button>
+    <button class="primary-button save-button" disabled="{{saving || !drafts[0].selected || drafts[0].issues.length > 0}}" bindtap="saveDraft" hover-class="pressable--pressed">{{saving ? '正在加入…' : '确认加入库存'}}</button>
+  </block>
+</view>

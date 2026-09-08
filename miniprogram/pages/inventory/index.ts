@@ -216,7 +216,7 @@ Page({
   },
 
   addItem() {
-    wx.navigateTo({ url: '/pages/item-form/index' })
+    wx.navigateTo({ url: '/pages/quick-entry/index' })
   },
 
   openBatchOperations() {

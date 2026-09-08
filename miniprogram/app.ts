@@ -2,6 +2,7 @@ import { CLOUD_ENV_ID } from './config/runtime'
 
 App<IAppOption>({
   globalData: {
+    pendingQuickFormDraft: null,
     pendingInventoryIntent: null,
     pendingBatchIntent: null,
   },

@@ -16,6 +16,7 @@ const {
   validateHistoryStatus,
   validateInventoryViewStatus,
   validateItemId,
+  validateIdempotencyKey,
   validateOptionalCategory,
   validateOptionalStorage,
   validatePageSize,
@@ -23,6 +24,8 @@ const {
   validateSearch,
   validateVersion,
 } = require('./validation')
+const { mergeRecentItems } = require('./recent')
+const { fingerprint, stableItemId } = require('./idempotency')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
@@ -76,6 +79,8 @@ function publicItem(item, today, extra = {}) {
   const {
     ownerId: _ownerId,
     searchName: _searchName,
+    creationRequestId: _creationRequestId,
+    creationFingerprint: _creationFingerprint,
     ...safeItem
   } = item
   return {
@@ -87,6 +92,19 @@ function publicItem(item, today, extra = {}) {
     purgeDateText: getPurgeDateText(item),
     ...extra,
   }
+}
+
+async function listRecentProfiles(ownerId) {
+  const [activeResult, usedUpResult] = await Promise.all(
+    ['active', 'used_up'].map((inventoryStatus) =>
+      db.collection(ITEMS)
+        .where({ ownerId, inventoryStatus })
+        .orderBy('updatedAt', 'desc')
+        .limit(30)
+        .get(),
+    ),
+  )
+  return { items: mergeRecentItems([...activeResult.data, ...usedUpResult.data]) }
 }
 
 function escapeRegExp(value) {
@@ -294,6 +312,10 @@ async function save(ownerId, event) {
   const normalized = validateSaveInput(input)
   if (!input.itemId) {
     assert(input.version === undefined, 'INVALID_ARGUMENT', '新增物品不能包含记录版本')
+    if (event.idempotencyKey !== undefined) {
+      const idempotencyKey = validateIdempotencyKey(event.idempotencyKey)
+      return saveIdempotent(ownerId, idempotencyKey, normalized)
+    }
     const result = await db.collection(ITEMS).add({
       data: {
         ownerId,
@@ -307,6 +329,8 @@ async function save(ownerId, event) {
     })
     return { itemId: result._id, version: 1, expiryDate: normalized.expiryDate }
   }
+
+  assert(event.idempotencyKey === undefined, 'INVALID_ARGUMENT', '编辑物品不能包含快速录入请求编号')
 
   const itemId = validateItemId(input.itemId)
   const version = validateVersion(input.version)
@@ -339,6 +363,38 @@ async function save(ownerId, event) {
     }
   })
   return { itemId, version: version + 1, expiryDate: normalized.expiryDate }
+}
+
+async function saveIdempotent(ownerId, idempotencyKey, normalized) {
+  const creationFingerprint = fingerprint(normalized)
+  const creationRequestId = fingerprint(`${ownerId}:${idempotencyKey}`)
+  const itemId = stableItemId(ownerId, idempotencyKey)
+  return db.runTransaction(async (transaction) => {
+    const existingResult = await transaction.collection(ITEMS).where({ _id: itemId }).limit(1).get()
+    const existing = existingResult.data[0]
+    if (existing) {
+      assert(existing.ownerId === ownerId, 'IDEMPOTENCY_COLLISION', '快速录入请求编号发生冲突，请重新录入')
+      assert(existing.creationRequestId === creationRequestId, 'IDEMPOTENCY_COLLISION', '快速录入请求编号发生冲突，请重新录入')
+      assert(existing.creationFingerprint === creationFingerprint, 'IDEMPOTENCY_CONFLICT', '同一快速录入请求的数据已变化')
+      return { itemId: existing._id, version: existing.version, expiryDate: existing.expiryDate }
+    }
+
+    await transaction.collection(ITEMS).doc(itemId).set({
+      data: {
+        _id: itemId,
+        ownerId,
+        ...normalized,
+        inventoryStatus: 'active',
+        version: 1,
+        createdAt: db.serverDate(),
+        updatedAt: db.serverDate(),
+        completedAt: null,
+        creationRequestId,
+        creationFingerprint,
+      },
+    })
+    return { itemId, version: 1, expiryDate: normalized.expiryDate }
+  })
 }
 
 async function decrement(ownerId, event) {
@@ -545,6 +601,7 @@ const handlers = {
   listActive,
   getOverview,
   listInventory,
+  listRecentProfiles,
   get,
   save,
   decrement,

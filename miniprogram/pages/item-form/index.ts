@@ -51,21 +51,39 @@ Page({
   onLoad(options: Record<string, string | undefined>) {
     const itemId = options.id || ''
     const restoring = options.restore === '1'
+    const app = getApp<IAppOption>()
+    const pendingDraft = !itemId && !restoring ? app.globalData.pendingQuickFormDraft : null
+    if (pendingDraft) app.globalData.pendingQuickFormDraft = null
     this.setData({ itemId, restoring })
     wx.setNavigationBarTitle({ title: restoring ? '重新编辑' : itemId ? '编辑物品' : '新增物品' })
     if (itemId) this.loadItem(itemId)
-    else this.loadDefaults()
+    else this.loadDefaults(pendingDraft)
   },
 
-  async loadDefaults() {
+  async loadDefaults(pendingDraft: Partial<InventorySaveInput> | null = null) {
     try {
       const settings = await getSettings()
       this.setData({
-        reminderLeadDays: String(settings.defaultReminderLeadDays),
+        reminderLeadDays: String(pendingDraft?.reminderLeadDays ?? settings.defaultReminderLeadDays),
       })
     } catch (_error) {
       // 默认设置读取失败不阻塞录入，继续使用产品默认值。
     }
+    if (!pendingDraft) return
+    const categoryIndex = FORM_CATEGORY_OPTIONS.findIndex((option) => option.value === pendingDraft.category)
+    const shelfLifeUnitIndex = SHELF_LIFE_OPTIONS.findIndex((option) => option.value === pendingDraft.shelfLifeUnit)
+    this.setData({
+      name: pendingDraft.name || '',
+      quantity: pendingDraft.quantity == null ? '1' : String(pendingDraft.quantity),
+      unit: pendingDraft.unit || '件',
+      categoryIndex: categoryIndex >= 0 ? categoryIndex : 0,
+      storageLocation: pendingDraft.storageLocation || '',
+      mode: pendingDraft.expiryInputMode || 'direct',
+      expiryDate: pendingDraft.expiryDate || '',
+      productionDate: pendingDraft.productionDate || '',
+      shelfLifeValue: pendingDraft.shelfLifeValue == null ? '' : String(pendingDraft.shelfLifeValue),
+      shelfLifeUnitIndex: shelfLifeUnitIndex >= 0 ? shelfLifeUnitIndex : 0,
+    }, () => this.updateExpiryPreview())
   },
 
   async loadItem(itemId: string) {

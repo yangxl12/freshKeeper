@@ -56,12 +56,19 @@ export function getItem(itemId: string): Promise<InventoryItem> {
   return callCloud('inventoryApi', { action: 'get', itemId })
 }
 
-export function saveItem(input: InventorySaveInput): Promise<{
+export function saveItem(
+  input: InventorySaveInput,
+  options: { idempotencyKey?: string } = {},
+): Promise<{
   itemId: string
   version: number
   expiryDate: string
 }> {
-  return callCloud('inventoryApi', { action: 'save', data: input })
+  return callCloud('inventoryApi', {
+    action: 'save',
+    ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+    data: input,
+  })
 }
 
 export function decrementItem(
