@@ -1,3 +1,7 @@
+interface CardItem {
+  _id?: string
+}
+
 Component({
   properties: {
     item: {
@@ -5,10 +9,28 @@ Component({
       value: {},
     },
   },
+
   methods: {
+    emit(eventName: 'select' | 'edit' | 'quantity' | 'more') {
+      const item = this.properties.item as CardItem
+      if (!item._id) return
+      this.triggerEvent(eventName, { itemId: item._id })
+    },
+
     handleTap() {
-      const item = this.properties.item as { _id?: string }
-      if (item._id) this.triggerEvent('select', { itemId: item._id })
+      this.emit('select')
+    },
+
+    handleEdit() {
+      this.emit('edit')
+    },
+
+    handleQuantity() {
+      this.emit('quantity')
+    },
+
+    handleMore() {
+      this.emit('more')
     },
   },
 })

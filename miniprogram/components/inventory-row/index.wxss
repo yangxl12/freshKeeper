@@ -1,103 +1,159 @@
-.inventory-row {
+.item-card {
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
-  min-height: 146rpx;
-  margin-bottom: 16rpx;
-  padding: 24rpx 26rpx 23rpx;
-  border: 2rpx solid #dde5e0;
-  border-radius: 20rpx;
+  margin-bottom: 18rpx;
+  border: 2rpx solid #e3eae6;
+  border-radius: 22rpx;
   background: #ffffff;
-  box-shadow: 0 7rpx 22rpx rgba(23, 59, 49, 0.04);
+  box-shadow: 0 8rpx 22rpx rgba(23, 59, 49, 0.05);
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.inventory-row::before {
+.item-card::before {
   position: absolute;
-  top: 24rpx;
-  bottom: 24rpx;
+  top: 22rpx;
+  bottom: 22rpx;
   left: 0;
-  width: 5rpx;
-  border-radius: 0 5rpx 5rpx 0;
+  width: 6rpx;
+  border-radius: 0 6rpx 6rpx 0;
   background: #9eb8ad;
   content: "";
 }
 
-.inventory-row--danger::before { background: #c76b60; }
-.inventory-row--urgent::before,
-.inventory-row--warning::before { background: #d29552; }
+.item-card--danger::before { background: #c76b60; }
+.item-card--urgent::before,
+.item-card--warning::before { background: #d29552; }
 
-.inventory-row--pressed {
-  opacity: 0.68;
+.item-card--pressed {
+  opacity: 0.7;
   transform: scale(0.99);
 }
 
-.inventory-row__headline,
-.inventory-row__details {
+.item-card__body {
+  padding: 24rpx 26rpx 20rpx 32rpx;
+}
+
+.item-card__top {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   min-width: 0;
 }
 
-.inventory-row__name {
+.item-card__name {
   min-width: 0;
-  max-width: 390rpx;
+  max-width: 400rpx;
   overflow: hidden;
   color: #173b31;
-  font-size: 30rpx;
-  font-weight: 650;
-  line-height: 1.35;
+  font-size: 31rpx;
+  font-weight: 700;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.inventory-row__remaining {
+.item-card__remaining {
   flex: 0 0 auto;
   margin-left: 18rpx;
-  padding: 7rpx 13rpx;
-  border-radius: 18rpx;
+  padding: 7rpx 14rpx;
+  border-radius: 999rpx;
   background: #e8f2ed;
   color: #1f5d49;
-  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
-  font-size: 22rpx;
+  font-size: 21rpx;
   font-weight: 650;
-  line-height: 1.25;
 }
 
-.inventory-row--danger .inventory-row__remaining {
+.item-card--danger .item-card__remaining {
   background: #f8e9e6;
   color: #b84a3e;
 }
 
-.inventory-row--urgent .inventory-row__remaining,
-.inventory-row--warning .inventory-row__remaining {
+.item-card--urgent .item-card__remaining,
+.item-card--warning .item-card__remaining {
   background: #f7ecdf;
   color: #9d6225;
 }
 
-.inventory-row__details {
-  align-items: baseline;
-  margin-top: 17rpx;
-  padding-top: 15rpx;
-  border-top: 2rpx solid #edf1ee;
+.item-card__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 14rpx;
 }
 
-.inventory-row__expiry {
-  color: #67766f;
-  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
-  font-size: 23rpx;
-  font-variant-numeric: tabular-nums;
+.item-card__tag {
+  margin-right: 10rpx;
+  padding: 5rpx 12rpx;
+  border-radius: 8rpx;
+  background: #f2f6f4;
+  color: #53645d;
+  font-size: 21rpx;
+  line-height: 1.5;
 }
 
-.inventory-row__category {
-  margin-left: 18rpx;
-  color: #84918b;
-  font-size: 22rpx;
+.item-card__tag--quantity {
+  background: #e8f2ed;
+  color: #1f5d49;
+  font-weight: 650;
+}
+
+.item-card__tag--muted {
+  background: transparent;
+  padding-left: 0;
+  color: #93a099;
+}
+
+.item-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 16rpx;
+  border-top: 2rpx solid #eef2f0;
+  background: #fbfdfc;
+}
+
+.item-card__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 116rpx;
+  height: 82rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  background: transparent;
+}
+
+.item-card__action-text {
+  color: #1f5d49;
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
+.item-card__action--more {
+  min-width: 96rpx;
+  margin-left: auto;
+  padding: 0 20rpx;
+}
+
+.item-card__dots {
+  color: #6b7a73;
+  font-size: 34rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  line-height: 1;
+}
+
+.item-card__action--pressed {
+  opacity: 0.6;
 }
 
 @media (max-width: 340px) {
-  .inventory-row { padding-right: 22rpx; padding-left: 22rpx; }
-  .inventory-row__name { max-width: 310rpx; }
-  .inventory-row__remaining { margin-left: 12rpx; }
+  .item-card__body { padding-right: 20rpx; }
+  .item-card__name { max-width: 300rpx; }
+  .item-card__action { min-width: 96rpx; padding: 0 12rpx; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item-card { transition: none; }
 }

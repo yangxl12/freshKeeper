@@ -14,6 +14,12 @@ const INVENTORY_VIEW_STATUSES = new Set([
   'safe',
   'used_up',
 ])
+const INVENTORY_SORTS = new Set([
+  'expiry_asc',
+  'expiry_desc',
+  'created_asc',
+  'created_desc',
+])
 const SAVE_FIELDS = new Set([
   'itemId',
   'version',
@@ -169,9 +175,16 @@ function validateInventoryViewStatus(value) {
   return value
 }
 
+function validateInventorySort(value) {
+  if (value === undefined || value === null || value === '') return 'expiry_asc'
+  assert(INVENTORY_SORTS.has(value), 'INVALID_ARGUMENT', '排序方式不正确')
+  return value
+}
+
 module.exports = {
   assertNoClientIdentity,
   validateHistoryStatus,
+  validateInventorySort,
   validateBatchItems,
   validateDecrementAmount,
   validateInventoryViewStatus,

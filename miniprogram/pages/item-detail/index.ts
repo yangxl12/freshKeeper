@@ -1,13 +1,15 @@
-import { REMINDER_TEMPLATE_ID } from '../../config/runtime'
 import { CloudServiceError, getErrorMessage } from '../../services/cloud-client'
 import {
   completeItem,
-  decrementItem,
   deleteItem,
   getItem,
   permanentlyDeleteItem,
 } from '../../services/inventory-service'
-import { armReminder, cancelReminder } from '../../services/reminder-service'
+import {
+  armReminder,
+  cancelReminder,
+  requestReminderAuthorization,
+} from '../../services/reminder-service'
 import type { InventoryItem, ReminderStatus } from '../../types/inventory'
 import { track } from '../../utils/analytics'
 
@@ -39,10 +41,18 @@ function decorateItem(item: InventoryItem) {
           ? '提醒已发送'
           : reminderStatus === 'sending' || reminderStatus === 'unknown'
             ? '无需重复开启'
-            : '开启本次临期提醒',
+            : '开启本次提醒',
     reminderActionDisabled: ['scheduled', 'sending', 'sent', 'unknown'].includes(
       reminderStatus || '',
     ),
+    reminderStateText:
+      reminderStatus === 'scheduled'
+        ? '已开启'
+        : reminderStatus === 'sent'
+          ? '已发送'
+          : reminderStatus
+            ? '未开启'
+            : '未开启',
   }
 }
 
@@ -53,7 +63,7 @@ Page({
     actionLoading: false,
     errorMessage: '',
     item: null as ReturnType<typeof decorateItem> | null,
-    decrementAmount: '1',
+    reminderSheetVisible: false,
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -71,7 +81,7 @@ Page({
     this.setData({ loading: !this.data.item, errorMessage: '' })
     try {
       const item = await getItem(this.data.itemId)
-      this.setData({ item: decorateItem(item), loading: false, decrementAmount: '1' })
+      this.setData({ item: decorateItem(item), loading: false })
       wx.setNavigationBarTitle({ title: item.name })
     } catch (error) {
       this.setData({ loading: false, errorMessage: getErrorMessage(error) })
@@ -86,42 +96,42 @@ Page({
     wx.navigateTo({ url: `/pages/item-form/index?id=${this.data.itemId}&restore=1` })
   },
 
-  handleDecrementInput(event: WechatMiniprogram.Input) {
-    this.setData({ decrementAmount: event.detail.value })
+  openReminder() {
+    this.setData({ reminderSheetVisible: true })
   },
 
-  async decrement() {
-    const item = this.data.item
-    if (!item || this.data.actionLoading) return
-    const amount = Number(this.data.decrementAmount)
-    if (!Number.isInteger(amount) || amount < 1) {
-      wx.showToast({ title: '请输入正整数', icon: 'none' })
-      return
-    }
-    if (amount > item.quantity) {
-      wx.showToast({ title: '不能超过当前数量', icon: 'none' })
-      return
-    }
-    if (amount === item.quantity) {
-      const result = await wx.showModal({
-        title: '将库存减为 0？',
-        content: '确认后，这件物品将标记为已用完。',
-        confirmText: '确认用完',
-        confirmColor: '#245B49',
-      })
-      if (result.confirm) await this.complete()
-      return
-    }
+  closeReminder() {
+    this.setData({ reminderSheetVisible: false })
+  },
 
+  async requestReminder() {
+    const item = this.data.item
+    if (!item || this.data.actionLoading || item.reminderActionDisabled) return
+    if (item.expiryStatus === 'expired') {
+      wx.showToast({ title: '已过期，无需提醒', icon: 'none' })
+      return
+    }
+    const accepted = await requestReminderAuthorization()
+    if (!accepted) return
     this.setData({ actionLoading: true })
     try {
-      const result = await decrementItem(item._id, item.version, amount)
-      this.setData({
-        'item.quantity': result.quantity,
-        'item.version': result.version,
-        actionLoading: false,
-      })
-      wx.showToast({ title: `数量已减 ${amount}`, icon: 'success' })
+      await armReminder(this.data.itemId)
+      this.setData({ actionLoading: false })
+      wx.showToast({ title: '提醒已开启', icon: 'success' })
+      await this.loadItem()
+    } catch (error) {
+      this.handleActionError(error)
+    }
+  },
+
+  async cancelReminder() {
+    if (this.data.actionLoading) return
+    this.setData({ actionLoading: true })
+    try {
+      await cancelReminder(this.data.itemId)
+      this.setData({ actionLoading: false })
+      wx.showToast({ title: '提醒已取消', icon: 'success' })
+      await this.loadItem()
     } catch (error) {
       this.handleActionError(error)
     }
@@ -193,62 +203,6 @@ Page({
     }
   },
 
-  requestReminder() {
-    const item = this.data.item
-    if (!item || this.data.actionLoading || item.reminderActionDisabled) return
-    if (!REMINDER_TEMPLATE_ID) {
-      wx.showModal({
-        title: '提醒功能尚未配置',
-        content: '请先在运行配置中填写微信一次性订阅消息模板 ID。',
-        showCancel: false,
-      })
-      return
-    }
-
-    wx.requestSubscribeMessage({
-      tmplIds: [REMINDER_TEMPLATE_ID],
-      success: (result) => {
-        const status = result[REMINDER_TEMPLATE_ID]
-        track('reminder_request_result', { result: status || 'unknown' })
-        if (status === 'accept') this.registerReminder()
-        else {
-          wx.showToast({ title: '提醒未开启', icon: 'none' })
-        }
-      },
-      fail: () => {
-        track('reminder_request_result', { result: 'failed' })
-        wx.showToast({ title: '提醒未开启，可稍后再试', icon: 'none' })
-      },
-    })
-  },
-
-  async registerReminder() {
-    this.setData({ actionLoading: true })
-    try {
-      const result = await armReminder(this.data.itemId)
-      wx.showToast({ title: '提醒已开启', icon: 'success' })
-      this.setData({ actionLoading: false })
-      await this.loadItem()
-      return result
-    } catch (error) {
-      this.handleActionError(error)
-      return null
-    }
-  },
-
-  async cancelReminder() {
-    if (this.data.actionLoading) return
-    this.setData({ actionLoading: true })
-    try {
-      await cancelReminder(this.data.itemId)
-      wx.showToast({ title: '提醒已取消', icon: 'success' })
-      this.setData({ actionLoading: false })
-      await this.loadItem()
-    } catch (error) {
-      this.handleActionError(error)
-    }
-  },
-
   handleActionError(error: unknown) {
     this.setData({ actionLoading: false })
     const message = getErrorMessage(error)
@@ -263,4 +217,6 @@ Page({
   backHome() {
     wx.switchTab({ url: '/pages/home/index' })
   },
+
+  noop() {},
 })

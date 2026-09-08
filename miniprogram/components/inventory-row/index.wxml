@@ -1,16 +1,31 @@
 <view
-  class="inventory-row inventory-row--{{item.expiryTone}}"
+  class="item-card item-card--{{item.expiryTone}}"
   bindtap="handleTap"
-  hover-class="inventory-row--pressed"
+  hover-class="item-card--pressed"
   role="button"
-  aria-label="{{item.name}}，{{item.remainingDaysText}}，到期日期 {{item.expiryDateText}}，{{item.categoryLabel}}"
+  aria-label="{{item.name}}，{{item.remainingDaysText}}，数量 {{item.quantityText}}{{item.hasLocation ? '，位置 ' + item.locationText : ''}}"
 >
-  <view class="inventory-row__headline">
-    <text class="inventory-row__name">{{item.name}}</text>
-    <text class="inventory-row__remaining">{{item.remainingDaysText}}</text>
+  <view class="item-card__body">
+    <view class="item-card__top">
+      <text class="item-card__name">{{item.name}}</text>
+      <text class="item-card__remaining">{{item.remainingDaysText}}</text>
+    </view>
+    <view class="item-card__meta">
+      <text class="item-card__tag item-card__tag--quantity">数量 {{item.quantityText}}</text>
+      <text wx:if="{{item.hasLocation}}" class="item-card__tag">{{item.locationText}}</text>
+      <text class="item-card__tag item-card__tag--muted">{{item.categoryLabel}}</text>
+    </view>
   </view>
-  <view class="inventory-row__details">
-    <text class="inventory-row__expiry">{{item.expiryDateText}}</text>
-    <text class="inventory-row__category">{{item.categoryLabel}}</text>
+
+  <view wx:if="{{item.isActive}}" class="item-card__actions">
+    <button class="item-card__action" catchtap="handleQuantity" hover-class="item-card__action--pressed" aria-label="调整数量">
+      <text class="item-card__action-text">数量</text>
+    </button>
+    <button class="item-card__action" catchtap="handleEdit" hover-class="item-card__action--pressed" aria-label="编辑">
+      <text class="item-card__action-text">编辑</text>
+    </button>
+    <button class="item-card__action item-card__action--more" catchtap="handleMore" hover-class="item-card__action--pressed" aria-label="更多操作">
+      <text class="item-card__dots" aria-hidden="true">···</text>
+    </button>
   </view>
 </view>

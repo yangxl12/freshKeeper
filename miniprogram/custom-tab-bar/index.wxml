@@ -1,0 +1,35 @@
+<view class="tabbar" aria-label="底部导航">
+  <view class="tabbar__bar">
+    <button
+      class="tabbar__item {{selected === 0 ? 'tabbar__item--active' : ''}}"
+      data-index="0"
+      data-url="/pages/home/index"
+      bindtap="switchTab"
+      hover-class="none"
+      aria-label="首页"
+      aria-selected="{{selected === 0}}"
+    >
+      <image class="tabbar__icon" src="{{selected === 0 ? '/assets/tab-home-active.png' : '/assets/tab-home.png'}}" mode="aspectFit" aria-hidden="true" />
+      <text class="tabbar__label">首页</text>
+    </button>
+
+    <button class="tabbar__add" bindtap="handleAdd" hover-class="tabbar__add--pressed" aria-label="新增物品">
+      <view class="tabbar__add-circle">
+        <text class="tabbar__add-plus" aria-hidden="true">+</text>
+      </view>
+    </button>
+
+    <button
+      class="tabbar__item {{selected === 1 ? 'tabbar__item--active' : ''}}"
+      data-index="1"
+      data-url="/pages/mine/index"
+      bindtap="switchTab"
+      hover-class="none"
+      aria-label="我的"
+      aria-selected="{{selected === 1}}"
+    >
+      <image class="tabbar__icon" src="{{selected === 1 ? '/assets/tab-mine-active.png' : '/assets/tab-mine.png'}}" mode="aspectFit" aria-hidden="true" />
+      <text class="tabbar__label">我的</text>
+    </button>
+  </view>
+</view>

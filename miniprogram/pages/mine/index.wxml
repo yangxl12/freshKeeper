@@ -1,72 +1,244 @@
 <view class="mine page-shell">
-  <button class="settings-entry" bindtap="openSettings" hover-class="pressable--pressed">
-    <view>
-      <text class="settings-entry__title">提醒设置</text>
-      <text class="settings-entry__value">默认提前 {{reminderDayIndex}} 天</text>
+  <view class="profile" bindtap="openProfile" hover-class="profile--pressed">
+    <view wx:if="{{profile.avatar}}" class="profile__avatar">
+      <image class="profile__avatar-image" src="{{profile.avatar}}" mode="aspectFill" aria-label="头像" />
     </view>
-    <text class="settings-entry__action">设置</text>
-  </button>
-
-  <view class="records">
-    <view class="record-tabs" role="tablist">
-      <button class="record-tab {{recordMode === 'used_up' ? 'record-tab--active' : ''}}" data-mode="used_up" bindtap="switchRecordMode">处理记录</button>
-      <button class="record-tab {{recordMode === 'trash' ? 'record-tab--active' : ''}}" data-mode="trash" bindtap="switchRecordMode">回收站</button>
+    <view wx:else class="profile__avatar profile__avatar--default" aria-label="默认头像">
+      <view class="profile__avatar-head"></view>
+      <view class="profile__avatar-body"></view>
     </view>
-
-    <view class="records__heading">
-      <view>
-        <text class="records__title">{{recordMode === 'trash' ? '回收站' : '已用完'}}</text>
-        <text class="records__hint">{{recordMode === 'trash' ? '已删除物品保留 30 天' : '按完成时间倒序'}}</text>
-      </view>
-      <button wx:if="{{recordMode === 'trash'}}" class="records__batch" disabled="{{!recordItems.length}}" bindtap="openTrashBatch" hover-class="pressable--pressed">批量操作</button>
+    <view class="profile__info">
+      <text class="profile__name">{{profile.nickname}}</text>
+      <text class="profile__hint">点击设置微信昵称或自定义昵称</text>
     </view>
-
-    <view class="record-search">
-      <view class="line-icon line-icon--search record-search__icon" aria-hidden="true"></view>
-      <input class="record-search__input" value="{{recordSearch}}" placeholder="{{recordMode === 'trash' ? '搜索已删除物品' : '搜索已用完物品'}}" placeholder-class="record-search__placeholder" bindinput="handleRecordSearch" />
-      <button wx:if="{{recordSearch}}" class="record-search__clear" bindtap="clearRecordSearch" hover-class="pressable--pressed" aria-label="清空搜索"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
-    </view>
-
-    <view wx:if="{{recordError}}" class="compact-error"><text>{{recordError}}</text><button bindtap="retryRecords" hover-class="pressable--pressed">重试</button></view>
-    <view wx:if="{{recordLoading}}" class="record-loading">正在读取记录…</view>
-    <block wx:elif="{{recordItems.length}}">
-      <view wx:for="{{recordItems}}" wx:key="_id" class="record-item">
-        <inventory-row item="{{item}}" bind:select="openRecordItem" />
-        <view wx:if="{{recordMode === 'trash'}}" class="trash-row-meta">
-          <text>{{item.purgeDateText ? item.purgeDateText + ' 后自动清理' : '将在后续清理任务中移除'}}</text>
-          <button data-id="{{item._id}}" data-version="{{item.version}}" catchtap="deleteTrashItem" hover-class="pressable--pressed">彻底删除</button>
-        </view>
-      </view>
-      <view wx:if="{{recordLoadingMore}}" class="record-loading record-loading--more">正在加载更多…</view>
-      <view wx:elif="{{!recordNextCursor}}" class="record-end">没有更多记录了</view>
-    </block>
-    <empty-state wx:elif="{{!recordError}}" compact title="{{recordSearch ? '没有匹配的记录' : (recordMode === 'trash' ? '回收站是空的' : '还没有已用完记录')}}" description="{{recordSearch ? '换个名称或清空搜索后再试' : (recordMode === 'trash' ? '删除的物品会在这里保留 30 天' : '标记为已用完的物品会保留在这里')}}" action-text="{{recordSearch ? '清空搜索' : ''}}" bind:action="clearRecordSearch" />
   </view>
 
-  <view wx:if="{{settingsVisible}}" class="settings-modal" bindtap="closeSettings">
-    <view class="settings-dialog" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
-      <view class="settings-dialog__heading">
-        <view><text class="settings-dialog__title">提醒设置</text><text class="settings-dialog__subtitle">用于新增物品和微信通知</text></view>
-        <button class="settings-dialog__close" disabled="{{settingsSaving}}" bindtap="closeSettings" aria-label="关闭设置">×</button>
+  <view class="entries">
+    <button class="entry" data-entry="settings" bindtap="openEntry" hover-class="entry--pressed">
+      <view class="entry__icon entry__icon--bell" aria-hidden="true"></view>
+      <text class="entry__label">提醒设置</text>
+      <text class="entry__value">默认提前 {{savedReminderDayIndex}} 天</text>
+      <view class="entry__chevron" aria-hidden="true"></view>
+    </button>
+    <button class="entry" data-entry="trash" bindtap="openEntry" hover-class="entry--pressed">
+      <view class="entry__icon entry__icon--trash" aria-hidden="true"></view>
+      <text class="entry__label">回收站</text>
+      <text class="entry__value">删除后保留 30 天</text>
+      <view class="entry__chevron" aria-hidden="true"></view>
+    </button>
+    <button class="entry" data-entry="feedback" bindtap="openEntry" hover-class="entry--pressed">
+      <view class="entry__icon entry__icon--feedback" aria-hidden="true"></view>
+      <text class="entry__label">意见反馈</text>
+      <text class="entry__value">说说你的想法</text>
+      <view class="entry__chevron" aria-hidden="true"></view>
+    </button>
+    <button class="entry" data-entry="help" bindtap="openEntry" hover-class="entry--pressed">
+      <view class="entry__icon entry__icon--help" aria-hidden="true"></view>
+      <text class="entry__label">使用帮助</text>
+      <text class="entry__value">常见问题</text>
+      <view class="entry__chevron" aria-hidden="true"></view>
+    </button>
+    <button class="entry" data-entry="about" bindtap="openEntry" hover-class="entry--pressed">
+      <view class="entry__icon entry__icon--about" aria-hidden="true"></view>
+      <text class="entry__label">关于</text>
+      <text class="entry__value">保质记</text>
+      <view class="entry__chevron" aria-hidden="true"></view>
+    </button>
+  </view>
+
+  <!-- 资料设置 -->
+  <view wx:if="{{profileVisible}}" class="modal-mask" bindtap="closeProfile" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="设置资料">
+      <text class="modal__title">设置资料</text>
+      <text class="modal__subtitle">可以使用微信昵称，也可以自己输入</text>
+
+      <view class="profile-editor">
+        <button class="profile-editor__avatar" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" hover-class="profile-editor__avatar--pressed">
+          <image wx:if="{{profile.avatar}}" class="profile-editor__image" src="{{profile.avatar}}" mode="aspectFill" />
+          <view wx:else class="profile-editor__placeholder">
+            <view class="profile__avatar-head"></view>
+            <view class="profile__avatar-body"></view>
+          </view>
+        </button>
+        <text class="profile-editor__tip">使用微信头像</text>
       </view>
-      <view wx:if="{{settingsError}}" class="compact-error"><text>{{settingsError}}</text><button bindtap="retrySettings">重试</button></view>
-      <view wx:if="{{settingsLoading}}" class="settings-loading">正在读取设置…</view>
+
+      <text class="field-label">昵称</text>
+      <input
+        class="field-control"
+        type="nickname"
+        value="{{profileNickname}}"
+        maxlength="20"
+        placeholder="输入昵称或使用微信昵称"
+        placeholder-class="field-placeholder"
+        bindinput="handleNicknameInput"
+      />
+
+      <view class="modal__actions">
+        <button class="secondary-button modal__button" bindtap="closeProfile" hover-class="pressable--pressed">取消</button>
+        <button class="primary-button modal__button" bindtap="saveProfile" hover-class="pressable--pressed">保存</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 提醒设置 -->
+  <view wx:if="{{activeModal === 'settings'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
+      <text class="modal__title">提醒设置</text>
+      <text class="modal__subtitle">用于新增物品和微信通知</text>
+
+      <view wx:if="{{settingsError}}" class="compact-error">
+        <text>{{settingsError}}</text>
+        <button bindtap="retrySettings" hover-class="pressable--pressed">重试</button>
+      </view>
+      <view wx:if="{{settingsLoading}}" class="modal__loading">正在读取设置…</view>
       <block wx:else>
-        <picker disabled="{{settingsSaving}}" mode="selector" range="{{reminderDayOptions}}" range-key="label" value="{{reminderDayIndex}}" bindchange="handleReminderDaysChange">
+        <picker
+          disabled="{{settingsSaving}}"
+          mode="selector"
+          range="{{reminderDayOptions}}"
+          range-key="label"
+          value="{{reminderDayIndex}}"
+          bindchange="handleReminderDaysChange"
+        >
           <view class="setting-row">
-            <view><text class="setting-row__label">默认提前提醒</text><text class="setting-row__description">新增物品时自动带入</text></view>
-            <view class="setting-row__value"><text>{{reminderDayOptions[reminderDayIndex].label}}</text><view class="line-icon line-icon--chevron line-icon--chevron-right setting-row__chevron" aria-hidden="true"></view></view>
+            <view>
+              <text class="setting-row__label">默认提前提醒</text>
+              <text class="setting-row__description">新增物品时自动带入</text>
+            </view>
+            <view class="setting-row__value">
+              <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
+              <view class="line-icon line-icon--chevron line-icon--chevron-right setting-row__chevron" aria-hidden="true"></view>
+            </view>
           </view>
         </picker>
         <view class="setting-row setting-row--notification">
-          <view class="setting-row__notification-copy"><text class="setting-row__label">提醒授权</text><text class="setting-row__description">{{subscriptionSummary}}</text></view>
+          <view class="setting-row__notification-copy">
+            <text class="setting-row__label">提醒授权</text>
+            <text class="setting-row__description">{{subscriptionSummary}}</text>
+          </view>
           <button class="setting-row__link" bindtap="openNotificationSettings" hover-class="pressable--pressed">查看设置</button>
         </view>
       </block>
-      <view class="settings-dialog__actions">
-        <button class="secondary-button" disabled="{{settingsSaving}}" bindtap="closeSettings">取消</button>
-        <button class="primary-button" disabled="{{settingsSaving || settingsLoading}}" bindtap="saveSettings">{{settingsSaving ? '保存中…' : '保存'}}</button>
+
+      <view class="modal__actions">
+        <button class="secondary-button modal__button" disabled="{{settingsSaving}}" bindtap="closeModal" hover-class="pressable--pressed">取消</button>
+        <button class="primary-button modal__button" disabled="{{settingsSaving || settingsLoading}}" bindtap="saveSettings" hover-class="pressable--pressed">{{settingsSaving ? '保存中…' : '保存'}}</button>
       </view>
+    </view>
+  </view>
+
+  <!-- 回收站 -->
+  <view wx:if="{{activeModal === 'trash'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
+    <view class="modal modal--large" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="回收站">
+      <view class="modal__head">
+        <text class="modal__title">回收站</text>
+        <button class="modal__close" bindtap="closeModal" aria-label="关闭">×</button>
+      </view>
+
+      <view class="search-box">
+        <view class="line-icon line-icon--search search-box__icon" aria-hidden="true"></view>
+        <input
+          class="search-box__input"
+          value="{{trashSearch}}"
+          placeholder="搜索已删除物品"
+          placeholder-class="search-box__placeholder"
+          bindinput="handleTrashSearch"
+        />
+        <button wx:if="{{trashSearch}}" class="search-box__clear" bindtap="clearTrashSearch" hover-class="pressable--pressed" aria-label="清空搜索">
+          <view class="line-icon line-icon--close" aria-hidden="true"></view>
+        </button>
+      </view>
+
+      <scroll-view scroll-y class="trash-body">
+        <view wx:if="{{trashLoading}}" class="trash-tip">正在读取回收站…</view>
+        <view wx:elif="{{trashError}}" class="compact-error">
+          <text>{{trashError}}</text>
+          <button bindtap="retryTrash" hover-class="pressable--pressed">重试</button>
+        </view>
+        <block wx:elif="{{trashItems.length}}">
+          <view wx:for="{{trashItems}}" wx:key="_id" class="trash-item">
+            <inventory-row item="{{item}}" bind:select="openTrashItem" />
+            <view class="trash-item__meta">
+              <text>{{item.purgeDateText ? item.purgeDateText + ' 后自动清理' : '将在后续清理任务中移除'}}</text>
+              <button data-id="{{item._id}}" data-version="{{item.version}}" catchtap="deleteTrashItem" hover-class="pressable--pressed">彻底删除</button>
+            </view>
+          </view>
+          <button wx:if="{{trashNextCursor}}" class="trash-more" bindtap="loadMoreTrash" hover-class="pressable--pressed">加载更多</button>
+          <view wx:else class="trash-tip">没有更多了</view>
+        </block>
+        <view wx:else class="trash-tip">回收站是空的</view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 意见反馈 -->
+  <view wx:if="{{activeModal === 'feedback'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="意见反馈">
+      <text class="modal__title">意见反馈</text>
+      <text class="modal__subtitle">遇到的问题或想要的改进都可以告诉我们</text>
+      <textarea
+        class="feedback-input"
+        value="{{feedbackText}}"
+        maxlength="300"
+        placeholder="例如：希望支持批量修改位置"
+        placeholder-class="field-placeholder"
+        bindinput="handleFeedbackInput"
+      />
+      <view class="modal__actions">
+        <button class="secondary-button modal__button" bindtap="closeModal" hover-class="pressable--pressed">取消</button>
+        <button class="primary-button modal__button" bindtap="submitFeedback" hover-class="pressable--pressed">提交</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 使用帮助 -->
+  <view wx:if="{{activeModal === 'help'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="使用帮助">
+      <text class="modal__title">使用帮助</text>
+      <view class="help-list">
+        <view class="help-item">
+          <text class="help-item__q">怎么快速记一件物品？</text>
+          <text class="help-item__a">点击底部中间的「+」，说出或输入名称和到期时间即可，识别结果还能再编辑。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">搜索能查什么？</text>
+          <text class="help-item__a">支持按物品名称和存放位置搜索，可与种类、状态、排序叠加使用。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">数量怎么调整？</text>
+          <text class="help-item__a">在物品卡片上点「数量」，用加减号或直接输入 1～9999 的正整数。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">删除后还能找回来吗？</text>
+          <text class="help-item__a">删除的物品会进入回收站保留 30 天，期间重新编辑确认即可再次入库。</text>
+        </view>
+      </view>
+      <button class="primary-button modal__button" bindtap="closeModal" hover-class="pressable--pressed">知道了</button>
+    </view>
+  </view>
+
+  <!-- 关于 -->
+  <view wx:if="{{activeModal === 'about'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="关于">
+      <view class="about">
+        <view class="about__logo" aria-hidden="true">
+          <text class="about__logo-text">记</text>
+        </view>
+        <text class="modal__title">保质记</text>
+        <text class="modal__subtitle">把每样东西的到期日都记下来</text>
+      </view>
+      <view class="help-list">
+        <view class="help-item">
+          <text class="help-item__q">版本</text>
+          <text class="help-item__a">1.0.0（MVP）</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">数据</text>
+          <text class="help-item__a">物品数据保存在微信云开发，仅本人可见。</text>
+        </view>
+      </view>
+      <button class="primary-button modal__button" bindtap="closeModal" hover-class="pressable--pressed">关闭</button>
     </view>
   </view>
 </view>

@@ -9,6 +9,7 @@ export type InventoryViewStatus =
   | 'expiring'
   | 'safe'
   | 'used_up'
+export type InventorySort = 'expiry_asc' | 'expiry_desc' | 'created_asc' | 'created_desc'
 export type ExpiryStatus =
   | 'expired'
   | 'due_today'

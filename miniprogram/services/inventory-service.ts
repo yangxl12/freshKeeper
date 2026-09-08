@@ -6,10 +6,12 @@ import type {
   InventoryListResult,
   InventoryOverviewResult,
   InventorySaveInput,
+  InventorySort,
   InventoryStatus,
   InventoryViewStatus,
   LegacyInventoryListResult,
 } from '../types/inventory'
+import { toInventorySaveInput } from '../domain/inventory'
 import { CloudServiceError, callCloud } from './cloud-client'
 
 export interface ListActiveParams {
@@ -39,6 +41,7 @@ export function listInventory(params: {
   search?: string
   category?: string
   viewStatus?: InventoryViewStatus
+  sort?: InventorySort
   cursor?: string | null
   pageSize?: number
 } = {}): Promise<InventoryListResult> {
@@ -47,6 +50,7 @@ export function listInventory(params: {
     search: params.search || '',
     category: params.category || '',
     viewStatus: params.viewStatus || 'active_all',
+    sort: params.sort || 'expiry_asc',
     cursor: params.cursor || null,
     pageSize: params.pageSize || 30,
   })
@@ -69,6 +73,13 @@ export function saveItem(
     ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
     data: input,
   })
+}
+
+export function updateQuantity(
+  item: InventoryItem,
+  quantity: number,
+): Promise<{ itemId: string; version: number; expiryDate: string }> {
+  return saveItem({ ...toInventorySaveInput(item), quantity })
 }
 
 export function decrementItem(

@@ -1,0 +1,95 @@
+button {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  line-height: normal;
+}
+
+button::after {
+  border: 0;
+}
+
+.tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 900;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 2rpx solid #edf1ee;
+  background: #ffffff;
+  box-shadow: 0 -6rpx 26rpx rgba(23, 59, 49, 0.07);
+}
+
+.tabbar__bar {
+  display: flex;
+  align-items: stretch;
+  height: 104rpx;
+}
+
+.tabbar__item {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 104rpx;
+}
+
+.tabbar__icon {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.tabbar__label {
+  margin-top: 6rpx;
+  color: #929e98;
+  font-size: 20rpx;
+  letter-spacing: 0.04em;
+}
+
+.tabbar__item--active .tabbar__label {
+  color: #176348;
+  font-weight: 700;
+}
+
+.tabbar__add {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 150rpx;
+  height: 104rpx;
+}
+
+.tabbar__add-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 92rpx;
+  height: 92rpx;
+  margin-top: -30rpx;
+  border-radius: 50%;
+  background: #1f5d49;
+  box-shadow: 0 10rpx 22rpx rgba(31, 93, 73, 0.34);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tabbar__add-plus {
+  color: #ffffff;
+  font-size: 54rpx;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.tabbar__add--pressed .tabbar__add-circle {
+  opacity: 0.78;
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabbar__add-circle {
+    transition: none;
+  }
+}

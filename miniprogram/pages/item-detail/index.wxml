@@ -15,129 +15,117 @@
       <button bindtap="retry" hover-class="pressable--pressed">重试</button>
     </view>
 
-    <view class="detail-hero detail-hero--{{item.expiryTone}}">
-      <view class="detail-hero__topline">
-        <text class="detail-hero__label">保鲜标签</text>
-        <text class="detail-hero__kind">{{item.categoryLabel}} · {{item.storageLabel}}</text>
+    <view class="hero hero--{{item.expiryTone}}">
+      <view class="hero__topline">
+        <text class="hero__kind">{{item.categoryLabel}} · {{item.storageLabel}}</text>
+        <text class="hero__pill">{{item.expiryStatusText}}</text>
       </view>
-      <text class="detail-hero__name">{{item.name}}</text>
-      <text class="detail-hero__status detail-hero__status--{{item.expiryTone}}">{{item.expiryStatusText}}</text>
-      <view class="detail-hero__expiry">
-        <text class="detail-hero__expiry-label">到期日期</text>
-        <text class="detail-hero__expiry-date">{{item.expiryDate}}</text>
+      <text class="hero__name">{{item.name}}</text>
+      <view class="hero__stats">
+        <view class="hero__stat">
+          <text class="hero__stat-label">到期日期</text>
+          <text class="hero__stat-value">{{item.expiryDate}}</text>
+        </view>
+        <view class="hero__stat">
+          <text class="hero__stat-label">剩余</text>
+          <text class="hero__stat-value">{{item.remainingDaysText || item.expiryStatusText}}</text>
+        </view>
+        <view class="hero__stat">
+          <text class="hero__stat-label">数量</text>
+          <text class="hero__stat-value">{{item.quantity}}{{item.unit}}</text>
+        </view>
       </view>
     </view>
 
-    <view class="detail-section detail-section--plain">
-      <view class="detail-section__heading">
-        <text class="detail-section__title">物品信息</text>
-        <button
-          wx:if="{{item.inventoryStatus === 'active'}}"
-          class="text-action"
-          bindtap="editItem"
-          hover-class="pressable--pressed"
-          aria-label="编辑物品"
-        >
-          <view class="line-icon line-icon--edit text-action__icon" aria-hidden="true"></view>
-          <text>编辑</text>
-        </button>
-      </view>
-      <view class="detail-list">
-        <view class="detail-list__row">
-          <text class="detail-list__label">当前数量</text>
-          <text class="detail-list__value detail-list__value--strong">{{item.quantity}}{{item.unit}}</text>
+    <view class="card">
+      <text class="card__title">物品信息</text>
+      <view class="info-list">
+        <view class="info-row">
+          <text class="info-row__label">分类</text>
+          <text class="info-row__value">{{item.categoryLabel}}</text>
         </view>
-        <view class="detail-list__row">
-          <text class="detail-list__label">分类</text>
-          <text class="detail-list__value">{{item.categoryLabel}}</text>
-        </view>
-        <view class="detail-list__row">
-          <text class="detail-list__label">存放位置</text>
-          <text class="detail-list__value">{{item.storageLabel}}</text>
+        <view class="info-row">
+          <text class="info-row__label">存放位置</text>
+          <text class="info-row__value">{{item.storageLabel}}</text>
         </view>
         <block wx:if="{{item.expiryInputMode === 'shelf_life'}}">
-          <view class="detail-list__row">
-            <text class="detail-list__label">生产日期</text>
-            <text class="detail-list__value">{{item.productionDate}}</text>
+          <view class="info-row">
+            <text class="info-row__label">生产日期</text>
+            <text class="info-row__value">{{item.productionDate}}</text>
           </view>
-          <view class="detail-list__row">
-            <text class="detail-list__label">保质期</text>
-            <text class="detail-list__value">{{item.shelfLifeText}}</text>
+          <view class="info-row">
+            <text class="info-row__label">保质期</text>
+            <text class="info-row__value">{{item.shelfLifeText}}</text>
           </view>
         </block>
-        <view class="detail-list__row">
-          <text class="detail-list__label">库存状态</text>
-          <text class="detail-list__value">{{item.inventoryStatusLabel}}</text>
+        <view class="info-row">
+          <text class="info-row__label">库存状态</text>
+          <text class="info-row__value">{{item.inventoryStatusLabel}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-row__label">临期提醒</text>
+          <text class="info-row__value">{{item.reminderStatus === 'scheduled' ? '已开启' : (item.reminderStatus ? '未开启' : '未开启')}} · 提前 {{item.reminderLeadDays}} 天</text>
         </view>
       </view>
     </view>
 
-    <view wx:if="{{item.inventoryStatus === 'active'}}" class="reminder-strip">
-      <view class="reminder-strip__content">
-        <view class="reminder-strip__heading">
-          <text class="reminder-strip__title">微信临期提醒</text>
-          <text class="reminder-strip__lead">提前 {{item.reminderLeadDays}} 天</text>
+    <view wx:if="{{item.inventoryStatus === 'used_up'}}" class="note">
+      <text class="note__title">这件物品已用完</text>
+      <text class="note__copy">该记录不再参与当前库存统计，重新编辑确认后会再次入库。</text>
+    </view>
+
+    <view wx:elif="{{item.inventoryStatus === 'deleted' || item.inventoryStatus === 'discarded'}}" class="note">
+      <text class="note__title">回收站</text>
+      <text class="note__copy">{{item.purgeDateText ? '可在 ' + item.purgeDateText + ' 前恢复' : '可在清理前重新编辑恢复'}}，重新编辑确认后这件物品会再次进入库存。</text>
+    </view>
+
+    <view class="action-bar">
+      <block wx:if="{{item.inventoryStatus === 'active'}}">
+        <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="editItem" hover-class="action-bar__button--pressed">
+          <text class="action-bar__text">编辑</text>
+        </button>
+        <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="confirmComplete" hover-class="action-bar__button--pressed">
+          <text class="action-bar__text">已用完</text>
+        </button>
+        <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="confirmDelete" hover-class="action-bar__button--pressed">
+          <text class="action-bar__text action-bar__text--danger">删除</text>
+        </button>
+        <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="openReminder" hover-class="action-bar__button--pressed">
+          <text class="action-bar__text">提醒</text>
+        </button>
+      </block>
+      <block wx:else>
+        <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="restoreItem" hover-class="action-bar__button--pressed">
+          <text class="action-bar__text">重新编辑</text>
+        </button>
+        <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="confirmPermanentDelete" hover-class="action-bar__button--pressed">
+          <text class="action-bar__text action-bar__text--danger">彻底删除</text>
+        </button>
+      </block>
+    </view>
+
+    <view wx:if="{{reminderSheetVisible}}" class="sheet-mask" bindtap="closeReminder" catchtouchmove="noop">
+      <view class="sheet" catchtap="noop" role="dialog" aria-modal="true" aria-label="临期提醒">
+        <text class="sheet__title">微信临期提醒</text>
+        <text class="sheet__subtitle">提前 {{item.reminderLeadDays}} 天发送一次订阅消息</text>
+        <text class="sheet__copy">{{item.reminderCopy}}</text>
+        <view class="sheet__actions">
+          <button
+            wx:if="{{item.reminderStatus === 'scheduled'}}"
+            class="secondary-button sheet__button"
+            disabled="{{actionLoading}}"
+            bindtap="cancelReminder"
+            hover-class="pressable--pressed"
+          >取消提醒</button>
+          <button
+            class="primary-button sheet__button"
+            disabled="{{actionLoading || item.reminderActionDisabled || item.expiryStatus === 'expired'}}"
+            bindtap="requestReminder"
+            hover-class="pressable--pressed"
+          >{{item.expiryStatus === 'expired' ? '无需提醒' : item.reminderActionText}}</button>
         </view>
-        <text class="reminder-strip__copy">{{item.reminderCopy}}</text>
-        <button
-          wx:if="{{item.reminderStatus === 'scheduled'}}"
-          class="cancel-reminder"
-          bindtap="cancelReminder"
-          hover-class="pressable--pressed"
-        >取消本次提醒</button>
+        <button class="sheet__close" bindtap="closeReminder" hover-class="pressable--pressed">关闭</button>
       </view>
-      <button
-        class="reminder-strip__button"
-        disabled="{{actionLoading || item.reminderActionDisabled || item.expiryStatus === 'expired'}}"
-        bindtap="requestReminder"
-        hover-class="pressable--pressed"
-      >{{item.expiryStatus === 'expired' ? '无需提醒' : item.reminderActionText}}</button>
-    </view>
-
-    <view wx:if="{{item.inventoryStatus === 'active'}}" class="stock-actions">
-      <text class="detail-section__title">处理库存</text>
-      <button
-        class="primary-button stock-actions__primary"
-        disabled="{{actionLoading}}"
-        bindtap="confirmComplete"
-        hover-class="pressable--pressed"
-      >标记为已用完</button>
-      <view class="decrement-control">
-        <text class="decrement-control__label">数量减</text>
-        <input
-          class="decrement-control__input"
-          value="{{decrementAmount}}"
-          type="number"
-          maxlength="4"
-          bindinput="handleDecrementInput"
-          aria-label="减少数量"
-        />
-        <button
-          class="secondary-button decrement-control__button"
-          disabled="{{actionLoading}}"
-          bindtap="decrement"
-          hover-class="pressable--pressed"
-        >确认</button>
-      </view>
-    </view>
-
-    <view wx:if="{{item.inventoryStatus === 'active'}}" class="danger-zone">
-      <button class="danger-button delete-button" disabled="{{actionLoading}}" bindtap="confirmDelete" hover-class="pressable--pressed">删除</button>
-    </view>
-
-    <view wx:elif="{{item.inventoryStatus === 'used_up'}}" class="history-note">
-      <text class="history-note__title">这件物品已用完</text>
-      <text class="history-note__copy">该记录不再参与当前库存统计。</text>
-      <button class="secondary-button" bindtap="backHome" hover-class="pressable--pressed">返回当前库存</button>
-      <button class="danger-button history-note__delete" disabled="{{actionLoading}}" bindtap="confirmDelete" hover-class="pressable--pressed">删除</button>
-    </view>
-
-    <view wx:else class="trash-note">
-      <text class="trash-note__eyebrow">回收站</text>
-      <text class="trash-note__title">可在 {{item.purgeDateText || '近期' }} 前恢复</text>
-      <text class="trash-note__copy">重新编辑并确认后，这件物品会再次进入库存。</text>
-      <button class="primary-button" disabled="{{actionLoading}}" bindtap="restoreItem" hover-class="pressable--pressed">重新编辑</button>
-      <button class="danger-button trash-note__delete" disabled="{{actionLoading}}" bindtap="confirmPermanentDelete" hover-class="pressable--pressed">彻底删除</button>
     </view>
   </block>
 </view>

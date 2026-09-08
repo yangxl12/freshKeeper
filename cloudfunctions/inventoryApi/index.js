@@ -17,6 +17,7 @@ const {
   validateInventoryViewStatus,
   validateItemId,
   validateIdempotencyKey,
+  validateInventorySort,
   validateOptionalCategory,
   validateOptionalStorage,
   validatePageSize,
@@ -254,30 +255,42 @@ async function listInventory(ownerId, event) {
   const search = validateSearch(event.search)
   const category = validateOptionalCategory(event.category)
   const viewStatus = validateInventoryViewStatus(event.viewStatus)
+  const sort = validateInventorySort(event.sort)
   const pageSize = validatePageSize(event.pageSize)
-  const signature = querySignature({ search, category, viewStatus, pageSize })
+  const signature = querySignature({ search, category, viewStatus, sort, pageSize })
   const offset = decodeCursor(event.cursor, signature)
-  const where = {
-    ownerId,
-    inventoryStatus: viewStatus === 'used_up' ? 'used_up' : 'active',
-  }
-  if (category) where.category = category
-  if (search) {
-    where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
-  }
+  const conditions = [
+    { ownerId },
+    { inventoryStatus: viewStatus === 'used_up' ? 'used_up' : 'active' },
+  ]
+  if (category) conditions.push({ category })
   if (viewStatus === 'expired') {
-    where.expiryDate = command.lt(today)
+    conditions.push({ expiryDate: command.lt(today) })
   } else if (viewStatus === 'expiring') {
-    where.expiryDate = command.gte(today).and(command.lte(addDays(today, 7)))
+    conditions.push({ expiryDate: command.gte(today).and(command.lte(addDays(today, 7))) })
   } else if (viewStatus === 'safe') {
-    where.expiryDate = command.gt(addDays(today, 7))
+    conditions.push({ expiryDate: command.gt(addDays(today, 7)) })
+  }
+
+  let where = command.and(conditions)
+  if (search) {
+    // 名称与存放位置任一命中即可，小写输入框同时匹配两者
+    const keyword = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
+    where = command.and([
+      where,
+      command.or([{ searchName: keyword }, { storageLocation: keyword }]),
+    ])
   }
 
   let query = db.collection(ITEMS).where(where)
-  if (viewStatus === 'used_up') {
+  if (viewStatus === 'used_up' && sort !== 'created_asc' && sort !== 'created_desc') {
     query = query.orderBy('completedAt', 'desc')
+  } else if (sort === 'created_asc' || sort === 'created_desc') {
+    query = query.orderBy('createdAt', sort === 'created_asc' ? 'asc' : 'desc')
   } else {
-    query = query.orderBy('expiryDate', 'asc').orderBy('createdAt', 'desc')
+    query = query
+      .orderBy('expiryDate', sort === 'expiry_desc' ? 'desc' : 'asc')
+      .orderBy('createdAt', 'desc')
   }
   const result = await query.skip(offset).limit(pageSize + 1).get()
   const hasMore = result.data.length > pageSize

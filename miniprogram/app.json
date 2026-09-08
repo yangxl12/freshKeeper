@@ -1,7 +1,6 @@
 {
   "pages": [
     "pages/home/index",
-    "pages/inventory/index",
     "pages/quick-entry/index",
     "pages/item-form/index",
     "pages/item-detail/index",
@@ -11,11 +10,12 @@
   "window": {
     "backgroundTextStyle": "light",
     "navigationBarBackgroundColor": "#F5F6F2",
-    "navigationBarTitleText": "保质期助手",
+    "navigationBarTitleText": "保质记",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#F5F6F2"
   },
   "tabBar": {
+    "custom": true,
     "color": "#929E98",
     "selectedColor": "#176348",
     "backgroundColor": "#FFFFFF",
@@ -26,12 +26,6 @@
         "text": "首页",
         "iconPath": "assets/tab-home.png",
         "selectedIconPath": "assets/tab-home-active.png"
-      },
-      {
-        "pagePath": "pages/inventory/index",
-        "text": "库存",
-        "iconPath": "assets/tab-inventory.png",
-        "selectedIconPath": "assets/tab-inventory-active.png"
       },
       {
         "pagePath": "pages/mine/index",
