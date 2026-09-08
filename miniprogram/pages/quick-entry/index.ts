@@ -29,6 +29,7 @@ import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
 import { todayKey } from '../../domain/quick-text'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
+const PENDING_INTEGRATION_TOAST = '暂时未接入，敬请期待'
 let recorderManager: WechatMiniprogram.RecorderManager | null = null
 let recorderBound = false
 let activePage: any = null
@@ -320,11 +321,14 @@ Page({
   },
 
   handleVoiceTap() {
-    if (!this.data.capabilities.voice) wx.showToast({ title: '暂未开通，敬请期待', icon: 'none' })
+    if (!this.data.capabilities.voice) wx.showToast({ title: PENDING_INTEGRATION_TOAST, icon: 'none' })
   },
 
   async startVoice() {
-    if (!this.data.capabilities.voice) return
+    if (!this.data.capabilities.voice) {
+      wx.showToast({ title: PENDING_INTEGRATION_TOAST, icon: 'none' })
+      return
+    }
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     this.setData({ voicePressing: true, voiceState: 'authorizing', inputError: '' })
     try {
@@ -395,7 +399,7 @@ Page({
   chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     if (!this.data.capabilities.datePhoto) {
-      wx.showToast({ title: '暂未开通，敬请期待', icon: 'none' })
+      wx.showToast({ title: PENDING_INTEGRATION_TOAST, icon: 'none' })
       return
     }
     const index = event?.currentTarget?.dataset?.index

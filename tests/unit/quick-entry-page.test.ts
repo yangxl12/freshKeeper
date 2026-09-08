@@ -171,6 +171,24 @@ describe('quick entry page compatibility', () => {
     }))
   })
 
+  it('toasts the pending-integration hint when tapping voice without the service', async () => {
+    const page = pageInstance()
+    page.data.capabilities.voice = false
+    page.handleVoiceTap()
+    await page.startVoice()
+    expect(globalThis.wx.showToast).toHaveBeenCalledWith({ title: '暂时未接入，敬请期待', icon: 'none' })
+    expect(page.data.voiceState).toBe('idle')
+    expect(globalThis.wx.reportAnalytics).not.toHaveBeenCalled()
+  })
+
+  it('toasts the pending-integration hint when tapping the date photo button without the service', () => {
+    const page = pageInstance()
+    page.data.capabilities.datePhoto = false
+    page.chooseDatePhoto()
+    expect(globalThis.wx.showToast).toHaveBeenCalledWith({ title: '暂时未接入，敬请期待', icon: 'none' })
+    expect(page.data.photoStage).toBe('idle')
+  })
+
   it('stays on quick entry and explains when the cloud function is outdated', async () => {
     listRecentProfilesMock.mockRejectedValueOnce(
       new CloudServiceError('INVALID_ACTION', '不支持的库存操作'),
