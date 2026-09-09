@@ -29,8 +29,7 @@ import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
 import { todayKey } from '../../domain/quick-text'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
-const PENDING_INTEGRATION_TOAST = '暂时未接入，敬请期待'
-const DATE_PHOTO_PENDING_TOAST = '拍照识别未开通，请手动选日期'
+const MAX_DRAFTS = 5
 let recorderManager: WechatMiniprogram.RecorderManager | null = null
 let recorderBound = false
 let activePage: any = null
@@ -78,6 +77,7 @@ Page({
     drafts: [] as QuickEntryDraft[],
     draftSummaries: [] as string[],
     expirySummaries: [] as string[],
+    expiredFlags: [] as boolean[],
     categoryOptions: FORM_CATEGORY_OPTIONS,
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
     features: QUICK_ENTRY_FEATURES,
@@ -179,10 +179,15 @@ Page({
 
   commitDrafts(drafts: QuickEntryDraft[]) {
     const selectableCount = drafts.filter((draft) => draft.selected && !draft.issues.length && draft.status === 'savable').length
+    const today = this.data.today
     this.setData({
       drafts,
       draftSummaries: drafts.map(getDraftSummary),
       expirySummaries: drafts.map(getExpirySummary),
+      expiredFlags: drafts.map((draft) => {
+        const summary = getExpirySummary(draft)
+        return /^\d{4}-\d{2}-\d{2}$/.test(summary) ? summary < today : false
+      }),
       selectableCount,
     }, () => this.syncUnloadPrompt())
   },
@@ -238,11 +243,17 @@ Page({
     if (this.data.saving || this.data.recognitionState !== 'idle') return
     const profile = this.data.recentProfiles[Number(event.currentTarget.dataset.index)]
     if (!profile) return
+    const pending = this.data.drafts.filter((draft) => draft.status !== 'saved')
+    if (pending.length >= MAX_DRAFTS) {
+      this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
+      return
+    }
     const draft = createDraftFromRecent(profile, this.data.defaultReminderLeadDays)
-    this.setData({ saveSummary: '' })
-    this.commitDrafts([draft])
+    const drafts = [...pending, draft]
+    this.setData({ saveSummary: '', inputError: '' })
+    this.commitDrafts(drafts)
     track('recent_item_select')
-    wx.pageScrollTo({ selector: '#draft-date-0', duration: 220 })
+    wx.pageScrollTo({ selector: `#draft-date-${drafts.length - 1}`, duration: 220 })
   },
 
   updateDraft(index: number, mutator: (draft: QuickEntryDraft) => QuickEntryDraft) {
@@ -321,15 +332,8 @@ Page({
     this.commitDrafts(drafts)
   },
 
-  handleVoiceTap() {
-    if (!this.data.capabilities.voice) wx.showToast({ title: PENDING_INTEGRATION_TOAST, icon: 'none' })
-  },
-
   async startVoice() {
-    if (!this.data.capabilities.voice) {
-      wx.showToast({ title: PENDING_INTEGRATION_TOAST, icon: 'none' })
-      return
-    }
+    if (!this.data.capabilities.voice) return
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     this.setData({ voicePressing: true, voiceState: 'authorizing', inputError: '' })
     try {
@@ -399,15 +403,12 @@ Page({
 
   chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
-    if (!this.data.capabilities.datePhoto) {
-      wx.showToast({ title: DATE_PHOTO_PENDING_TOAST, icon: 'none' })
-      return
-    }
+    if (!this.data.capabilities.datePhoto) return
     const index = event?.currentTarget?.dataset?.index
     const target = index == null ? undefined : this.data.drafts[Number(index)]
     if (target && ['saved', 'saving', 'failed'].includes(target.status)) return
-    if (!target && this.data.drafts.length >= 5) {
-      this.setData({ inputError: '一次最多 5 条草稿，请先处理当前草稿' })
+    if (!target && this.data.drafts.length >= MAX_DRAFTS) {
+      this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
       return
     }
     this.setData({ photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })

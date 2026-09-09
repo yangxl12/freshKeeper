@@ -171,22 +171,74 @@ describe('quick entry page compatibility', () => {
     }))
   })
 
-  it('toasts the pending-integration hint when tapping voice without the service', async () => {
+  it('keeps the voice entry mounted but silent when the service is not configured', async () => {
     const page = pageInstance()
     page.data.capabilities.voice = false
-    page.handleVoiceTap()
     await page.startVoice()
-    expect(globalThis.wx.showToast).toHaveBeenCalledWith({ title: '暂时未接入，敬请期待', icon: 'none' })
+    expect(globalThis.wx.showToast).not.toHaveBeenCalled()
     expect(page.data.voiceState).toBe('idle')
+    expect(page.data.voicePressing).toBe(false)
     expect(globalThis.wx.reportAnalytics).not.toHaveBeenCalled()
   })
 
-  it('toasts the pending-integration hint when tapping the date photo button without the service', () => {
+  it('keeps the date photo entry mounted but silent when the service is not configured', () => {
     const page = pageInstance()
     page.data.capabilities.datePhoto = false
     page.chooseDatePhoto()
-    expect(globalThis.wx.showToast).toHaveBeenCalledWith({ title: '拍照识别未开通，请手动选日期', icon: 'none' })
+    expect(globalThis.wx.showToast).not.toHaveBeenCalled()
     expect(page.data.photoStage).toBe('idle')
+    expect(page.data.inputError).toBe('')
+  })
+
+  it('turns a recent item into a savable draft after picking the expiry date', async () => {
+    const page = pageInstance()
+    listRecentProfilesMock.mockResolvedValue({ items: [{
+      name: '鲜牛奶', quantity: 2, unit: '盒', category: 'food', storageLocation: '冰箱',
+      reminderLeadDays: 1, expiryInputMode: 'direct', shelfLifeValue: null, shelfLifeUnit: null, invalidFields: [],
+    }] })
+    getQuickEntryCapabilitiesMock.mockResolvedValue({ text: true, voice: false, datePhoto: false })
+    getSettingsMock.mockResolvedValue({ defaultReminderLeadDays: 1 })
+
+    await page.preparePage()
+    expect(page.data.loading).toBe(false)
+    expect(page.data.recentProfiles).toHaveLength(1)
+
+    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
+    expect(page.data.drafts).toHaveLength(1)
+    expect(page.data.drafts[0].status).toBe('needs_input')
+
+    page.handleDateChange({ currentTarget: { dataset: { index: 0, field: 'expiryDate' } }, detail: { value: '2026-09-20' } })
+    expect(page.data.drafts[0].status).toBe('savable')
+    expect(page.data.drafts[0].selected).toBe(true)
+    expect(page.data.selectableCount).toBe(1)
+
+    saveMock.mockResolvedValue({ itemId: 'milk' })
+    await page.saveDrafts()
+    expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ name: '鲜牛奶', expiryDate: '2026-09-20' }), expect.objectContaining({ idempotencyKey: expect.any(String) }))
+    expect(page.data.drafts[0].status).toBe('saved')
+  })
+
+  it('keeps the recent list usable and appends drafts instead of replacing them', () => {
+    const page = pageInstance()
+    const milk = {
+      name: '鲜牛奶', quantity: 2, unit: '盒', category: 'food', storageLocation: '冰箱',
+      reminderLeadDays: 1, expiryInputMode: 'direct', shelfLifeValue: null, shelfLifeUnit: null, invalidFields: [],
+    }
+    const yogurt = { ...milk, name: '酸奶', quantity: 1, unit: '瓶', storageLocation: '' }
+    page.data.recentProfiles = [milk, yogurt]
+    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
+    page.selectRecent({ currentTarget: { dataset: { index: 1 } } })
+    expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['鲜牛奶', '酸奶'])
+  })
+
+  it('flags a past expiry date instead of comparing the placeholder text', () => {
+    const page = pageInstance()
+    const draft = completeDraft('牛奶')
+    page.data.today = '2026-09-09'
+    page.commitDrafts([draft])
+    expect(page.data.expiredFlags).toEqual([false])
+    page.handleDateChange({ currentTarget: { dataset: { index: 0, field: 'expiryDate' } }, detail: { value: '2026-09-01' } })
+    expect(page.data.expiredFlags).toEqual([true])
   })
 
   it('stays on quick entry and explains when the cloud function is outdated', async () => {

@@ -57,7 +57,7 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
 
 ### 3.1 快速录入识别服务
 
-`quickEntryApi` 通过 HTTPS JSON 适配器调用识别服务。未配置的语音和拍日期能力仍保留按钮，不申请权限或启动识别：语音点击或按住提示“暂时未接入，敬请期待”，拍日期提示“拍照识别未开通，请手动选日期”。按需配置：
+`quickEntryApi` 通过 HTTPS JSON 适配器调用识别服务。未配置的语音和拍日期能力仍保留按钮，但置灰禁用：不弹提示、不申请权限、不启动识别，页面同时给出一行说明文字。按需配置：
 
 当前版本文字快录内置确定性解析器，无需第三方密钥。客户端和云函数使用同一实现，`npm run check:project` 会检查两份文件一致；修改后执行 `node scripts/sync-quick-parser.mjs --write`。
 

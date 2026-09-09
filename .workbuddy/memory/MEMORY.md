@@ -17,10 +17,19 @@
 
 ## 快速录入：语音 / OCR 能力开关
 
-- 按钮（语音「按住说」、「拍日期」、草稿卡内联「拍日期」）显示只由 `QUICK_ENTRY_FEATURES`（`miniprogram/config/runtime.ts`）决定，
-  **不再受云端 `capabilities` 控制**；服务能力没配（云函数 `providerConfigured('STT'/'OCR')` 返回 false）时点击/按住不申请权限、不启动识别，
-  只提示：语音 `PENDING_INTEGRATION_TOAST`=「暂时未接入，敬请期待」，拍日期 `DATE_PHOTO_PENDING_TOAST`=
-  「拍照识别未开通，请手动选日期」（常量都在 `pages/quick-entry/index.ts`）。
+- 按钮（语音「按住说」、「拍日期」、草稿卡内联「拍日期」）**始终显示**（由 `QUICK_ENTRY_FEATURES`，`config/runtime.ts` 决定），
+  未接入时**置灰 `disabled`**（`disabled="{{... || !capabilities.voice}}"`，`capabilities` 来自 `quickEntryApi.getCapabilities`）。
+- **不要弹 toast**：微信 `wx.showToast` 标题超过 7 个汉字会被截断，出现过「拍照识别未开通…」这类被用户吐槽的残缺提示。
+  未接入就静默禁用，只在输入卡片下给一行静态说明 `.feature-hint`。
+
+## 快速录入：最近使用
+
+- 云端 `inventoryApi.listRecentProfiles` 未部署（`INVALID_ACTION`）时，`services/quick-entry-service.ts` 会降级为
+  `listInventory(sort:'created_desc', pageSize:30)` + `recentProfilesFromItems()` 本地归并（与 `batchDelete`/`listTrash` 同一降级套路）。
+- 最近使用区**不随草稿出现而隐藏**（原 `wx:if` 带 `!drafts.length`，生成过一次草稿就再也看不到，被当成功能坏了）；
+  点击是**追加**草稿而非替换，上限 `MAX_DRAFTS = 5`。
+- 「已过期」提示用 `expiredFlags`（`commitDrafts` 里对 `getExpirySummary()` 做 `/^\d{4}-\d{2}-\d{2}$/` 校验再比较），
+  不要直接拿中文占位文案 `待补到期日` 和 `today` 比大小。
 
 ## WXSS 限制（踩过的坑）
 

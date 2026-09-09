@@ -103,6 +103,80 @@ export function validateQuickEntryFields(fields: QuickEntryDraftFields): QuickEn
   return issues
 }
 
+export interface RecentSourceItem {
+  name?: string
+  quantity?: number | null
+  unit?: string
+  category?: string | null
+  storageLocation?: string
+  reminderLeadDays?: number | null
+  expiryInputMode?: string
+  shelfLifeValue?: number | null
+  shelfLifeUnit?: string | null
+  updatedAt?: string | Date
+  createdAt?: string | Date
+}
+
+const VALID_SHELF_LIFE_UNITS = new Set(['day', 'month', 'year'])
+
+function recentTimestamp(value: string | Date | undefined): number {
+  if (!value) return 0
+  const result = value instanceof Date ? value.getTime() : new Date(value).getTime()
+  return Number.isFinite(result) ? result : 0
+}
+
+/** 与云端 recent.js 的 toRecentProfile 规则保持一致，供云函数未更新时本地兜底。 */
+export function toRecentProfile(item: RecentSourceItem): RecentItemProfile {
+  const invalidFields: string[] = []
+  const quantity = Number.isInteger(item.quantity) && (item.quantity as number) >= 1 && (item.quantity as number) <= 9999
+    ? item.quantity as number
+    : 1
+  if (quantity !== item.quantity) invalidFields.push('quantity')
+  const unit = typeof item.unit === 'string' && item.unit.trim().length >= 1 && item.unit.trim().length <= 8
+    ? item.unit.trim()
+    : '件'
+  if (unit !== item.unit) invalidFields.push('unit')
+  const category = isValidCategory(item.category) ? item.category : 'food'
+  if (category !== item.category) invalidFields.push('category')
+  const reminderLeadDays = Number.isInteger(item.reminderLeadDays) && (item.reminderLeadDays as number) >= 0 && (item.reminderLeadDays as number) <= 30
+    ? item.reminderLeadDays as number
+    : 1
+  if (reminderLeadDays !== item.reminderLeadDays) invalidFields.push('reminderLeadDays')
+  const expiryInputMode: QuickEntryDraftFields['expiryInputMode'] = item.expiryInputMode === 'shelf_life' ? 'shelf_life' : 'direct'
+  const shelfLifeUnit = expiryInputMode === 'shelf_life' && item.shelfLifeUnit && VALID_SHELF_LIFE_UNITS.has(item.shelfLifeUnit)
+    ? item.shelfLifeUnit as QuickEntryDraftFields['shelfLifeUnit']
+    : null
+  if (expiryInputMode === 'shelf_life' && shelfLifeUnit !== item.shelfLifeUnit) invalidFields.push('shelfLifeUnit')
+  return {
+    name: typeof item.name === 'string' ? item.name : '',
+    quantity,
+    unit,
+    category,
+    storageLocation: typeof item.storageLocation === 'string' ? item.storageLocation : '',
+    reminderLeadDays,
+    expiryInputMode,
+    shelfLifeValue: expiryInputMode === 'shelf_life' && Number.isInteger(item.shelfLifeValue) ? item.shelfLifeValue as number : null,
+    shelfLifeUnit,
+    invalidFields,
+  }
+}
+
+export function recentProfilesFromItems(items: RecentSourceItem[], limit = 6): RecentItemProfile[] {
+  const sorted = [...items].sort((left, right) => (
+    recentTimestamp(right.updatedAt || right.createdAt) - recentTimestamp(left.updatedAt || left.createdAt)
+  ))
+  const seen = new Set<string>()
+  const result: RecentItemProfile[] = []
+  for (const item of sorted) {
+    const key = normalizeRecentName(item.name || '')
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    result.push(toRecentProfile(item))
+    if (result.length >= limit) break
+  }
+  return result
+}
+
 export function createDraftFromRecent(profile: RecentItemProfile, reminderLeadDays = 1): QuickEntryDraft {
   const confirmationFields: string[] = []
   const quantityValid = Number.isInteger(profile.quantity) && profile.quantity >= 1 && profile.quantity <= 9999
