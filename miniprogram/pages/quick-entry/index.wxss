@@ -81,7 +81,7 @@
 .inline-photo-button[disabled] { background: #f3f6f4; color: #aab6b1; }
 .feature-hint { display: block; margin-top: 14rpx; color: #9aa7a1; font-size: 22rpx; line-height: 1.5; }
 .quick-actions { display: flex; gap: 16rpx; margin-top: 18rpx; }
-.quick-generate { position: fixed; right: 28rpx; bottom: calc(24rpx + env(safe-area-inset-bottom)); left: 28rpx; z-index: 20; min-height: 92rpx; margin: 0; border-radius: 16rpx; box-shadow: 0 10rpx 24rpx rgba(31, 93, 73, 0.2); }
+.quick-generate { position: absolute; right: 28rpx; bottom: calc(24rpx + env(safe-area-inset-bottom)); left: 28rpx; z-index: 20; min-height: 92rpx; margin: 0; border-radius: 16rpx; box-shadow: 0 10rpx 24rpx rgba(31, 93, 73, 0.2); }
 /* 微信 button 的边框伪元素绝对定位，必须限制在按钮内，避免覆盖相邻按钮。 */
 .quick-action { position: relative; min-height: 78rpx; flex: 1; margin: 0; padding: 0 16rpx; line-height: 78rpx; }
 .quick-action::after { pointer-events: none; }
@@ -225,6 +225,8 @@
 .quick-tabs { display: flex; gap: 32rpx; margin: -6rpx 0 28rpx; border-bottom: 2rpx solid #dce6e0; }
 .quick-tabs__item { margin: 0; padding: 0 0 18rpx; border-radius: 0; border-bottom: 4rpx solid transparent; background: transparent; color: #788880; font-size: 27rpx; line-height: 48rpx; }
 .quick-tabs__item--active { border-bottom-color: #1f5d49; color: #1f5d49; font-weight: 650; }
+.inline-entry { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 10; pointer-events: none; }
+.inline-entry__panel { min-height: 100%; box-sizing: border-box; padding: 218rpx 0 calc(150rpx + env(safe-area-inset-bottom)); pointer-events: auto; }
 .inline-entry__body { width: 100%; }
 .entry-sheet .draft-card { padding: 16rpx 4rpx 0; border: 0; background: transparent; box-shadow: none; }
 
