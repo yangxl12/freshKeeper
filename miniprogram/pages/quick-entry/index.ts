@@ -38,6 +38,12 @@ let recorderBound = false
 let activePage: any = null
 let cancelCurrentRecording = false
 let recordingOwner: any = null
+let silenceTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearSilenceTimer() {
+  if (silenceTimer) clearTimeout(silenceTimer)
+  silenceTimer = null
+}
 
 function bindRecorder(page: any) {
   activePage = page
@@ -48,6 +54,7 @@ function bindRecorder(page: any) {
     recordingOwner = null
     if (!owner) return
     owner.clearVoiceTimer()
+    clearSilenceTimer()
     if (cancelCurrentRecording) {
       cancelCurrentRecording = false
       owner.setData({ voiceState: 'idle', voicePressing: false })
@@ -56,6 +63,7 @@ function bindRecorder(page: any) {
     if (owner === activePage) void owner.handleRecordedFile(result.tempFilePath)
   })
   recorderManager.onError(() => {
+    clearSilenceTimer()
     recordingOwner?.clearVoiceTimer()
     recordingOwner = null
     activePage?.setData({ voiceState: 'idle', voicePressing: false, inputError: '录音失败，请重试或改用文字输入' })
@@ -510,6 +518,13 @@ Page({
       this.createSelectorQuery().select('.voice-button').boundingClientRect(rect => { if (rect && !Array.isArray(rect)) this.voiceBounds = rect }).exec()
       recorderManager?.start({ duration: 30000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: 'mp3' })
       this.setData({ voiceState: 'recording', voiceSeconds: 0, voiceCancelling: false })
+      clearSilenceTimer()
+      silenceTimer = setTimeout(() => {
+        if (recordingOwner === this && this.data.voiceState === 'recording') {
+          this.setData({ inputError: '暂未听到语音，已自动停止，请靠近麦克风重试' })
+          recorderManager?.stop()
+        }
+      }, 5000)
       this.clearVoiceTimer()
       this.voiceTimer = setInterval(() => this.setData({ voiceSeconds: Math.min(30, this.data.voiceSeconds + 1) }), 1000)
     } catch (_error) {
@@ -520,17 +535,24 @@ Page({
   },
 
   stopVoice() {
+    clearSilenceTimer()
     this.setData({ voicePressing: false })
     cancelCurrentRecording = this.data.voiceCancelling
     if (this.data.voiceState === 'recording') recorderManager?.stop()
   },
 
   cancelVoice() {
+    clearSilenceTimer()
     this.setData({ voicePressing: false })
     if (this.data.voiceState === 'recording') {
       cancelCurrentRecording = true
       recorderManager?.stop()
     }
+  },
+
+  toggleVoice() {
+    if (this.data.voiceState === 'recording') this.stopVoice()
+    else void this.startVoice()
   },
 
   moveVoice(event: WechatMiniprogram.TouchEvent) {
