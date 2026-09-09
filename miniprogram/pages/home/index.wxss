@@ -114,11 +114,11 @@
 .library { margin-top: 34rpx; }
 
 .library__batch {
-  display: block;
-  width: 100%;
-  min-height: 58rpx;
-  margin: 12rpx 0 0;
-  padding: 0;
+  flex: 0 0 auto;
+  min-width: 112rpx;
+  height: 56rpx;
+  margin: 0;
+  padding: 0 12rpx;
   border: 0;
   border-radius: 10rpx;
   background: #eef5f1;

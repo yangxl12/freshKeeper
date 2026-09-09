@@ -70,6 +70,7 @@
         <button wx:if="{{search}}" class="search-box__clear" bindtap="clearSearch" hover-class="pressable--pressed" aria-label="清空搜索">清空</button>
       </view>
       <button wx:if="{{hasActiveConditions}}" class="filter-actions__clear" bindtap="resetFilters" hover-class="pressable--pressed">清除全部</button>
+      <button class="library__batch" disabled="{{loading || !items.length}}" bindtap="openBatchOperations" hover-class="pressable--pressed">批量操作</button>
       </view>
 
       <view class="filter-section">
@@ -124,8 +125,6 @@
       </view>
 
     </view>
-
-    <button class="library__batch" disabled="{{loading || !items.length}}" bindtap="openBatchOperations" hover-class="pressable--pressed">批量操作</button>
 
     <view wx:if="{{listErrorMessage}}" class="error-banner error-banner--list">
       <text class="error-banner__text">{{listErrorMessage}}</text>
