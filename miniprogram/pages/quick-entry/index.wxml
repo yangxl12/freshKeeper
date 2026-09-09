@@ -92,9 +92,8 @@
         <view wx:if="{{drafts.length}}" class="draft-area">
           <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex" class="draft-card draft-card--{{draft.status}}">
             <view wx:if="{{popup !== 'recent'}}" class="draft-card__status-row">
-              <text class="draft-card__status">{{draft.status === 'saved' ? '已加入库存' : (draft.status === 'saving' ? '正在保存' : (draft.status === 'failed' ? '保存失败，可重试' : (draft.issues.length ? '还需补充或确认' : '可以保存')))}}</text>
+              <text class="draft-card__status">{{draft.status === 'saved' ? '已加入库存' : (draft.status === 'saving' ? '正在保存' : (draft.status === 'failed' ? '保存失败，可重试' : (draft.issues.length ? '还需补充或确认' : '信息完整')))}}</text>
               <view class="draft-card__tools">
-                <button wx:if="{{draft.status !== 'saved' && draft.status !== 'failed'}}" class="draft-card__select" disabled="{{saving || draft.issues.length > 0 || draft.status === 'saving'}}" data-index="{{draftIndex}}" bindtap="toggleSelected">{{draft.selected ? '已选' : '未选'}}</button>
                 <button wx:if="{{draft.status !== 'saving'}}" class="draft-heading__delete" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
               </view>
             </view>
@@ -150,8 +149,6 @@
               </view>
             </view>
             <button wx:if="{{draft.confirmationFields.length && draft.status !== 'saved'}}" class="manual-button" data-index="{{draftIndex}}" bindtap="confirmFallback">确认已修正的非日期字段</button>
-            <button wx:if="{{drafts.length > 1 && draft.status !== 'saved' && draft.status !== 'failed'}}" class="manual-button" data-index="{{draftIndex}}" bindtap="continueManual">这条改用完整填写</button>
-
             <button class="draft-card__summary" data-index="{{draftIndex}}" bindtap="toggleDetails">
               <text>{{draftSummaries[draftIndex]}}</text><text>{{draft.expanded ? '收起' : '更多信息'}}</text>
             </button>

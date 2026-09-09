@@ -255,7 +255,7 @@ Page({
   },
 
   commitDrafts(drafts: QuickEntryDraft[]) {
-    const selectableCount = drafts.filter((draft) => draft.selected && !draft.issues.length && draft.status === 'savable').length
+    const selectableCount = drafts.filter((draft) => !draft.issues.length && draft.status === 'savable').length
     const today = this.data.today
     this.setData({
       drafts,
@@ -415,11 +415,22 @@ Page({
     const field = event.currentTarget.dataset.field as keyof Pick<QuickEntryDraftFields, 'name' | 'quantity' | 'unit' | 'storageLocation' | 'shelfLifeValue' | 'reminderLeadDays'>
     const rawValue = event.detail.value
     const value = ['quantity', 'shelfLifeValue', 'reminderLeadDays'].includes(field) ? (rawValue ? Number(rawValue) : null) : rawValue
-    this.updateDraft(index, (draft) => ({
+    const draft = this.data.drafts[index]
+    if (this.data.saving || !draft || ['saving', 'saved', 'failed'].includes(draft.status)) return
+    const nextDraft = refreshDraftValidation({
       ...draft,
       confirmationFields: (draft.confirmationFields || []).filter((item) => item !== field),
       fields: { ...draft.fields, [field]: value },
-    }))
+    })
+    const drafts = [...this.data.drafts]
+    drafts[index] = nextDraft
+    this.setData({
+      [`drafts[${index}]`]: nextDraft,
+      [`draftSummaries[${index}]`]: getDraftSummary(nextDraft),
+      [`expirySummaries[${index}]`]: getExpirySummary(nextDraft),
+      [`expiredFlags[${index}]`]: /^\d{4}-\d{2}-\d{2}$/.test(getExpirySummary(nextDraft)) && getExpirySummary(nextDraft) < this.data.today,
+      selectableCount: drafts.filter((item) => !item.issues.length && item.status === 'savable').length,
+    }, () => this.syncUnloadPrompt())
     track('draft_field_corrected', { field })
   },
 
@@ -684,7 +695,7 @@ Page({
 
   async saveDrafts() {
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
-    const targets = this.data.drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => draft.selected && !draft.issues.length && draft.status === 'savable')
+    const targets = this.data.drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => !draft.issues.length && draft.status === 'savable')
     await this.persistDrafts(targets)
   },
 
