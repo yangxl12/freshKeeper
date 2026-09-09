@@ -308,10 +308,6 @@ Page({
     if (this.pendingRecognition || this.data.saving) return
     // 上一次识别异常中断留下状态时再点会完全没反应，这里先自愈。
     if (this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') this.cancelRecognition()
-    if (this.data.drafts.some(draft => draft.status !== 'saved')) {
-      const replace = await new Promise<boolean>(resolve => wx.showModal({ title: '重新生成草稿？', content: '当前未保存草稿将被替换，原文仍会保留。', success: result => resolve(result.confirm), fail: () => resolve(false) }))
-      if (!replace) return
-    }
     const recognitionId = ++this.recognitionId
     this.pendingRecognition = true
     this.setData({ recognitionState: 'parsing', inputError: '' })
@@ -320,8 +316,13 @@ Page({
     try {
       const built = await this.buildDraftsFromText(text, source)
       if (recognitionId !== this.recognitionId) return
-      this.setData({ recognitionState: 'idle', saveSummary: '', inputError: built.notice })
-      this.commitDrafts(built.drafts)
+      const existing = this.data.drafts.filter(draft => draft.status !== 'saved')
+      if (existing.length + built.drafts.length > MAX_DRAFTS) {
+        this.setData({ recognitionState: 'idle', inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先加入库存或删除已有卡片` })
+        return
+      }
+      this.setData({ recognitionState: 'idle', saveSummary: '', inputError: built.notice, inputText: '' })
+      this.commitDrafts([...existing, ...built.drafts])
       this.setData({ focusNameId: built.drafts.find(draft => !draft.fields.name)?.draftId || '' })
       track('quick_parse_result', { result: built.notice ? 'fallback' : 'success', durationMs: Date.now() - startedAt, draftCount: built.drafts.length })
     } catch (error) {
@@ -473,8 +474,13 @@ Page({
 
   removeDraft(event: WechatMiniprogram.BaseEvent) {
     if (this.data.saving) return
-    const drafts = this.data.drafts.filter((_draft, index) => index !== Number(event.currentTarget.dataset.index))
-    this.commitDrafts(drafts)
+    const index = Number(event.currentTarget.dataset.index)
+    const draft = this.data.drafts[index]
+    if (!draft) return
+    wx.showModal({ title: '移除这条草稿？', content: `将移除“${draft.fields.name || '未命名物品'}”，不会加入库存。`, confirmText: '移除', confirmColor: '#b84a3e', success: result => {
+      if (!result.confirm || this.data.saving) return
+      this.commitDrafts(this.data.drafts.filter((_item, itemIndex) => itemIndex !== index))
+    } })
   },
 
   async startVoice() {

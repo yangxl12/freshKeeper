@@ -141,11 +141,11 @@
 
 .manual-button--lower { margin-top: 20rpx; }
 .draft-heading__delete { width: 66rpx; height: 66rpx; margin: 8rpx 0 0; padding: 17rpx; border-radius: 50%; background: #ffffff; color: #788880; }
-.draft-area { display: grid; gap: 22rpx; }
-.draft-card { padding: 30rpx 26rpx 22rpx; border: 2rpx solid #cadbd2; border-radius: 18rpx; background: #ffffff; box-shadow: 0 12rpx 32rpx rgba(23, 59, 49, 0.07); }
+.draft-area { display: grid; gap: 14rpx; }
+.draft-card { padding: 20rpx 20rpx 14rpx; border: 2rpx solid #cadbd2; border-radius: 14rpx; background: #ffffff; box-shadow: 0 8rpx 22rpx rgba(23, 59, 49, 0.06); }
 .draft-card--needs_input { border-color: #dfcda9; }
 .draft-card--failed { border-color: #dfb9b3; }
-.draft-card__status-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24rpx; }
+.draft-card__status-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12rpx; }
 .draft-card__tools { display: flex; align-items: center; gap: 8rpx; }
 .draft-card__status { color: #1f5d49; font-size: 25rpx; font-weight: 650; }
 .draft-card--needs_input .draft-card__status { color: #9a713a; }
