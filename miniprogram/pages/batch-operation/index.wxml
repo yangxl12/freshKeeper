@@ -1,6 +1,5 @@
 <view class="batch-page page-shell">
   <view class="batch-toolbar">
-    <text class="batch-toolbar__title">{{title}}</text>
     <view class="batch-toolbar__filters">
       <text class="batch-filter">种类：{{categoryLabel}}</text>
       <text class="batch-filter batch-filter--status">状态：{{statusLabel}}</text>

@@ -9,12 +9,6 @@
   padding: 6rpx 2rpx 24rpx;
 }
 
-.batch-toolbar__title {
-  color: #173b31;
-  font-size: 32rpx;
-  font-weight: 700;
-}
-
 .batch-toolbar__filters { display: flex; align-items: center; gap: 10rpx; margin-left: auto; margin-right: 18rpx; }
 .batch-filter { padding: 8rpx 12rpx; border: 2rpx solid #d8e5de; border-radius: 999rpx; background: #f5faf7; color: #39715d; font-size: 21rpx; white-space: nowrap; }
 .batch-filter--status { border-color: #dce2e0; background: #f8faf9; color: #64746d; }
