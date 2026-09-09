@@ -55,14 +55,14 @@
         <form wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
           <view wx:if="{{features.text || features.voice}}" class="quick-input-row">
             <textarea class="quick-input" name="quickText" value="{{inputText}}" maxlength="500" auto-height placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
-            <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
+            <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
               <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
               <text class="voice-button__label">{{voiceState === 'recording' ? '点击停止' : '语音录入'}}</text>
             </button>
           </view>
           <view class="quick-actions">
             <button wx:if="{{features.text}}" class="primary-button quick-action" loading="{{recognitionState === 'parsing'}}" disabled="{{saving || recognitionState !== 'idle'}}" form-type="submit">{{recognitionState === 'parsing' ? '正在生成…' : '生成'}}</button>
-            <button wx:if="{{features.datePhoto}}" class="photo-button quick-action" disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}" bindtap="chooseDatePhoto"><view class="line-icon line-icon--scan" aria-hidden="true"></view><text>拍日期</text></button>
+            <button wx:if="{{features.datePhoto}}" class="photo-button quick-action" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="chooseDatePhoto"><view class="line-icon line-icon--scan" aria-hidden="true"></view><text>拍日期</text></button>
           </view>
           <view wx:if="{{voiceState === 'recording'}}" class="quick-entry__notice">{{voiceSeconds}} / 30 秒 · {{voiceCancelling ? '松开取消录音' : '松开识别，移出按钮取消'}}</view>
           <text wx:if="{{features.voice && capabilities.voice}}" class="camera-help">麦克风仅用于识别本次录入内容，转写后可修改文字。</text>
@@ -113,7 +113,7 @@
             <view class="date-focus-block">
               <view class="field-label-row">
                 <text class="field-label">到期信息 <text class="required-mark">*</text></text>
-                <button wx:if="{{features.datePhoto && (popup !== 'recent' || capabilities.datePhoto) && draft.status !== 'saving' && draft.status !== 'saved' && draft.status !== 'failed'}}" class="inline-photo-button" disabled="{{saving || !capabilities.datePhoto}}" data-index="{{draftIndex}}" bindtap="chooseDatePhoto"><view class="line-icon line-icon--scan" aria-hidden="true"></view><text>拍日期</text></button>
+                <button wx:if="{{features.datePhoto && draft.status !== 'saving' && draft.status !== 'saved' && draft.status !== 'failed'}}" class="inline-photo-button" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="chooseDatePhoto"><view class="line-icon line-icon--scan" aria-hidden="true"></view><text>拍日期</text></button>
               </view>
               <view class="mode-switch">
                 <button class="mode-switch__item {{draft.fields.expiryInputMode === 'direct' ? 'mode-switch__item--active' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" data-index="{{draftIndex}}" data-mode="direct" bindtap="handleModeChange">直接选到期日</button>

@@ -503,7 +503,6 @@ Page({
   },
 
   async startVoice() {
-    if (!this.data.capabilities.voice) return
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     this.setData({ voicePressing: true, voiceState: 'authorizing', inputError: '' })
     try {
@@ -587,7 +586,6 @@ Page({
 
   chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
-    if (!this.data.capabilities.datePhoto) return
     const index = event?.currentTarget?.dataset?.index
     const target = index == null ? undefined : this.data.drafts[Number(index)]
     if (target && ['saved', 'saving', 'failed'].includes(target.status)) return
