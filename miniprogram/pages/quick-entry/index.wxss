@@ -59,11 +59,15 @@
 
 .quick-input-card {
   display: block;
+  box-sizing: border-box;
   flex-shrink: 0;
   order: 3;
   margin: 20rpx 0 0;
-  padding: 0;
-  background: transparent;
+  padding: 20rpx;
+  border: 2rpx solid #dfe7e1;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 6rpx 24rpx rgba(23, 59, 49, 0.05);
 }
 
 .quick-input-row { display: flex; }
