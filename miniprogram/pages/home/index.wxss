@@ -76,7 +76,7 @@ page { background: #f3f8f6; }
 .filter-option--pressed { opacity: .7; }
 .item-list { margin-top: 2rpx; }
 .loading-list { padding-top: 16rpx; }
-.loading-row { height: 164rpx; box-sizing: border-box; margin-bottom: 16rpx; padding: 30rpx; border-radius: 26rpx; background: white; }
+.loading-row { height: 142rpx; box-sizing: border-box; margin-bottom: 16rpx; padding: 26rpx 28rpx; border-radius: 24rpx; background: white; }
 .loading-row__line { width: 55%; height: 26rpx; border-radius: 10rpx; background: #e8efeb; }
 .loading-row__line--short { width: 34%; height: 18rpx; margin-top: 20rpx; }
 .load-more { padding: 26rpx 0; color: #93a49f; font-size: 21rpx; text-align: center; }
