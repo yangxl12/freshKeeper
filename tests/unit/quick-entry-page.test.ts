@@ -183,17 +183,50 @@ describe('quick entry page compatibility', () => {
     expect(page.data.recognitionState).toBe('idle')
   })
 
-  it('opens the text sheet and resets it between sessions', () => {
+  it('preserves the text session when opening and closing a recent item', () => {
     const page = pageInstance()
-    page.openTextPopup()
-    expect(page.data.popup).toBe('text')
-    expect(page.data.inputText).toBe('')
+    page.data.inputText = '牛奶明天到期'
     const draft = completeDraft('牛奶')
-    draft.status = 'saved'
     page.commitDrafts([draft])
+    page.switchQuickTab({ currentTarget: { dataset: { tab: 'recent' } } })
+    page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
+    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
+    expect(page.data.popup).toBe('recent')
+    expect(page.data.drafts).toHaveLength(1)
+    expect(page.data.drafts[0].fields.name).toBe('面包')
     page.closePopup()
+    page.switchQuickTab({ currentTarget: { dataset: { tab: 'text' } } })
     expect(page.data.popup).toBe('none')
-    expect(page.data.drafts).toHaveLength(0)
+    expect(page.data.inputText).toBe('牛奶明天到期')
+    expect(page.data.drafts).toEqual([draft])
+  })
+
+  it('generates through the tap handler and recovers from a cloud request that never completes', async () => {
+    vi.useFakeTimers()
+    try {
+      const page = pageInstance()
+      page.handleQuickTextInput({ detail: { value: '牛奶明天到期' } })
+      parseMock.mockImplementationOnce(() => new Promise(() => {}))
+      const pending = page.handleGenerateTap()
+      expect(page.data.recognitionState).toBe('parsing')
+      await vi.advanceTimersByTimeAsync(8000)
+      await pending
+      expect(page.data.drafts[0].fields.name).toBe('牛奶')
+      expect(page.data.selectableCount).toBe(1)
+      expect(page.data.recognitionState).toBe('idle')
+      expect(page.pendingRecognition).toBe(false)
+      expect(wx.hideLoading).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows feedback when generate is tapped with only whitespace', async () => {
+    const page = pageInstance()
+    page.data.inputText = '  '
+    await page.handleGenerateTap()
+    expect(page.data.inputError).toBe('请输入物品和日期')
+    expect(parseMock).not.toHaveBeenCalled()
   })
   it('keeps local text entry visible when remote recognition is not configured', async () => {
     listRecentProfilesMock.mockResolvedValueOnce({ items: [] })

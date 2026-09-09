@@ -212,11 +212,11 @@
   color: #1f5d49;
 }
 
-.open-sheet-button {
-  min-height: 92rpx;
-  margin-bottom: 30rpx;
-  border-radius: 16rpx;
-}
+.quick-tabs { display: flex; gap: 32rpx; margin: -6rpx 0 28rpx; border-bottom: 2rpx solid #dce6e0; }
+.quick-tabs__item { margin: 0; padding: 0 0 18rpx; border-radius: 0; border-bottom: 4rpx solid transparent; background: transparent; color: #788880; font-size: 27rpx; line-height: 48rpx; }
+.quick-tabs__item--active { border-bottom-color: #1f5d49; color: #1f5d49; font-weight: 650; }
+.inline-entry__body { width: 100%; }
+.entry-sheet .draft-card { padding: 16rpx 4rpx 0; border: 0; background: transparent; box-shadow: none; }
 
 .recent-scroll {
   max-height: 62vh;

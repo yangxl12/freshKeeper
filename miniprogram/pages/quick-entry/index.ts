@@ -82,8 +82,9 @@ Page({
     inputError: '',
     inputText: '',
     activeTab: 'quick' as 'quick' | 'full',
+    quickTab: 'text' as 'text' | 'recent',
     fullMounted: false,
-    popup: 'none' as 'none' | 'text' | 'recent',
+    popup: 'none' as 'none' | 'recent',
     recentLimit: MAX_RECENT_PROFILES,
     recentProfiles: [] as RecentItemProfile[],
     drafts: [] as QuickEntryDraft[],
@@ -126,6 +127,7 @@ Page({
   manualHandoff: false,
   exitOnShow: false,
   pendingRecognition: false,
+  textSession: null as { drafts: QuickEntryDraft[]; inputError: string; saveSummary: string } | null,
   voiceTimer: null as ReturnType<typeof setInterval> | null,
   voiceBounds: null as { left: number; right: number; top: number; bottom: number } | null,
 
@@ -203,6 +205,7 @@ Page({
 
   openFullTab() {
     this.cancelVoice()
+    this.cancelRecognition()
     track('quick_entry_switch_tab', { tab: 'full' })
     this.setData({ activeTab: 'full', fullMounted: true })
   },
@@ -228,21 +231,21 @@ Page({
     }, 40)
   },
 
-  openTextPopup() {
-    if (this.data.saving) return
+  switchQuickTab(event: WechatMiniprogram.BaseEvent) {
+    const tab = event.currentTarget.dataset.tab
+    if ((tab !== 'text' && tab !== 'recent') || tab === this.data.quickTab || this.data.saving) return
     this.cancelVoice()
-    const drafts = this.data.drafts.filter((draft) => draft.status === 'saved')
-    this.setData({ popup: 'text', inputText: '', inputError: '', saveSummary: '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false }, () => {
-      this.commitDrafts(drafts)
-      track('quick_entry_open_text_sheet')
-    })
+    this.cancelRecognition()
+    this.setData({ quickTab: tab, photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
   },
 
   closePopup() {
     this.cancelRecognition()
     this.cancelVoice()
-    this.setData({ popup: 'none', inputText: '', inputError: '', saveSummary: '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
-    this.commitDrafts([])
+    const session = this.textSession
+    this.textSession = null
+    this.setData({ popup: 'none', inputText: session ? this.data.inputText : '', inputError: session?.inputError || '', saveSummary: session?.saveSummary || '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
+    this.commitDrafts(session?.drafts || [])
   },
 
   requestClosePopup() {
@@ -275,6 +278,10 @@ Page({
   handleQuickTextInput(event: WechatMiniprogram.Input) {
     if (this.data.recognitionState === 'parsing' || this.data.recognitionState === 'transcribing') this.cancelRecognition()
     this.setData({ inputText: event.detail.value, inputError: '' }, () => this.syncUnloadPrompt())
+  },
+
+  handleGenerateTap() {
+    return this.generateDrafts('text')
   },
 
   async generateDrafts(sourceOrEvent: Extract<QuickEntrySource, 'text' | 'voice'> | WechatMiniprogram.BaseEvent = 'text') {
@@ -338,8 +345,15 @@ Page({
   },
 
   async recognizeTextItems(text: string) {
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const result = await parseQuickText(text)
+      // 云函数未回调也必须结束等待，让本地解析接管；迟到结果不会覆盖草稿。
+      const result = await Promise.race([
+        parseQuickText(text),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new CloudServiceError('QUICK_ENTRY_TIMEOUT', '识别超时')), 8000)
+        }),
+      ])
       const items = Array.isArray(result?.items) ? result.items : []
       if (items.length) return items
     } catch (error) {
@@ -348,6 +362,8 @@ Page({
         if (local.length) return local
         throw error
       }
+    } finally {
+      if (timer) clearTimeout(timer)
     }
     return parseLocallySafely(text)
   },
@@ -356,16 +372,15 @@ Page({
     if (this.data.saving || this.data.recognitionState !== 'idle') return
     const profile = this.data.recentProfiles[Number(event.currentTarget.dataset.index)]
     if (!profile) return
-    if (this.data.popup === 'text') {
-      this.setData({ inputError: '先完成当前一句话录入，或关闭后重新选择' })
-      return
-    }
-    const pending = this.data.drafts.filter((draft) => draft.status !== 'saved')
+    const pending = this.data.popup === 'recent' ? this.data.drafts.filter((draft) => draft.status !== 'saved') : []
     if (pending.length >= MAX_DRAFTS) {
       this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
       return
     }
     const draft = createDraftFromRecent(profile, this.data.defaultReminderLeadDays)
+    if (this.data.popup !== 'recent') {
+      this.textSession = { drafts: this.data.drafts, inputError: this.data.inputError, saveSummary: this.data.saveSummary }
+    }
     track('recent_item_select')
     this.setData({ popup: 'recent', saveSummary: '', inputError: '', photoStage: 'idle', photoPreview: '', photoTargetId: '' }, () => {
       this.commitDrafts([...pending, draft])
