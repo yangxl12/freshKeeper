@@ -257,6 +257,29 @@ page { background: #f3f8f6; }
   transform: rotate(-45deg);
 }
 
+.action-sheet__icon--edit { background: #eef4f1; }
+.action-sheet__icon--edit::before {
+  top: 17rpx;
+  left: 11rpx;
+  width: 17rpx;
+  height: 6rpx;
+  border: 0;
+  border-radius: 2rpx;
+  background: #1f5d49;
+  transform: rotate(-45deg);
+}
+.action-sheet__icon--edit::after {
+  top: 22rpx;
+  left: 9rpx;
+  width: 0;
+  height: 0;
+  border-top: 4rpx solid transparent;
+  border-bottom: 4rpx solid transparent;
+  border-left: 7rpx solid #1f5d49;
+  content: "";
+  transform: rotate(135deg);
+}
+
 .action-sheet__icon--trash { background: #fbeceb; }
 .action-sheet__icon--trash::before {
   top: 8rpx;

@@ -226,7 +226,10 @@
       <view class="action-sheet__head">
         <text class="action-sheet__title">{{moreSheet.name}}</text>
       </view>
-      <button class="action-sheet__item" bindtap="editMoreItem" hover-class="action-sheet__item--pressed"><text class="action-sheet__label">编辑物品</text></button>
+      <button class="action-sheet__item" bindtap="editMoreItem" hover-class="action-sheet__item--pressed">
+        <view class="action-sheet__icon action-sheet__icon--edit" aria-hidden="true"></view>
+        <text class="action-sheet__label">编辑物品</text>
+      </button>
       <button class="action-sheet__item" data-action="complete" bindtap="handleMoreAction" hover-class="action-sheet__item--pressed">
         <view class="action-sheet__icon action-sheet__icon--check" aria-hidden="true"></view>
         <text class="action-sheet__label">标记为已用完</text>

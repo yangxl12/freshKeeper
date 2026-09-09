@@ -25,7 +25,15 @@ type FormTextField = 'name' | 'quantity' | 'unit' | 'storageLocation' | 'shelfLi
 /** 完整录入表单；pages/item-form 与「物品录入」的完整录入 tab 共用同一份实现。 */
 Component({
   properties: {
-    itemId: { type: String, value: '' },
+    itemId: {
+      type: String,
+      value: '',
+      observer(itemId: string) {
+        // 页面 onLoad 的 setData 晚于组件 attached 生效，编辑 id 后到时补一次加载，否则表单停留在空白新增态。
+        if (!itemId) return
+        this.loadItem(itemId)
+      },
+    },
     restore: { type: Boolean, value: false },
     /** quick-entry 表示由快速录入侧发起，保存时沿用草稿的幂等编号。 */
     source: { type: String, value: '' },
@@ -80,6 +88,9 @@ Component({
     async loadDefaults(pendingDraft: Partial<InventorySaveInput> | null = null) {
       try {
         const settings = await getSettings()
+        // attached 时 id 尚未到达而先走了默认值加载；等待期间编辑 id 已到并开始 loadItem，
+        // 此时跳过默认提醒天数回填，避免覆盖即将载入（或已载入）的物品数据。
+        if (this.data.itemId && !pendingDraft) return
         this.setData({
           reminderLeadDays: String(pendingDraft?.reminderLeadDays ?? settings.defaultReminderLeadDays),
         })
