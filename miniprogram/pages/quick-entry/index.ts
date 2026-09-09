@@ -89,6 +89,7 @@ Page({
     loadingError: '',
     inputError: '',
     inputText: '',
+    quickKeyboardHeight: 0,
     activeTab: 'quick' as 'quick' | 'full',
     quickTab: 'text' as 'text' | 'recent',
     fullMounted: false,
@@ -148,7 +149,10 @@ Page({
     this.syncUnloadPrompt()
   },
 
-  onHide() { this.cancelVoice() },
+  onHide() {
+    this.cancelVoice()
+    this.resetQuickKeyboardHeight()
+  },
 
   cancelRecognition() {
     if (this.data.recognitionState !== 'idle') wx.hideLoading?.()
@@ -282,6 +286,16 @@ Page({
     const shouldWarn = Boolean(this.data.inputText.trim() || this.data.photoPreview || this.data.drafts.some((draft) => draft.status !== 'saved'))
     if (shouldWarn) wx.enableAlertBeforeUnload?.({ message: '放弃本次录入？' })
     else wx.disableAlertBeforeUnload?.()
+  },
+
+  handleQuickKeyboardHeightChange(event: WechatMiniprogram.CustomEvent<{ height?: number }>) {
+    // 让整个底部输入卡片避让键盘，包括文本框下方的操作按钮。
+    const height = Number(event.detail.height)
+    this.setData({ quickKeyboardHeight: Number.isFinite(height) ? Math.max(0, height) : 0 })
+  },
+
+  resetQuickKeyboardHeight() {
+    this.setData({ quickKeyboardHeight: 0 })
   },
 
   handleQuickTextInput(event: WechatMiniprogram.Input) {

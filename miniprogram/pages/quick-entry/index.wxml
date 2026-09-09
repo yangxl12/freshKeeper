@@ -1,4 +1,4 @@
-<view class="quick-entry page-shell {{activeTab === 'quick' && quickTab === 'text' && popup !== 'recent' ? 'quick-entry--text' : ''}} {{activeTab === 'quick' && quickTab === 'recent' ? 'quick-entry--recent' : ''}}">
+<view class="quick-entry page-shell {{activeTab === 'quick' && quickTab === 'text' && popup !== 'recent' ? 'quick-entry--text' : ''}} {{activeTab === 'quick' && quickTab === 'recent' ? 'quick-entry--recent' : ''}}" style="{{activeTab === 'quick' && quickTab === 'text' && popup !== 'recent' && quickKeyboardHeight > 0 ? 'height: calc(100vh - ' + quickKeyboardHeight + 'px); padding-bottom: 12rpx;' : ''}}">
   <view class="entry-tabs" role="tablist">
     <button
       class="entry-tabs__item {{activeTab === 'quick' ? 'entry-tabs__item--active' : ''}}"
@@ -58,7 +58,7 @@
         <form wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
           <view class="quick-input-row">
             <view class="quick-input-wrap">
-              <textarea wx:if="{{features.text || features.voice}}" class="quick-input" name="quickText" value="{{inputText}}" maxlength="500" cursor-spacing="64" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
+              <textarea wx:if="{{features.text || features.voice}}" class="quick-input" name="quickText" value="{{inputText}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" bindfocus="handleQuickKeyboardHeightChange" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="resetQuickKeyboardHeight" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
               <view class="quick-input-tools">
                 <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
                   <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
