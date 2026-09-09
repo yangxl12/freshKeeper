@@ -1,5 +1,6 @@
 interface CardItem {
   _id?: string
+  quantity?: number
 }
 
 Component({
@@ -28,7 +29,11 @@ Component({
     handleQuantity(event: WechatMiniprogram.CustomEvent) {
       const item = this.properties.item as CardItem
       if (!item._id) return
-      this.triggerEvent('quantity', { itemId: item._id, delta: Number(event.currentTarget.dataset.delta) || 0 })
+      const delta = Number(event.currentTarget.dataset.delta) || 0
+      const quantity = Number(item.quantity) || 0
+      if (delta < 0 && quantity <= 1) return
+      if (delta > 0 && quantity >= 9999) return
+      this.triggerEvent('quantity', { itemId: item._id, delta })
     },
 
     handleMore() {

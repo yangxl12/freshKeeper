@@ -16,21 +16,21 @@
   <view class="item-card__side">
     <view class="item-card__remaining"><view class="clock-icon" aria-hidden="true"></view><text>{{item.isActive ? item.remainingDaysText : '已用完'}}</text></view>
     <view wx:if="{{item.isActive}}" class="item-card__stepper">
-      <button class="item-card__step" data-delta="-1" catchtap="handleQuantity" disabled="{{item.quantity <= 1}}" hover-class="item-card__step--pressed" aria-label="减少数量">
+      <view class="item-card__step {{item.quantity <= 1 ? 'item-card__step--disabled' : ''}}" data-delta="-1" catchtap="handleQuantity" hover-class="item-card__step--pressed" role="button" aria-disabled="{{item.quantity <= 1}}" aria-label="减少数量">
         <view class="item-card__disc" aria-hidden="true">
           <view class="item-card__disc-bar"></view>
         </view>
-      </button>
-      <button class="item-card__quantity" catchtap="handleQuantity" hover-class="item-card__quantity--pressed" aria-label="调整数量 {{item.quantityText}}">
+      </view>
+      <view class="item-card__quantity" catchtap="handleQuantity" hover-class="item-card__quantity--pressed" role="button" aria-label="调整数量 {{item.quantityText}}">
         <text class="item-card__quantity-value">{{item.quantity}}</text>
         <text class="item-card__quantity-unit">{{item.unit}}</text>
-      </button>
-      <button class="item-card__step" data-delta="1" catchtap="handleQuantity" disabled="{{item.quantity >= 9999}}" hover-class="item-card__step--pressed" aria-label="增加数量">
+      </view>
+      <view class="item-card__step {{item.quantity >= 9999 ? 'item-card__step--disabled' : ''}}" data-delta="1" catchtap="handleQuantity" hover-class="item-card__step--pressed" role="button" aria-disabled="{{item.quantity >= 9999}}" aria-label="增加数量">
         <view class="item-card__disc" aria-hidden="true">
           <view class="item-card__disc-bar"></view>
           <view class="item-card__disc-bar item-card__disc-bar--vertical"></view>
         </view>
-      </button>
+      </view>
     </view>
     <text wx:else class="item-card__completed">{{item.quantityText}}</text>
   </view>

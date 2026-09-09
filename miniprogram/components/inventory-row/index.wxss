@@ -27,8 +27,9 @@ button::after { border: 0; }
 .item-card__disc-bar { position: absolute; top: 50%; left: 50%; width: 20rpx; height: 4rpx; border-radius: 4rpx; background: #3a4f5b; transform: translate(-50%, -50%); }
 .item-card__disc-bar--vertical { width: 4rpx; height: 20rpx; }
 .item-card__step--pressed .item-card__disc { background: #e2e9ea; }
-.item-card__step[disabled] .item-card__disc { background: #f7f9f9; }
-.item-card__step[disabled] .item-card__disc-bar { background: #c8d1d5; }
+.item-card__step--disabled .item-card__disc { background: #f7f9f9; }
+.item-card__step--disabled .item-card__disc-bar { background: #c8d1d5; }
+.item-card__step--disabled.item-card__step--pressed .item-card__disc { background: #f7f9f9; }
 .item-card__quantity { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; min-width: 0; height: 100%; padding: 0; overflow: hidden; color: #1b303a; }
 .item-card__quantity-value { max-width: 100%; overflow: hidden; font-size: 30rpx; font-weight: 600; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .item-card__quantity-unit { margin-top: 2rpx; color: #8b999f; font-size: 20rpx; font-weight: 400; line-height: 1.2; }
