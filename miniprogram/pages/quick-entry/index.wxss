@@ -2,6 +2,10 @@
   padding-bottom: calc(196rpx + env(safe-area-inset-bottom));
 }
 
+.quick-entry--recent {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
+
 .quick-entry__loading {
   padding: 260rpx 0;
   color: #718078;
@@ -122,6 +126,10 @@
 
 .recent-item {
   display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  gap: 24rpx;
   align-items: center;
   justify-content: space-between;
   min-height: 116rpx;
@@ -130,14 +138,15 @@
   border-radius: 0;
   background: #ffffff;
   text-align: left;
+  line-height: 1.5;
 }
 
 .recent-item:last-child { border-bottom: 0; }
 .recent-item--pressed { background: #f2f7f3; }
-.recent-item__content { min-width: 0; }
-.recent-item__name { display: block; overflow: hidden; color: #173b31; font-size: 30rpx; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.recent-item__content { min-width: 0; flex: 1; }
+.recent-item__name { display: block; color: #173b31; font-size: 30rpx; font-weight: 650; overflow-wrap: anywhere; }
 .recent-item__meta { display: block; margin-top: 8rpx; color: #788880; font-size: 24rpx; }
-.recent-item__arrow { color: #8da097; }
+.recent-item__arrow { flex-shrink: 0; color: #8da097; }
 
 .manual-button {
   display: block;
@@ -238,10 +247,41 @@
 .inline-entry__panel { display: flex; box-sizing: border-box; height: 100%; min-height: 0; flex-direction: column; }
 .inline-entry__body { width: 100%; height: 0; min-height: 0; flex: 1; }
 .inline-entry__panel > .entry-sheet__foot { flex-shrink: 0; order: 2; }
-.entry-sheet .draft-card { padding: 16rpx 4rpx 0; border: 0; background: transparent; box-shadow: none; }
+.entry-sheet .draft-card { padding: 8rpx 32rpx 24rpx; border: 0; background: transparent; box-shadow: none; }
 
-.recent-scroll {
-  max-height: 62vh;
+.entry-sheet .date-focus-block {
+  margin: 0 0 24rpx;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.entry-sheet .field-control,
+.entry-sheet .number-suffix-control {
+  background: #f7f9f7;
+}
+
+.entry-sheet .field {
+  margin-bottom: 24rpx;
+}
+
+.entry-sheet .draft-card__summary {
+  gap: 24rpx;
+  margin: 0;
+  padding: 24rpx 0;
+  border-top: 2rpx solid #edf1ee;
+  border-radius: 0;
+}
+
+.entry-sheet .draft-card__summary > text:first-child {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.entry-sheet .draft-card__summary > text:last-child {
+  flex-shrink: 0;
+  color: #1f5d49;
 }
 
 .entry-sheet {
@@ -268,11 +308,13 @@
 .entry-sheet__panel {
   position: relative;
   display: flex;
+  box-sizing: border-box;
+  height: 75vh;
+  min-height: 0;
+  overflow: hidden;
   flex-direction: column;
-  max-height: 88vh;
-  padding: 20rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
-  border-radius: 28rpx 28rpx 0 0;
-  background: #f5f6f2;
+  border-radius: 32rpx 32rpx 0 0;
+  background: #ffffff;
   box-shadow: 0 -12rpx 40rpx rgba(23, 59, 49, 0.16);
   animation: entry-sheet-up 220ms ease;
 }
@@ -281,7 +323,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6rpx 0 18rpx;
+  flex-shrink: 0;
+  padding: 32rpx;
 }
 
 .entry-sheet__title {
@@ -290,21 +333,11 @@
   font-weight: 700;
 }
 
-.entry-sheet__close {
-  width: 66rpx;
-  height: 66rpx;
-  padding: 17rpx;
-  border-radius: 50%;
-  background: #e6ede9;
-  color: #5c6c64;
-}
-
 .entry-sheet__body {
+  width: 100%;
+  height: 0;
   flex: 1;
   min-height: 0;
-  max-height: 68vh;
-  margin: 0 -6rpx;
-  padding: 0 6rpx;
 }
 
 .entry-sheet__foot {
@@ -314,14 +347,9 @@
 }
 
 .entry-sheet__cancel {
-  min-height: 92rpx;
-  flex: 0 0 200rpx;
-  border: 2rpx solid #cbd8d2;
-  border-radius: 16rpx;
-  background: #ffffff;
+  flex: 1;
+  background: #edf3ef;
   color: #1f5d49;
-  font-size: 29rpx;
-  line-height: 88rpx;
 }
 
 .entry-sheet__submit {
@@ -329,6 +357,44 @@
   flex: 1;
   margin: 0;
   border-radius: 16rpx;
+}
+
+.entry-sheet .entry-sheet__foot {
+  flex-shrink: 0;
+  gap: 20rpx;
+  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid #edf1ee;
+  background: #ffffff;
+}
+
+.entry-sheet .entry-sheet__cancel,
+.entry-sheet .entry-sheet__submit {
+  display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 96rpx;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 20rpx 16rpx;
+  border: 0;
+  border-radius: 20rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.entry-sheet .entry-sheet__submit {
+  flex: 2;
+}
+
+.entry-sheet__cancel[disabled] {
+  background: #f3f5f3;
+  color: #aab6b1;
+}
+
+.entry-sheet__button--pressed {
+  opacity: 0.8;
 }
 
 .line-icon--microphone::before {
