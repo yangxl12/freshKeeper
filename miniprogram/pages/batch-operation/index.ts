@@ -1,4 +1,4 @@
-import { toInventoryCardItem, type InventoryCardItem } from '../../domain/inventory'
+import { CATEGORY_OPTIONS, INVENTORY_VIEW_STATUS_OPTIONS, toInventoryCardItem, type InventoryCardItem } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import {
   batchCompleteItems,
@@ -44,6 +44,8 @@ Page({
     source: 'inventory' as BatchSource,
     viewStatus: 'active_all' as InventoryViewStatus,
     title: '批量操作',
+    categoryLabel: '全部种类',
+    statusLabel: '全部状态',
     items: [] as BatchListItem[],
     selectedCount: 0,
     allSelected: false,
@@ -61,7 +63,9 @@ Page({
     const viewStatus: InventoryViewStatus = intent?.viewStatus || (source === 'home' ? 'expiring' : 'active_all')
     const canComplete = source !== 'trash' && viewStatus !== 'used_up'
     const title = resolveScopeTitle(source, viewStatus)
-    this.setData({ source, title, viewStatus, canComplete })
+    const categoryLabel = CATEGORY_OPTIONS.find((option) => option.value === (intent?.category || ''))?.label || '全部种类'
+    const statusLabel = INVENTORY_VIEW_STATUS_OPTIONS.find((option) => option.value === viewStatus)?.label || '全部状态'
+    this.setData({ source, title, viewStatus, canComplete, categoryLabel, statusLabel })
     wx.setNavigationBarTitle({ title: '批量操作' })
     void this.loadAll({ ...(intent || {}), source, viewStatus })
   },

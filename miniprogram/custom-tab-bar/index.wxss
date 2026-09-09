@@ -64,14 +64,14 @@ button::after {
 .tabbar__add {
   position: fixed;
   right: 0;
-  bottom: calc(54rpx + env(safe-area-inset-bottom));
+  bottom: calc(48rpx + env(safe-area-inset-bottom));
   left: 0;
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100rpx;
-  height: 100rpx;
+  width: 112rpx;
+  height: 112rpx;
   margin: 0 auto;
   overflow: visible;
   background: transparent;
@@ -82,9 +82,10 @@ button::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100rpx;
-  height: 100rpx;
+  width: 112rpx;
+  height: 112rpx;
   border-radius: 50%;
+  border: 4rpx solid #ffffff;
   background: #1f5d49;
   box-shadow: 0 10rpx 22rpx rgba(31, 93, 73, 0.34);
   transition: opacity 120ms ease, transform 120ms ease;
@@ -92,7 +93,7 @@ button::after {
 
 .tabbar__add-plus {
   color: #ffffff;
-  font-size: 58rpx;
+  font-size: 64rpx;
   font-weight: 300;
   line-height: 1;
 }

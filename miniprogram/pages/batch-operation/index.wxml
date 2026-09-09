@@ -1,8 +1,9 @@
 <view class="batch-page page-shell">
   <view class="batch-toolbar">
-    <view>
-      <text class="batch-toolbar__title">{{title}}</text>
-      <text class="batch-toolbar__summary">{{selectedCount ? '已选择 ' + selectedCount + ' 项' : '选择需要处理的物品'}}</text>
+    <text class="batch-toolbar__title">{{title}}</text>
+    <view class="batch-toolbar__filters">
+      <text class="batch-filter">种类：{{categoryLabel}}</text>
+      <text class="batch-filter batch-filter--status">状态：{{statusLabel}}</text>
     </view>
     <button class="select-all" disabled="{{loading || !items.length}}" bindtap="toggleAll" hover-class="pressable--pressed">
       {{allSelected ? '取消全选' : '全选'}}
