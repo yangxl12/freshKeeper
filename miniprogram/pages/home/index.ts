@@ -61,6 +61,8 @@ function emptyMoreSheet(): MoreSheet {
 
 Page({
   data: {
+    headerTop: 48,
+    titleWidth: 200,
     loading: true,
     refreshing: false,
     errorMessage: '',
@@ -81,6 +83,33 @@ Page({
     actionLoading: false,
     quantitySheet: emptyQuantitySheet(),
     moreSheet: emptyMoreSheet(),
+  },
+
+  onLoad() {
+    const windowInfo = wx.getWindowInfo()
+    const capsule = wx.getMenuButtonBoundingClientRect()
+    this.setData({
+      headerTop: capsule.top || (windowInfo.statusBarHeight + 8),
+      titleWidth: capsule.left > 0 ? capsule.left - 36 : windowInfo.windowWidth - 140,
+    })
+  },
+
+  async openListTools() {
+    const result = await wx.showActionSheet({ itemList: ['批量操作', '清除全部筛选'] }).catch(() => null)
+    if (result?.tapIndex === 0) {
+      if (this.data.loading || !this.data.items.length) {
+        wx.showToast({ title: this.data.loading ? '正在加载物品' : '暂无可批量操作的物品', icon: 'none' })
+        return
+      }
+      this.openBatchOperations()
+    }
+    if (result?.tapIndex === 1) this.resetFilters()
+  },
+
+  editMoreItem() {
+    const itemId = this.data.moreSheet.itemId
+    this.closeMore()
+    wx.navigateTo({ url: `/pages/item-form/index?id=${itemId}` })
   },
 
   onShow() {
@@ -273,7 +302,7 @@ Page({
     wx.navigateTo({ url: `/pages/item-form/index?id=${event.detail.itemId}` })
   },
 
-  openQuantity(event: WechatMiniprogram.CustomEvent<{ itemId: string }>) {
+  openQuantity(event: WechatMiniprogram.CustomEvent<{ itemId: string; delta?: number }>) {
     const item = this.findItem(event.detail.itemId)
     if (!item) return
     this.setData({
@@ -282,7 +311,7 @@ Page({
         itemId: item._id,
         name: item.name,
         unit: item.unit,
-        value: String(item.quantity),
+        value: String(stepQuantity(item.quantity, event.detail.delta === 1 ? 1 : event.detail.delta === -1 ? -1 : 0)),
       },
     })
   },

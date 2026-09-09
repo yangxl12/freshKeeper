@@ -13,7 +13,7 @@
       <text class="tabbar__label">首页</text>
     </button>
 
-    <view class="tabbar__add-slot" aria-hidden="true"></view>
+    <view class="tabbar__add-slot"><text class="tabbar__add-label">添加</text></view>
 
     <button
       class="tabbar__item {{selected === 1 ? 'tabbar__item--active' : ''}}"

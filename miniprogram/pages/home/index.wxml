@@ -1,4 +1,11 @@
 <view class="home page-shell">
+  <view class="hero" style="padding-top: {{headerTop}}px;">
+    <view class="hero__leaf hero__leaf--one"></view>
+    <view class="hero__leaf hero__leaf--two"></view>
+    <text class="hero__title" style="max-width: {{titleWidth}}px;">保质记</text>
+    <text class="hero__subtitle">记录食材保质期 · 让每一份食物都不浪费</text>
+    <view class="hero__note"><text>新鲜生活</text><text>从管理开始</text></view>
+  </view>
   <view wx:if="{{errorMessage}}" class="error-banner">
     <text class="error-banner__text">{{errorMessage}}</text>
     <button class="error-banner__action" bindtap="retry" hover-class="pressable--pressed">重试</button>
@@ -16,8 +23,9 @@
       role="button"
       aria-label="在库 {{overview.activeTotal}} 件，查看全部在库物品"
     >
-      <text class="stat-card__label">在库</text>
+      <view class="stat-card__icon stat-card__icon--box" aria-hidden="true"><view></view></view>
       <text class="stat-card__number">{{overview.activeTotal}}</text>
+      <text class="stat-card__label">在库</text>
     </view>
     <view
       class="stat-card stat-card--expiring {{viewStatus === 'expiring' ? 'stat-card--selected' : ''}}"
@@ -27,8 +35,9 @@
       role="button"
       aria-label="临期 {{overview.expiringWithin7Days}} 件，查看临期物品"
     >
-      <text class="stat-card__label">临期</text>
+      <view class="stat-card__icon stat-card__icon--clock" aria-hidden="true"></view>
       <text class="stat-card__number">{{overview.expiringWithin7Days}}</text>
+      <text class="stat-card__label">临期</text>
     </view>
     <view
       class="stat-card stat-card--expired {{viewStatus === 'expired' ? 'stat-card--selected' : ''}}"
@@ -38,8 +47,9 @@
       role="button"
       aria-label="已过期 {{overview.expired}} 件，查看已过期物品"
     >
-      <text class="stat-card__label">已过期</text>
+      <view class="stat-card__icon stat-card__icon--alert" aria-hidden="true">!</view>
       <text class="stat-card__number">{{overview.expired}}</text>
+      <text class="stat-card__label">已过期</text>
     </view>
     <view
       class="stat-card stat-card--used {{viewStatus === 'used_up' ? 'stat-card--selected' : ''}}"
@@ -49,8 +59,9 @@
       role="button"
       aria-label="已用完 {{overview.usedUpTotal}} 件，查看已用完物品"
     >
-      <text class="stat-card__label">已用完</text>
+      <view class="stat-card__icon stat-card__icon--check" aria-hidden="true"></view>
       <text class="stat-card__number">{{overview.usedUpTotal}}</text>
+      <text class="stat-card__label">已用完</text>
     </view>
   </view>
 
@@ -69,8 +80,7 @@
         />
         <button wx:if="{{search}}" class="search-box__clear" bindtap="clearSearch" hover-class="pressable--pressed" aria-label="清空搜索">清空</button>
       </view>
-      <button wx:if="{{hasActiveConditions}}" class="filter-actions__clear" bindtap="resetFilters" hover-class="pressable--pressed">清除全部</button>
-      <button class="library__batch" disabled="{{loading || !items.length}}" bindtap="openBatchOperations" hover-class="pressable--pressed">批量操作</button>
+      <button class="library__tools" bindtap="openListTools" hover-class="pressable--pressed" aria-label="列表工具：批量操作、清除筛选"><view class="sliders"><view></view><view></view><view></view></view></button>
       </view>
 
       <view class="filter-section">
@@ -215,6 +225,7 @@
       <view class="action-sheet__head">
         <text class="action-sheet__title">{{moreSheet.name}}</text>
       </view>
+      <button class="action-sheet__item" bindtap="editMoreItem" hover-class="action-sheet__item--pressed"><text class="action-sheet__label">编辑物品</text></button>
       <button class="action-sheet__item" data-action="complete" bindtap="handleMoreAction" hover-class="action-sheet__item--pressed">
         <view class="action-sheet__icon action-sheet__icon--check" aria-hidden="true"></view>
         <text class="action-sheet__label">标记为已用完</text>

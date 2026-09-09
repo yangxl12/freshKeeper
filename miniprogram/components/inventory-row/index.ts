@@ -25,8 +25,10 @@ Component({
       this.emit('edit')
     },
 
-    handleQuantity() {
-      this.emit('quantity')
+    handleQuantity(event: WechatMiniprogram.CustomEvent) {
+      const item = this.properties.item as CardItem
+      if (!item._id) return
+      this.triggerEvent('quantity', { itemId: item._id, delta: Number(event.currentTarget.dataset.delta) || 0 })
     },
 
     handleMore() {

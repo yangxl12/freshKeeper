@@ -1,5 +1,7 @@
 {
   "navigationBarTitleText": "保质记",
+  "navigationStyle": "custom",
+  "backgroundColor": "#f3f8f6",
   "enablePullDownRefresh": true,
   "backgroundTextStyle": "dark",
   "usingComponents": {
