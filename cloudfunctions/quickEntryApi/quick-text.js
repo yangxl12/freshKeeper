@@ -77,7 +77,7 @@ function parseText(text, today = todayKey()) {
   const items = entries.map(entry => {
     const dateCandidates = extractDates(entry, today)
     const quantity = /([\d一二两三四五六七八九十]+)\s*(公斤|千克|毫升|盒|杯|瓶|袋|包|罐|个|件|支|箱|片|粒|份|桶|克|斤|升)/.exec(entry)
-    const storage = /(?:存放|放)(?:在|到)?\s*([^，,；;。]+)/.exec(entry)
+    const storage = /(?:存放位置|存储位置|位置|存放|放)(?:在|到|为)?\s*[:：]?\s*([^，,；;。]+)/.exec(entry)
     const category = /(?:分类|类别)\s*[:：为]?\s*(食品|药品|日化|其他)/.exec(entry)
     let name = entry
     for (const candidate of dateCandidates) name = name.replace(candidate.rawText, ' ')

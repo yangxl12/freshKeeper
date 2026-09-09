@@ -10,6 +10,15 @@ const today = '2026-09-08'
 const draft = (text: string) => createDraftFromParsed(parseQuickTextLocally(text, today).items[0], 'text')
 
 describe('quick entry product acceptance', () => {
+  it.each(['位置 厨房柜子', '位置：厨房柜子', '存放位置：厨房柜子', '存放在厨房柜子', '放厨房柜子'])('recognizes a labelled storage location: %s', location => {
+    const text = `香蕉，2026年9月14号过期，${location}`
+    const result = parseQuickTextLocally(text, today)
+    expect(result).toEqual(cloudParser.parseText(text, today))
+    expect(result.items).toHaveLength(1)
+    expect(draft(text).fields).toMatchObject({ name: '香蕉', expiryDate: '2026-09-14', storageLocation: '厨房柜子' })
+    expect(draft(text).status).toBe('savable')
+  })
+
   const sentences = [
     '鲜牛奶 2 盒，2026 年 9 月 12 日到期，放冰箱',
     '布洛芬 1 盒，生产日期 2026 年 9 月 1 日，保质期 2 年，放药箱',

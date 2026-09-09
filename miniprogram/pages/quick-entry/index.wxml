@@ -52,23 +52,23 @@
     <view wx:if="{{popup === 'recent'}}" class="entry-sheet__mask" bindtap="requestClosePopup" />
     <view class="{{popup === 'recent' ? 'entry-sheet__panel' : 'inline-entry__panel'}}">
 
-      <scroll-view class="{{popup === 'recent' ? 'entry-sheet__body' : 'inline-entry__body'}}" scroll-y="{{popup === 'recent'}}">
-        <view wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card">
+        <form wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
           <view wx:if="{{features.text || features.voice}}" class="quick-input-row">
-            <textarea class="quick-input" value="{{inputText}}" maxlength="500" auto-height placeholder="一句话录入，例如..." placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
+            <textarea class="quick-input" name="quickText" value="{{inputText}}" maxlength="500" auto-height placeholder="一句话录入，例如..." placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
             <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtouchstart="startVoice" bindtouchmove="moveVoice" bindtouchend="stopVoice" bindtouchcancel="cancelVoice" aria-label="按住说话">
               <text>{{voiceState === 'recording' ? '松开' : '按住说'}}</text>
             </button>
           </view>
           <view class="quick-actions">
-            <button wx:if="{{features.text}}" class="primary-button quick-action" loading="{{recognitionState === 'parsing'}}" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="handleGenerateTap">{{recognitionState === 'parsing' ? '正在生成…' : '生成'}}</button>
+            <button wx:if="{{features.text}}" class="primary-button quick-action" loading="{{recognitionState === 'parsing'}}" disabled="{{saving || recognitionState !== 'idle'}}" form-type="submit">{{recognitionState === 'parsing' ? '正在生成…' : '生成'}}</button>
             <button wx:if="{{features.datePhoto}}" class="photo-button quick-action" disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}" bindtap="chooseDatePhoto">拍日期</button>
           </view>
           <view wx:if="{{voiceState === 'recording'}}" class="quick-entry__notice">{{voiceSeconds}} / 30 秒 · {{voiceCancelling ? '松开取消录音' : '松开识别，移出按钮取消'}}</view>
           <text wx:if="{{features.voice && capabilities.voice}}" class="camera-help">麦克风仅用于识别本次录入内容，转写后可修改文字。</text>
           <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionState === 'transcribing' ? '正在转写语音…' : '正在识别…'}}<button bindtap="cancelRecognition">取消本次识别</button></view>
-        </view>
+        </form>
 
+      <scroll-view class="{{popup === 'recent' ? 'entry-sheet__body' : 'inline-entry__body'}}" scroll-y="{{popup === 'recent'}}">
         <view wx:if="{{photoStage !== 'idle'}}" class="date-camera-panel">
           <text class="section-heading__title">将包装上的日期喷码放入框内</text>
           <text class="camera-help">避开反光、阴影和弯曲边缘，让日期尽量占满画面。</text>

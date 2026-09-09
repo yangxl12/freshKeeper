@@ -58,6 +58,7 @@
 }
 
 .quick-input-card {
+  display: block;
   margin-bottom: 34rpx;
   padding: 24rpx;
   border: 2rpx solid #d5e1db;
@@ -75,7 +76,9 @@
 .inline-photo-button[disabled] { background: #f3f6f4; color: #aab6b1; }
 .feature-hint { display: block; margin-top: 14rpx; color: #9aa7a1; font-size: 22rpx; line-height: 1.5; }
 .quick-actions { display: flex; gap: 16rpx; margin-top: 18rpx; }
-.quick-action { position: static; min-height: 78rpx; flex: 1; margin: 0; padding: 0 16rpx; line-height: 78rpx; }
+/* 微信 button 的边框伪元素绝对定位，必须限制在按钮内，避免覆盖相邻按钮。 */
+.quick-action { position: relative; min-height: 78rpx; flex: 1; margin: 0; padding: 0 16rpx; line-height: 78rpx; }
+.quick-action::after { pointer-events: none; }
 .photo-button { border: 2rpx solid #b8cec3; border-radius: 14rpx; background: #f4f9f6; color: #1f5d49; font-size: 27rpx; }
 .photo-preview { width: 100%; height: 220rpx; margin-top: 18rpx; border-radius: 14rpx; background: #eef2ef; }
 .notice-retry { display: inline-block; margin-left: 18rpx; padding: 0 18rpx; border: 2rpx solid #d5b77f; border-radius: 10rpx; background: transparent; color: #7a582d; font-size: 23rpx; line-height: 52rpx; }

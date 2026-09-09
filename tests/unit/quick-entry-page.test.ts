@@ -64,6 +64,56 @@ function completeDraft(name: string) {
 }
 
 describe('quick entry page compatibility', () => {
+  it('generates from the native form value even before the textarea input event arrives', async () => {
+    const page = pageInstance()
+    const text = '香蕉，2026年9月14号过期，位置 厨房柜子'
+    parseMock.mockResolvedValueOnce(parseQuickTextLocally(text, '2026-09-09'))
+    await page.handleGenerateSubmit({ detail: { value: { quickText: text } } })
+    expect(parseMock).toHaveBeenCalledWith(text)
+    expect(page.data.inputText).toBe(text)
+    expect(page.data.drafts[0].fields).toMatchObject({ name: '香蕉', expiryDate: '2026-09-14', storageLocation: '厨房柜子' })
+    expect(page.data.selectableCount).toBe(1)
+  })
+
+  it('does not submit stale page text after the native textarea was cleared', async () => {
+    const page = pageInstance()
+    page.data.inputText = '香蕉明天过期'
+    await page.handleGenerateSubmit({ detail: { value: { quickText: '' } } })
+    expect(parseMock).not.toHaveBeenCalled()
+    expect(page.data.inputError).toBe('请输入物品和日期')
+  })
+
+  it('keeps generation alive when the textarea repeats its unchanged value', async () => {
+    const page = pageInstance()
+    const text = '香蕉，2026年9月14号过期，位置 厨房柜子'
+    page.handleQuickTextInput({ detail: { value: text } })
+    let resolve!: (value: unknown) => void
+    parseMock.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const pending = page.handleGenerateTap()
+    page.handleQuickTextInput({ detail: { value: text } })
+    resolve(parseQuickTextLocally(text, '2026-09-09'))
+    await pending
+    expect(page.data.drafts).toHaveLength(1)
+    expect(page.data.drafts[0].fields).toMatchObject({ name: '香蕉', expiryDate: '2026-09-14', storageLocation: '厨房柜子' })
+    expect(page.data.recognitionState).toBe('idle')
+    expect(page.pendingRecognition).toBe(false)
+  })
+
+  it('cancels on an actual edit and immediately removes the loading mask', async () => {
+    const page = pageInstance()
+    page.data.inputText = '香蕉明天过期'
+    let resolve!: (value: unknown) => void
+    parseMock.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const pending = page.handleGenerateTap()
+    page.handleQuickTextInput({ detail: { value: '香蕉后天过期' } })
+    expect(page.pendingRecognition).toBe(false)
+    expect(wx.hideLoading).toHaveBeenCalled()
+    resolve(parseQuickTextLocally('香蕉明天过期', '2026-09-09'))
+    await pending
+    expect(page.data.drafts).toHaveLength(0)
+    expect(page.data.inputText).toBe('香蕉后天过期')
+  })
+
   it('ignores a late parse response after recognition cancellation', async () => {
     const page = pageInstance()
     page.data.inputText = '牛奶明天到期'

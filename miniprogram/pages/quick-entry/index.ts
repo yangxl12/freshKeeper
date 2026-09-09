@@ -143,6 +143,7 @@ Page({
   onHide() { this.cancelVoice() },
 
   cancelRecognition() {
+    if (this.data.recognitionState !== 'idle') wx.hideLoading?.()
     this.recognitionId += 1
     this.pendingRecognition = false
     this.setData({ recognitionState: 'idle', voiceState: 'idle' })
@@ -276,12 +277,25 @@ Page({
   },
 
   handleQuickTextInput(event: WechatMiniprogram.Input) {
+    // 原文没有变化的重复事件不应让正在生成的结果作废。
+    if (event.detail.value === this.data.inputText) return
     if (this.data.recognitionState === 'parsing' || this.data.recognitionState === 'transcribing') this.cancelRecognition()
     this.setData({ inputText: event.detail.value, inputError: '' }, () => this.syncUnloadPrompt())
   },
 
   handleGenerateTap() {
     return this.generateDrafts('text')
+  },
+
+  handleGenerateSubmit(event: WechatMiniprogram.CustomEvent) {
+    // 使用原生表单快照，避免手机键盘尚未收起时读取到旧的 inputText。
+    const text = event.detail.value?.quickText
+    if (typeof text !== 'string') {
+      this.setData({ inputError: '未获取到输入内容，请重试' })
+      return
+    }
+    this.handleQuickTextInput({ detail: { value: text } } as WechatMiniprogram.Input)
+    return this.handleGenerateTap()
   },
 
   async generateDrafts(sourceOrEvent: Extract<QuickEntrySource, 'text' | 'voice'> | WechatMiniprogram.BaseEvent = 'text') {
@@ -315,8 +329,8 @@ Page({
       this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
       track('quick_parse_result', { result: 'failed', durationMs: Date.now() - startedAt, failureCode: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
     } finally {
-      wx.hideLoading?.()
       if (recognitionId === this.recognitionId) {
+        wx.hideLoading?.()
         this.pendingRecognition = false
         this.setData({ recognitionState: 'idle', voiceState: 'idle' })
       }
