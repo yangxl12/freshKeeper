@@ -586,6 +586,10 @@ Page({
 
   chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
+    if (this.data.photoStage !== 'idle') {
+      this.closePhoto()
+      return
+    }
     const index = event?.currentTarget?.dataset?.index
     const target = index == null ? undefined : this.data.drafts[Number(index)]
     if (target && ['saved', 'saving', 'failed'].includes(target.status)) return

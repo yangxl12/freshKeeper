@@ -60,7 +60,7 @@
             <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
               <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
             </button>
-                <button wx:if="{{features.datePhoto}}" class="photo-button" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="chooseDatePhoto" aria-label="拍摄日期">
+                <button wx:if="{{features.datePhoto}}" class="photo-button {{photoStage !== 'idle' ? 'photo-button--active' : ''}}" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="chooseDatePhoto" aria-label="{{photoStage !== 'idle' ? '收起拍日期' : '拍摄日期'}}">
                   <view class="line-icon line-icon--date-scan" aria-hidden="true"></view>
                 </button>
               </view>
