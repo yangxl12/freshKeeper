@@ -80,7 +80,8 @@
         />
         <button wx:if="{{search}}" class="search-box__clear" bindtap="clearSearch" hover-class="pressable--pressed" aria-label="清空搜索">清空</button>
       </view>
-      <button class="library__tools" bindtap="openListTools" hover-class="pressable--pressed" aria-label="列表工具：批量操作、清除筛选"><view class="sliders"><view></view><view></view><view></view></view></button>
+      <button class="query-action query-action--reset" disabled="{{!search && !hasActiveConditions && sort === 'expiry_asc'}}" bindtap="resetFilters" hover-class="pressable--pressed" aria-label="清除搜索、筛选并恢复默认排序">清除筛选</button>
+      <button class="query-action query-action--batch" disabled="{{loading || !items.length}}" bindtap="openBatchOperations" hover-class="pressable--pressed">批量操作</button>
       </view>
 
       <view class="filter-section">

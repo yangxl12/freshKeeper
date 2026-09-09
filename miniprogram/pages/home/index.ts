@@ -94,18 +94,6 @@ Page({
     })
   },
 
-  async openListTools() {
-    const result = await wx.showActionSheet({ itemList: ['批量操作', '清除全部筛选'] }).catch(() => null)
-    if (result?.tapIndex === 0) {
-      if (this.data.loading || !this.data.items.length) {
-        wx.showToast({ title: this.data.loading ? '正在加载物品' : '暂无可批量操作的物品', icon: 'none' })
-        return
-      }
-      this.openBatchOperations()
-    }
-    if (result?.tapIndex === 1) this.resetFilters()
-  },
-
   editMoreItem() {
     const itemId = this.data.moreSheet.itemId
     this.closeMore()
