@@ -68,7 +68,7 @@
 }
 
 .quick-input-row { display: flex; align-items: flex-end; gap: 16rpx; }
-.quick-input { box-sizing: border-box; min-height: 118rpx; flex: 1; padding: 20rpx; border: 2rpx solid #dde5e0; border-radius: 14rpx; color: #173b31; font-size: 27rpx; line-height: 1.5; }
+.quick-input { box-sizing: border-box; min-height: 144rpx; flex: 1; padding: 20rpx; border: 2rpx solid #dde5e0; border-radius: 14rpx; color: #173b31; font-size: 27rpx; line-height: 1.5; }
 .voice-button { width: 118rpx; min-height: 82rpx; padding: 0 12rpx; border-radius: 14rpx; background: #eef6f1; color: #1f5d49; font-size: 23rpx; line-height: 82rpx; }
 .voice-button--recording { background: #b84a3e; color: #ffffff; }
 .voice-button[disabled] { background: #f0f3f1; color: #aab6b1; }

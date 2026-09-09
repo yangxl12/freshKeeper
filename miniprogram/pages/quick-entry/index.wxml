@@ -54,7 +54,7 @@
 
         <form wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
           <view wx:if="{{features.text || features.voice}}" class="quick-input-row">
-            <textarea class="quick-input" name="quickText" value="{{inputText}}" maxlength="500" auto-height placeholder="一句话录入，例如..." placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
+            <textarea class="quick-input" name="quickText" value="{{inputText}}" maxlength="500" auto-height placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
             <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtouchstart="startVoice" bindtouchmove="moveVoice" bindtouchend="stopVoice" bindtouchcancel="cancelVoice" aria-label="按住说话">
               <text>{{voiceState === 'recording' ? '松开' : '按住说'}}</text>
             </button>
