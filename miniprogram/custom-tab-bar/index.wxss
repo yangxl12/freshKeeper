@@ -85,9 +85,9 @@ button::after {
   width: 112rpx;
   height: 112rpx;
   border-radius: 50%;
-  border: 4rpx solid #ffffff;
+  border: 7rpx solid #ffffff;
   background: #1f5d49;
-  box-shadow: 0 10rpx 22rpx rgba(31, 93, 73, 0.34);
+  box-shadow: none;
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
