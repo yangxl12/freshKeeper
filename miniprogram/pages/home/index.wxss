@@ -3,28 +3,6 @@
   padding-bottom: calc(174rpx + env(safe-area-inset-bottom));
 }
 
-.home__brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.home__brand-title {
-  display: block;
-  color: #173b31;
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 44rpx;
-  font-weight: 700;
-  line-height: 1.25;
-}
-
-.home__brand-sub {
-  display: block;
-  margin-top: 6rpx;
-  color: #84918b;
-  font-size: 22rpx;
-}
-
 .error-banner {
   display: flex;
   align-items: center;
@@ -135,26 +113,15 @@
 /* 库存区域 */
 .library { margin-top: 34rpx; }
 
-.library__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 4rpx 4rpx;
-}
-
-.library__title {
-  color: #173b31;
-  font-size: 30rpx;
-  font-weight: 700;
-}
-
 .library__batch {
+  display: block;
+  width: 100%;
   min-height: 58rpx;
-  margin: 0;
-  padding: 0 20rpx;
-  border: 2rpx solid #cbd8d2;
-  border-radius: 999rpx;
-  background: #ffffff;
+  margin: 12rpx 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10rpx;
+  background: #eef5f1;
   color: #1f5d49;
   font-size: 22rpx;
   font-weight: 600;
@@ -164,55 +131,55 @@
 .library__batch[disabled] { opacity: 0.4; }
 
 .query-panel {
-  margin-top: 16rpx;
-  padding: 22rpx 22rpx 20rpx;
-  border: 2rpx solid #e3eae6;
-  border-radius: 22rpx;
-  background: #ffffff;
-  box-shadow: 0 8rpx 22rpx rgba(23, 59, 49, 0.045);
+  margin-top: 0;
+  padding: 0;
 }
+
+.query-top { display: flex; align-items: center; gap: 14rpx; }
 
 .search-box {
   display: flex;
+  flex: 1;
   align-items: center;
   box-sizing: border-box;
-  height: 82rpx;
+  height: 64rpx;
   padding-left: 20rpx;
   border: 2rpx solid #dde6e1;
   border-radius: 999rpx;
-  background: #f7faf8;
+  background: #f5f8f6;
 }
 
 .search-box__icon { margin-right: 12rpx; color: #718079; }
-.search-box__input { min-width: 0; height: 78rpx; flex: 1; color: #173b31; font-size: 27rpx; }
+.search-box__input { min-width: 0; height: 60rpx; flex: 1; color: #173b31; font-size: 24rpx; }
 .search-box__placeholder { color: #84918b; }
 
 .search-box__clear {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 82rpx;
-  height: 82rpx;
+  width: 64rpx;
+  height: 60rpx;
   padding: 0;
   background: transparent;
   color: #84918b;
 }
 
-.filter-section { margin-top: 20rpx; }
+.filter-section { display: flex; align-items: center; margin-top: 10rpx; }
 
 .filter-section__label {
-  display: block;
-  margin-bottom: 10rpx;
+  flex: 0 0 56rpx;
+  margin-right: 10rpx;
   color: #68766f;
-  font-size: 21rpx;
+  font-size: 20rpx;
   font-weight: 600;
   letter-spacing: 0.08em;
 }
 
 .filter-grid {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8rpx;
+  gap: 6rpx;
 }
 
 .filter-grid--quad {
@@ -223,16 +190,16 @@
   overflow: hidden;
   box-sizing: border-box;
   min-width: 0;
-  height: 74rpx;
+  height: 54rpx;
   margin: 0;
   padding: 0 2rpx;
   border: 2rpx solid #e3eae6;
-  border-radius: 14rpx;
-  background: #ffffff;
+  border-radius: 8rpx;
+  background: transparent;
   color: #62716a;
-  font-size: 22rpx;
+  font-size: 20rpx;
   font-weight: 500;
-  line-height: 70rpx;
+  line-height: 50rpx;
   text-overflow: clip;
   white-space: nowrap;
 }
@@ -249,19 +216,8 @@
   transform: scale(0.97);
 }
 
-.filter-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 60rpx;
-  margin-top: 14rpx;
-  padding-top: 10rpx;
-  border-top: 2rpx solid #edf1ee;
-}
-
-.filter-actions__hint { color: #84918b; font-size: 21rpx; }
-
 .filter-actions__clear {
+  flex: 0 0 auto;
   min-width: 112rpx;
   height: 60rpx;
   margin: 0;
@@ -270,7 +226,7 @@
   color: #1f5d49;
   font-size: 23rpx;
   font-weight: 600;
-  line-height: 60rpx;
+  line-height: 56rpx;
 }
 
 .item-list { margin-top: 22rpx; }

@@ -1,11 +1,4 @@
 <view class="home page-shell">
-  <view class="home__brand">
-    <view>
-      <text class="home__brand-title">保质记</text>
-      <text class="home__brand-sub">{{overview ? '共 ' + overview.activeTotal + ' 件在库' : '正在整理你的物品'}}</text>
-    </view>
-  </view>
-
   <view wx:if="{{errorMessage}}" class="error-banner">
     <text class="error-banner__text">{{errorMessage}}</text>
     <button class="error-banner__action" bindtap="retry" hover-class="pressable--pressed">重试</button>
@@ -62,17 +55,8 @@
   </view>
 
   <view class="library">
-    <view class="library__head">
-      <text class="library__title">物品清单</text>
-      <button
-        class="library__batch"
-        disabled="{{loading || !items.length}}"
-        bindtap="openBatchOperations"
-        hover-class="pressable--pressed"
-      >批量操作</button>
-    </view>
-
     <view class="query-panel">
+      <view class="query-top">
       <view class="search-box">
         <view class="line-icon line-icon--search search-box__icon" aria-hidden="true"></view>
         <input
@@ -83,9 +67,9 @@
           confirm-type="search"
           bindinput="handleSearchInput"
         />
-        <button wx:if="{{search}}" class="search-box__clear" bindtap="clearSearch" hover-class="pressable--pressed" aria-label="清空搜索">
-          <view class="line-icon line-icon--close" aria-hidden="true"></view>
-        </button>
+        <button wx:if="{{search}}" class="search-box__clear" bindtap="clearSearch" hover-class="pressable--pressed" aria-label="清空搜索">清空</button>
+      </view>
+      <button wx:if="{{hasActiveConditions}}" class="filter-actions__clear" bindtap="resetFilters" hover-class="pressable--pressed">清除全部</button>
       </view>
 
       <view class="filter-section">
@@ -139,11 +123,9 @@
         </view>
       </view>
 
-      <view wx:if="{{hasActiveConditions}}" class="filter-actions">
-        <text class="filter-actions__hint">搜索、筛选与排序同时生效</text>
-        <button class="filter-actions__clear" bindtap="resetFilters" hover-class="pressable--pressed">清除全部</button>
-      </view>
     </view>
+
+    <button class="library__batch" disabled="{{loading || !items.length}}" bindtap="openBatchOperations" hover-class="pressable--pressed">批量操作</button>
 
     <view wx:if="{{listErrorMessage}}" class="error-banner error-banner--list">
       <text class="error-banner__text">{{listErrorMessage}}</text>
