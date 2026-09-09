@@ -274,18 +274,23 @@ async function listInventory(ownerId, event) {
 
   let where = command.and(conditions)
   if (search) {
-    // 名称与存放位置任一命中即可，小写输入框同时匹配两者
+    // 名称与存放位置任一命中即可；同时覆盖历史记录和位置中文标签。
     const keyword = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
     where = command.and([
       where,
-      command.or([{ searchName: keyword }, { storageLocation: keyword }]),
+      command.or([
+        { name: keyword },
+        { searchName: keyword },
+        { storageLocation: keyword },
+        ...Object.entries(STORAGE_LABELS)
+          .filter(([, label]) => label.toLocaleLowerCase('zh-CN').includes(search))
+          .map(([value]) => ({ storageLocation: value })),
+      ]),
     ])
   }
 
   let query = db.collection(ITEMS).where(where)
-  if (viewStatus === 'used_up' && sort !== 'created_asc' && sort !== 'created_desc') {
-    query = query.orderBy('completedAt', 'desc')
-  } else if (sort === 'created_asc' || sort === 'created_desc') {
+  if (sort === 'created_asc' || sort === 'created_desc') {
     query = query.orderBy('createdAt', sort === 'created_asc' ? 'asc' : 'desc')
   } else {
     query = query
