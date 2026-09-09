@@ -18,10 +18,10 @@ const LOCAL_TEXT_FALLBACK_CODES = new Set([
   'QUICK_ENTRY_TIMEOUT',
 ])
 
-const RECENT_FALLBACK_PAGE_SIZE = 30
+const RECENT_FALLBACK_PAGE_SIZE = 100
 
 /** 旧部署没有 listRecentProfiles 时，用现有库存列表本地归并，保证最近使用可用。 */
-async function listRecentProfilesFromInventory(): Promise<{ items: RecentItemProfile[] }> {
+async function listRecentProfilesFromInventory(limit: number): Promise<{ items: RecentItemProfile[] }> {
   const result = await callCloud<{ items: InventoryItem[] }>('inventoryApi', {
     action: 'listInventory',
     search: '',
@@ -29,17 +29,18 @@ async function listRecentProfilesFromInventory(): Promise<{ items: RecentItemPro
     viewStatus: 'active_all',
     sort: 'created_desc',
     cursor: null,
-    pageSize: RECENT_FALLBACK_PAGE_SIZE,
+    pageSize: Math.min(RECENT_FALLBACK_PAGE_SIZE, limit),
   })
-  return { items: recentProfilesFromItems(result.items || []) }
+  return { items: recentProfilesFromItems(result.items || [], limit) }
 }
 
-export async function listRecentProfiles(): Promise<{ items: RecentItemProfile[] }> {
+export async function listRecentProfiles(limit = 100): Promise<{ items: RecentItemProfile[] }> {
   try {
-    return await callCloud<{ items: RecentItemProfile[] }>('inventoryApi', { action: 'listRecentProfiles' })
+    const result = await callCloud<{ items: RecentItemProfile[] }>('inventoryApi', { action: 'listRecentProfiles' })
+    return { items: result.items.slice(0, limit) }
   } catch (error) {
     if (!(error instanceof CloudServiceError) || error.code !== 'INVALID_ACTION') throw error
-    return listRecentProfilesFromInventory()
+    return listRecentProfilesFromInventory(limit)
   }
 }
 

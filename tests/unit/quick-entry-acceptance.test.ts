@@ -96,7 +96,14 @@ describe('quick entry product acceptance', () => {
     const active = [...Array.from({ length: 30 }, (_, i) => ({ name: '牛奶', updatedAt: new Date(2026, 8, 30, 0, 0, -i) })), { name: '新面包', updatedAt: new Date(2026, 8, 29) }]
     const used = Array.from({ length: 6 }, (_, i) => ({ name: `旧物品${i}`, updatedAt: new Date(2020, 0, 6 - i) }))
     const result = await readRecentProfiles(async (status: string, offset: number, limit: number) => (status === 'active' ? active : used).slice(offset, offset + limit))
-    expect(result.items.map((item: { name: string }) => item.name)).toEqual(['牛奶', '新面包', '旧物品0', '旧物品1', '旧物品2', '旧物品3'])
+    expect(result.items.map((item: { name: string }) => item.name)).toEqual([
+      '牛奶', '新面包', '旧物品0', '旧物品1', '旧物品2', '旧物品3', '旧物品4', '旧物品5',
+    ])
+  })
+  it('caps the recent list at the configured limit', () => {
+    const rows = Array.from({ length: 130 }, (_, i) => ({ name: `物品${i}`, updatedAt: new Date(2026, 0, 1, 0, 0, 130 - i) }))
+    expect(mergeRecentItems(rows)).toHaveLength(100)
+    expect(mergeRecentItems(rows, 3).map((item: { name: string }) => item.name)).toEqual(['物品0', '物品1', '物品2'])
   })
   it('rejects out-of-range calculated expiry before enabling save', () => {
     const item = draft('面包生产日期2200-12-31，保质期1年')

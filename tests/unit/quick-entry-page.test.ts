@@ -27,7 +27,19 @@ let quickEntryPage: Record<string, unknown>
 const originalWx = globalThis.wx
 beforeEach(() => {
   vi.clearAllMocks()
-  globalThis.wx = { setNavigationBarTitle: vi.fn(), pageScrollTo: vi.fn(), enableAlertBeforeUnload: vi.fn(), disableAlertBeforeUnload: vi.fn(), showToast: vi.fn(), navigateBack: vi.fn(), navigateTo: vi.fn(), reportAnalytics: vi.fn() } as never
+  globalThis.wx = {
+    setNavigationBarTitle: vi.fn(),
+    pageScrollTo: vi.fn(),
+    enableAlertBeforeUnload: vi.fn(),
+    disableAlertBeforeUnload: vi.fn(),
+    showToast: vi.fn(),
+    showLoading: vi.fn(),
+    hideLoading: vi.fn(),
+    showModal: vi.fn(),
+    navigateBack: vi.fn(),
+    navigateTo: vi.fn(),
+    reportAnalytics: vi.fn(),
+  } as never
 })
 
 beforeAll(async () => {
@@ -130,25 +142,58 @@ describe('quick entry page compatibility', () => {
     expect(page.data.drafts[0].status).toBe('savable')
     expect(page.data.drafts[0].confirmationFields).toEqual([])
   })
-  it('pauses the unload prompt during manual handoff and restores it on return', () => {
-    const originalApp = globalThis.getApp
-    const app = { globalData: { pendingQuickFormDraft: null } }
-    globalThis.getApp = (() => app) as never
-    try {
-      const page = pageInstance()
-      page.data.inputText = '原文仍保留'
-      page.commitDrafts([completeDraft('牛奶')])
-      page.continueManual()
-      vi.mocked(wx.enableAlertBeforeUnload).mockClear()
-      page.syncUnloadPrompt()
-      expect(wx.enableAlertBeforeUnload).not.toHaveBeenCalled()
-      expect(wx.disableAlertBeforeUnload).toHaveBeenCalled()
-      expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({ url: '/pages/item-form/index?source=quick-entry' }))
-      expect(app.globalData.pendingQuickFormDraft).toMatchObject({ name: '牛奶' })
-      page.onShow()
-      expect(wx.enableAlertBeforeUnload).toHaveBeenLastCalledWith({ message: '放弃本次录入？' })
-      expect(page.data.inputText).toBe('原文仍保留')
-    } finally { globalThis.getApp = originalApp }
+  it('switches to the full form tab instead of leaving the page during manual handoff', () => {
+    const page = pageInstance()
+    const applied: unknown[][] = []
+    page.selectComponent = () => ({ applyPrefill: (...args: unknown[]) => applied.push(args) })
+    page.data.popup = 'recent'
+    page.commitDrafts([completeDraft('牛奶')])
+    page.continueManual()
+    expect(wx.navigateTo).not.toHaveBeenCalled()
+    expect(page.data.activeTab).toBe('full')
+    expect(page.data.fullMounted).toBe(true)
+    expect(page.data.popup).toBe('none')
+    expect(page.data.drafts).toHaveLength(0)
+    expect(applied[0][0]).toMatchObject({ name: '牛奶' })
+    vi.mocked(wx.enableAlertBeforeUnload).mockClear()
+    page.syncUnloadPrompt()
+    expect(wx.enableAlertBeforeUnload).not.toHaveBeenCalled()
+  })
+
+  it('always produces a draft so a tapping generate never looks dead', async () => {
+    const page = pageInstance()
+    page.data.inputText = '请问今天天气怎么样'
+    parseMock.mockRejectedValueOnce(new CloudServiceError('CLOUD_CALL_FAILED', '服务暂时不可用'))
+    await page.generateDrafts()
+    expect(page.data.drafts).toHaveLength(1)
+    expect(page.data.drafts[0].fields.name).toBe('请问今天天气怎么样')
+    expect(page.data.inputError).toContain('没识别出明确信息')
+    expect(page.data.recognitionState).toBe('idle')
+  })
+
+  it('recovers when a previous recognition left the page busy', async () => {
+    const page = pageInstance()
+    page.data.inputText = '牛奶明天到期'
+    page.data.recognitionState = 'parsing'
+    page.data.voiceState = 'recording'
+    parseMock.mockResolvedValueOnce(parseQuickTextLocally(page.data.inputText, '2026-09-08'))
+    await page.generateDrafts()
+    expect(page.data.drafts).toHaveLength(1)
+    expect(page.data.drafts[0].fields.expiryDate).toBe('2026-09-09')
+    expect(page.data.recognitionState).toBe('idle')
+  })
+
+  it('opens the text sheet and resets it between sessions', () => {
+    const page = pageInstance()
+    page.openTextPopup()
+    expect(page.data.popup).toBe('text')
+    expect(page.data.inputText).toBe('')
+    const draft = completeDraft('牛奶')
+    draft.status = 'saved'
+    page.commitDrafts([draft])
+    page.closePopup()
+    expect(page.data.popup).toBe('none')
+    expect(page.data.drafts).toHaveLength(0)
   })
   it('keeps local text entry visible when remote recognition is not configured', async () => {
     listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
@@ -204,6 +249,7 @@ describe('quick entry page compatibility', () => {
     expect(page.data.recentProfiles).toHaveLength(1)
 
     page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
+    expect(page.data.popup).toBe('recent')
     expect(page.data.drafts).toHaveLength(1)
     expect(page.data.drafts[0].status).toBe('needs_input')
 
@@ -215,7 +261,10 @@ describe('quick entry page compatibility', () => {
     saveMock.mockResolvedValue({ itemId: 'milk' })
     await page.saveDrafts()
     expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ name: '鲜牛奶', expiryDate: '2026-09-20' }), expect.objectContaining({ idempotencyKey: expect.any(String) }))
-    expect(page.data.drafts[0].status).toBe('saved')
+    // 全部入库后弹窗关闭、草稿清空，同时刷新最近录入
+    expect(page.data.popup).toBe('none')
+    expect(page.data.drafts).toHaveLength(0)
+    expect(listRecentProfilesMock).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the recent list usable and appends drafts instead of replacing them', () => {

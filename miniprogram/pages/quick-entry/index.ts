@@ -8,6 +8,7 @@ import {
   getDraftSummary,
   getExpirySummary,
   normalizeRecentName,
+  parseQuickTextLocally,
   refreshDraftValidation,
 } from '../../domain/quick-entry'
 import { getErrorMessage, CloudServiceError } from '../../services/cloud-client'
@@ -23,13 +24,15 @@ import {
 } from '../../services/quick-entry-service'
 import { getSettings } from '../../services/settings-service'
 import type { ShelfLifeUnit } from '../../types/inventory'
-import type { QuickEntryDraft, QuickEntryDraftFields, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
+import type { QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
 import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
 import { todayKey } from '../../domain/quick-text'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
 const MAX_DRAFTS = 5
+/** 最近录入最多展示条目数，超过后不再继续拉取。 */
+const MAX_RECENT_PROFILES = 100
 let recorderManager: WechatMiniprogram.RecorderManager | null = null
 let recorderBound = false
 let activePage: any = null
@@ -60,6 +63,11 @@ function bindRecorder(page: any) {
   recorderBound = true
 }
 
+/** 识别不到结构化结果时的兜底名称，保证用户始终能看到一条可编辑草稿。 */
+function fallbackDraftName(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, 40)
+}
+
 Page({
   data: {
     today: todayKey(),
@@ -73,6 +81,10 @@ Page({
     loadingError: '',
     inputError: '',
     inputText: '',
+    activeTab: 'quick' as 'quick' | 'full',
+    fullMounted: false,
+    popup: 'none' as 'none' | 'text' | 'recent',
+    recentLimit: MAX_RECENT_PROFILES,
     recentProfiles: [] as RecentItemProfile[],
     drafts: [] as QuickEntryDraft[],
     draftSummaries: [] as string[],
@@ -113,12 +125,13 @@ Page({
   savedCount: 0,
   manualHandoff: false,
   exitOnShow: false,
+  pendingRecognition: false,
   voiceTimer: null as ReturnType<typeof setInterval> | null,
   voiceBounds: null as { left: number; right: number; top: number; bottom: number } | null,
 
   onShow() {
     this.manualHandoff = false
-    wx.setNavigationBarTitle({ title: '快速录入' })
+    wx.setNavigationBarTitle({ title: '物品录入' })
     if (this.exitOnShow) { wx.disableAlertBeforeUnload?.(); wx.navigateBack(); return }
     activePage = this
     this.setData({ today: todayKey() })
@@ -129,16 +142,17 @@ Page({
 
   cancelRecognition() {
     this.recognitionId += 1
+    this.pendingRecognition = false
     this.setData({ recognitionState: 'idle', voiceState: 'idle' })
   },
 
   async preparePage() {
     const [recentResult, capabilityResult, settingsResult] = await Promise.allSettled([
-      QUICK_ENTRY_FEATURES.recent ? listRecentProfiles() : Promise.resolve({ items: [] }),
+      QUICK_ENTRY_FEATURES.recent ? listRecentProfiles(MAX_RECENT_PROFILES) : Promise.resolve({ items: [] }),
       getQuickEntryCapabilities(),
       getSettings(),
     ])
-    const recentProfiles = recentResult.status === 'fulfilled' ? recentResult.value.items : []
+    const recentProfiles = (recentResult.status === 'fulfilled' ? recentResult.value.items : []).slice(0, MAX_RECENT_PROFILES)
     const capabilities = capabilityResult.status === 'fulfilled'
       ? capabilityResult.value
       : { text: false, voice: false, datePhoto: false }
@@ -151,17 +165,16 @@ Page({
         ? '快速录入服务尚未更新，请先使用完整填写'
         : '最近物品暂时不可用，可重试或直接完整填写'
       : ''
-    if (!recentProfiles.length && !features.text && !features.voice && !features.datePhoto && !loadingError) {
-      this.openManual()
-      return
-    }
     this.setData({ loading: false, recentProfiles, features, capabilities: { ...capabilities, text: true }, defaultReminderLeadDays, loadingError })
+    if (!recentProfiles.length && !features.text && !features.voice && !features.datePhoto && !loadingError) {
+      this.openFullTab()
+    }
   },
 
   async loadRecentProfiles() {
     try {
-      const result = await listRecentProfiles()
-      this.setData({ loading: false, recentProfiles: result.items, loadingError: '' })
+      const result = await listRecentProfiles(MAX_RECENT_PROFILES)
+      this.setData({ loading: false, recentProfiles: result.items.slice(0, MAX_RECENT_PROFILES), loadingError: '' })
     } catch (error) {
       this.setData({
         loading: false,
@@ -175,6 +188,66 @@ Page({
   retryRecent() {
     this.setData({ loadingError: '' })
     void this.loadRecentProfiles()
+  },
+
+  switchTab(event: WechatMiniprogram.BaseEvent) {
+    const tab = event.currentTarget.dataset.tab as 'quick' | 'full'
+    if (!tab || tab === this.data.activeTab) return
+    if (this.data.saving && tab === 'full') return
+    if (tab === 'full') this.openFullTab()
+    else {
+      this.cancelVoice()
+      this.setData({ activeTab: 'quick' })
+    }
+  },
+
+  openFullTab() {
+    this.cancelVoice()
+    track('quick_entry_switch_tab', { tab: 'full' })
+    this.setData({ activeTab: 'full', fullMounted: true })
+  },
+
+  handleFullFormSaved(event: WechatMiniprogram.CustomEvent) {
+    const detail = event.detail as unknown as { restoring: boolean; name: string }
+    wx.disableAlertBeforeUnload?.()
+    wx.showToast({ title: detail.restoring ? '已重新入库' : '已加入库存', icon: 'success' })
+    this.withForm((form) => form.resetEntry())
+    void this.loadRecentProfiles()
+  },
+
+  /** 组件首次渲染后 selectComponent 才可用，失败时退到下一帧再取一次。 */
+  withForm(consumer: (form: any) => void) {
+    const form = this.selectComponent?.('#fullForm')
+    if (form) {
+      consumer(form as any)
+      return
+    }
+    setTimeout(() => {
+      const retry = this.selectComponent?.('#fullForm')
+      if (retry) consumer(retry as any)
+    }, 40)
+  },
+
+  openTextPopup() {
+    if (this.data.saving) return
+    this.cancelVoice()
+    const drafts = this.data.drafts.filter((draft) => draft.status === 'saved')
+    this.setData({ popup: 'text', inputText: '', inputError: '', saveSummary: '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false }, () => {
+      this.commitDrafts(drafts)
+      track('quick_entry_open_text_sheet')
+    })
+  },
+
+  closePopup() {
+    this.cancelRecognition()
+    this.cancelVoice()
+    this.setData({ popup: 'none', inputText: '', inputError: '', saveSummary: '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
+    this.commitDrafts([])
+  },
+
+  requestClosePopup() {
+    if (this.data.saving) return
+    this.closePopup()
   },
 
   commitDrafts(drafts: QuickEntryDraft[]) {
@@ -211,49 +284,92 @@ Page({
       this.setData({ inputError: '请输入物品和日期' })
       return
     }
-    if (this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle' || this.data.saving) return
+    if (this.pendingRecognition || this.data.saving) return
+    // 上一次识别异常中断留下状态时再点会完全没反应，这里先自愈。
+    if (this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') this.cancelRecognition()
     if (this.data.drafts.some(draft => draft.status !== 'saved')) {
       const replace = await new Promise<boolean>(resolve => wx.showModal({ title: '重新生成草稿？', content: '当前未保存草稿将被替换，原文仍会保留。', success: result => resolve(result.confirm), fail: () => resolve(false) }))
       if (!replace) return
     }
     const recognitionId = ++this.recognitionId
+    this.pendingRecognition = true
     this.setData({ recognitionState: 'parsing', inputError: '' })
     const startedAt = Date.now()
+    wx.showLoading?.({ title: '正在生成…', mask: true })
     try {
-      const result = await parseQuickText(text)
+      const built = await this.buildDraftsFromText(text, source)
       if (recognitionId !== this.recognitionId) return
-      const drafts = result.items.map((item) => {
-        const itemName = typeof item.name === 'string' ? normalizeRecentName(item.name) : ''
-        const recent = itemName ? this.data.recentProfiles.find((profile) => normalizeRecentName(profile.name) === itemName) : undefined
-        return createDraftFromParsed(item, source, this.data.defaultReminderLeadDays, recent, { kind: 'text', sourceText: text })
-      })
-      this.setData({ recognitionState: 'idle', saveSummary: '' })
-      this.commitDrafts(drafts)
-      this.setData({ focusNameId: drafts.find(draft => !draft.fields.name)?.draftId || '' })
-      track('quick_parse_result', { result: 'success', durationMs: Date.now() - startedAt, draftCount: drafts.length })
-      wx.pageScrollTo({ selector: '#draft-area', duration: 220 })
+      this.setData({ recognitionState: 'idle', saveSummary: '', inputError: built.notice })
+      this.commitDrafts(built.drafts)
+      this.setData({ focusNameId: built.drafts.find(draft => !draft.fields.name)?.draftId || '' })
+      track('quick_parse_result', { result: built.notice ? 'fallback' : 'success', durationMs: Date.now() - startedAt, draftCount: built.drafts.length })
     } catch (error) {
       if (recognitionId !== this.recognitionId) return
       this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
       track('quick_parse_result', { result: 'failed', durationMs: Date.now() - startedAt, failureCode: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
+    } finally {
+      wx.hideLoading?.()
+      if (recognitionId === this.recognitionId) {
+        this.pendingRecognition = false
+        this.setData({ recognitionState: 'idle', voiceState: 'idle' })
+      }
     }
+  },
+
+  /** 云端优先，失败或结果为空时退到本地解析；仍识别不出时产出一条可手填的草稿。 */
+  async buildDraftsFromText(text: string, source: Extract<QuickEntrySource, 'text' | 'voice'>): Promise<{ drafts: QuickEntryDraft[]; notice: string }> {
+    const items = await this.recognizeTextItems(text)
+    if (!items.length) {
+      const draft = createDraftFromParsed(
+        { name: fallbackDraftName(text), dateCandidates: [] },
+        source,
+        this.data.defaultReminderLeadDays,
+        undefined,
+        { kind: 'text', sourceText: text },
+      )
+      return { drafts: [draft], notice: '没识别出明确信息，已生成一条草稿，补全名称和日期即可保存' }
+    }
+    const drafts = items.map((item) => {
+      const itemName = typeof item.name === 'string' ? normalizeRecentName(item.name) : ''
+      const recent = itemName ? this.data.recentProfiles.find((profile) => normalizeRecentName(profile.name) === itemName) : undefined
+      return createDraftFromParsed(item, source, this.data.defaultReminderLeadDays, recent, { kind: 'text', sourceText: text })
+    })
+    return { drafts, notice: '' }
+  },
+
+  async recognizeTextItems(text: string) {
+    try {
+      const result = await parseQuickText(text)
+      const items = Array.isArray(result?.items) ? result.items : []
+      if (items.length) return items
+    } catch (error) {
+      if (!(error instanceof CloudServiceError)) {
+        const local = parseLocallySafely(text)
+        if (local.length) return local
+        throw error
+      }
+    }
+    return parseLocallySafely(text)
   },
 
   selectRecent(event: WechatMiniprogram.CustomEvent) {
     if (this.data.saving || this.data.recognitionState !== 'idle') return
     const profile = this.data.recentProfiles[Number(event.currentTarget.dataset.index)]
     if (!profile) return
+    if (this.data.popup === 'text') {
+      this.setData({ inputError: '先完成当前一句话录入，或关闭后重新选择' })
+      return
+    }
     const pending = this.data.drafts.filter((draft) => draft.status !== 'saved')
     if (pending.length >= MAX_DRAFTS) {
       this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
       return
     }
     const draft = createDraftFromRecent(profile, this.data.defaultReminderLeadDays)
-    const drafts = [...pending, draft]
-    this.setData({ saveSummary: '', inputError: '' })
-    this.commitDrafts(drafts)
     track('recent_item_select')
-    wx.pageScrollTo({ selector: `#draft-date-${drafts.length - 1}`, duration: 220 })
+    this.setData({ popup: 'recent', saveSummary: '', inputError: '', photoStage: 'idle', photoPreview: '', photoTargetId: '' }, () => {
+      this.commitDrafts([...pending, draft])
+    })
   },
 
   updateDraft(index: number, mutator: (draft: QuickEntryDraft) => QuickEntryDraft) {
@@ -454,11 +570,13 @@ Page({
     const recognitionId = ++this.recognitionId
     const targetId = this.data.photoTargetId
     this.setData({ recognitionState: 'recognizing_photo', inputError: '' })
+    wx.showLoading?.({ title: '正在识别日期…', mask: true })
     try {
       const fileID = await uploadQuickEntryMedia(localPath, 'image')
       if (recognitionId !== this.recognitionId) { await removeMedia(fileID); return }
       const result = await recognizeDatePhoto(fileID, 'image')
       if (recognitionId !== this.recognitionId) return
+      wx.hideLoading?.()
       if (result.unsupported === 'opened_period') {
         this.setData({ recognitionState: 'idle', inputError: '当前版本暂不支持“开封后使用期”，请手动选择日期' })
         return
@@ -488,11 +606,12 @@ Page({
       this.setData({ recognitionState: 'idle', photoStage: 'idle', photoPreview: '', focusNameId: draft.fields.name ? '' : draft.draftId })
       this.commitDrafts(drafts)
       track('date_photo_result', { result: 'success', candidateCount: result.candidates.length })
-      wx.pageScrollTo({ selector: '#draft-area', duration: 220 })
     } catch (error) {
       if (recognitionId !== this.recognitionId) return
       this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
       track('date_photo_result', { result: 'failed' })
+    } finally {
+      wx.hideLoading?.()
     }
   },
 
@@ -505,24 +624,14 @@ Page({
       this.setData({ inputError: '这条草稿保存结果尚未确认，请先重试确认，避免重复入库' })
       return
     }
-    getApp<IAppOption>().globalData.pendingQuickFormDraft = draft ? draftToManualFields(draft) : null
     track('quick_entry_manual', { source: draft?.source || 'manual' })
     this.manualHandoff = true
     wx.disableAlertBeforeUnload?.()
-    wx.navigateTo({
-      url: '/pages/item-form/index?source=quick-entry',
-      success: result => {
-        result.eventChannel.emit('quickDraftIdentity', { saveKey: draft?.saveKey })
-        result.eventChannel.on('quickDraftSaved', () => {
-          this.savedCount += 1
-          if (draft) this.commitDrafts(this.data.drafts.map(item => item.draftId === draft.draftId ? { ...item, status: 'saved', selected: false, evidence: undefined } : item))
-          if (!this.data.drafts.some(item => item.status !== 'saved')) {
-            this.exitOnShow = true
-            this.setData({ inputText: '', photoPreview: '' }, () => this.syncUnloadPrompt())
-          }
-        })
-      },
-      fail: () => { getApp<IAppOption>().globalData.pendingQuickFormDraft = null; this.manualHandoff = false; this.syncUnloadPrompt() },
+    this.setData({ activeTab: 'full', fullMounted: true, popup: 'none', inputText: '', photoPreview: '', photoStage: 'idle', inputError: '' }, () => {
+      this.withForm((form) => form.applyPrefill(draft ? draftToManualFields(draft) : null, draft?.saveKey || ''))
+      this.commitDrafts(this.data.drafts.filter(item => item.status === 'saved'))
+      this.manualHandoff = false
+      this.syncUnloadPrompt()
     })
   },
 
@@ -576,12 +685,17 @@ Page({
     if (!updated.some((draft) => draft.status !== 'saved')) {
       wx.disableAlertBeforeUnload?.()
       wx.showToast({ title: '已加入库存', icon: 'success' })
-      wx.navigateBack()
+      this.closePopup()
+      void this.loadRecentProfiles()
     }
   },
-
-  openManual() {
-    wx.disableAlertBeforeUnload?.()
-    wx.redirectTo({ url: '/pages/item-form/index' })
-  },
 })
+
+function parseLocallySafely(text: string): QuickEntryParseResult['items'] {
+  try {
+    const result = parseQuickTextLocally(text)
+    return Array.isArray(result?.items) ? result.items : []
+  } catch (_error) {
+    return []
+  }
+}

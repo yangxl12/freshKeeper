@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "新增物品"
+  "navigationBarTitleText": "新增物品",
+  "usingComponents": {
+    "item-form-sheet": "/components/item-form-sheet/index"
+  }
 }

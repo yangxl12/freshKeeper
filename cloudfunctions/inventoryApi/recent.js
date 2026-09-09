@@ -45,7 +45,10 @@ function toRecentProfile(item) {
   }
 }
 
-function mergeRecentItems(rows, limit = 6) {
+const RECENT_PAGE_SIZE = 30
+const MAX_RECENT_ROUNDS = 12
+
+function mergeRecentItems(rows, limit = 100) {
   const sorted = [...rows].sort((left, right) => timestamp(right.updatedAt) - timestamp(left.updatedAt))
   const seen = new Set()
   const result = []
@@ -59,15 +62,17 @@ function mergeRecentItems(rows, limit = 6) {
   return result
 }
 
-async function readRecentProfiles(fetchPage, limit = 6) {
+async function readRecentProfiles(fetchPage, limit = 100) {
   const states = ['active', 'used_up'].map(status => ({ status, offset: 0, done: false, lastTime: Infinity }))
   const rows = []
   let cutoff = -Infinity
-  while (states.some(state => !state.done && state.lastTime >= cutoff)) {
+  let rounds = 0
+  while (rounds < MAX_RECENT_ROUNDS && states.some(state => !state.done && state.lastTime >= cutoff)) {
+    rounds += 1
     await Promise.all(states.filter(state => !state.done && state.lastTime >= cutoff).map(async state => {
-      const page = await fetchPage(state.status, state.offset, 30)
+      const page = await fetchPage(state.status, state.offset, RECENT_PAGE_SIZE)
       state.offset += page.length
-      state.done = page.length < 30
+      state.done = page.length < RECENT_PAGE_SIZE
       state.lastTime = page.length ? timestamp(page[page.length - 1].updatedAt) : -Infinity
       rows.push(...page)
     }))
