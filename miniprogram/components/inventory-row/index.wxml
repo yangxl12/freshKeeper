@@ -1,18 +1,26 @@
-<view class="item-card item-card--{{item.isActive ? item.expiryTone : 'muted'}}" bindtap="handleTap" hover-class="item-card--pressed" role="button" aria-label="{{item.name}}，{{item.isActive ? item.remainingDaysText : '已用完'}}，数量 {{item.quantityText}}">
+<view class="item-card item-card--{{item.isActive ? item.expiryTone : 'muted'}}" bindtap="handleTap" hover-class="item-card--pressed" role="button" aria-label="{{item.name}}，{{item.categoryLabel}}{{item.hasLocation ? '，' + item.locationText : ''}}，{{item.isActive ? item.remainingDaysText : '已用完'}}，数量 {{item.quantityText}}">
   <image class="item-card__image" src="/assets/inventory-placeholder.svg" mode="aspectFit" aria-hidden="true" />
   <view class="item-card__body">
     <text class="item-card__name">{{item.name}}</text>
-    <view class="item-card__meta"><text class="item-card__tag">{{item.categoryLabel}}</text><text wx:if="{{item.hasLocation}}" class="item-card__tag item-card__tag--storage">{{item.storageLabel || item.locationText}}</text></view>
-    <view class="item-card__location"><view class="location-pin" aria-hidden="true"></view><text>{{item.hasLocation ? item.locationText : '未设置位置'}}</text></view>
+    <view class="item-card__meta">
+      <view class="item-card__meta-item item-card__meta-item--category">
+        <view class="meta-icon meta-icon--tag" aria-hidden="true"></view>
+        <text class="item-card__meta-text">{{item.categoryLabel}}</text>
+      </view>
+      <view wx:if="{{item.hasLocation}}" class="item-card__meta-item item-card__meta-item--location">
+        <view class="meta-icon meta-icon--pin" aria-hidden="true"></view>
+        <text class="item-card__meta-text">{{item.locationText}}</text>
+      </view>
+    </view>
   </view>
   <view class="item-card__side">
     <view class="item-card__remaining"><view class="clock-icon" aria-hidden="true"></view><text>{{item.isActive ? item.remainingDaysText : '已用完'}}</text></view>
     <view wx:if="{{item.isActive}}" class="item-card__stepper">
-      <button class="item-card__step" data-delta="-1" catchtap="handleQuantity" disabled="{{item.quantity <= 1}}" aria-label="减少数量">−</button>
+      <button class="item-card__step item-card__step--minus" data-delta="-1" catchtap="handleQuantity" disabled="{{item.quantity <= 1}}" hover-class="item-card__step--pressed" aria-label="减少数量"></button>
       <button class="item-card__quantity" catchtap="handleQuantity" aria-label="调整数量 {{item.quantityText}}">{{item.quantity}}<text>{{item.unit}}</text></button>
-      <button class="item-card__step" data-delta="1" catchtap="handleQuantity" disabled="{{item.quantity >= 9999}}" aria-label="增加数量">＋</button>
+      <button class="item-card__step item-card__step--plus" data-delta="1" catchtap="handleQuantity" disabled="{{item.quantity >= 9999}}" hover-class="item-card__step--pressed" aria-label="增加数量"></button>
     </view>
     <text wx:else class="item-card__completed">{{item.quantityText}}</text>
   </view>
-  <button wx:if="{{item.isActive}}" class="item-card__more" catchtap="handleMore" aria-label="更多操作">···</button>
+  <button wx:if="{{item.isActive}}" class="item-card__more" catchtap="handleMore" hover-class="item-card__more--pressed" aria-label="更多操作"></button>
 </view>
