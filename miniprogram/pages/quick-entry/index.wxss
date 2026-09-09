@@ -67,11 +67,12 @@
   box-shadow: 0 10rpx 28rpx rgba(23, 59, 49, 0.06);
 }
 
-.quick-input-row { display: flex; align-items: flex-end; gap: 16rpx; }
-.quick-input { box-sizing: border-box; min-height: 144rpx; flex: 1; padding: 20rpx; border: 2rpx solid #dde5e0; border-radius: 14rpx; color: #173b31; font-size: 27rpx; line-height: 1.5; }
-.voice-button { display: flex; width: 118rpx; min-height: 96rpx; flex-direction: column; align-items: center; justify-content: center; gap: 5rpx; padding: 8rpx 12rpx; border-radius: 14rpx; background: #eef6f1; color: #1f5d49; font-size: 20rpx; line-height: 1.2; }
-.voice-button .line-icon { width: 42rpx; height: 42rpx; }
-.voice-button__label { white-space: nowrap; }
+.quick-input-row { display: flex; }
+.quick-input-wrap { position: relative; width: 100%; }
+.quick-input { box-sizing: border-box; width: 100%; min-height: 144rpx; padding: 20rpx 132rpx 20rpx 20rpx; border: 2rpx solid #dde5e0; border-radius: 14rpx; color: #173b31; font-size: 27rpx; line-height: 1.5; }
+.quick-input-tools { position: absolute; top: 16rpx; right: 14rpx; display: flex; gap: 8rpx; }
+.voice-button, .photo-button { display: flex; width: 52rpx; height: 52rpx; align-items: center; justify-content: center; padding: 0; border-radius: 50%; background: #eef6f1; color: #1f5d49; }
+.voice-button .line-icon, .photo-button .line-icon { width: 32rpx; height: 32rpx; }
 .voice-button--recording { background: #b84a3e; color: #ffffff; }
 .voice-button[disabled] { background: #f0f3f1; color: #aab6b1; }
 .photo-button { display: flex; align-items: center; justify-content: center; gap: 10rpx; }
@@ -80,6 +81,7 @@
 .inline-photo-button[disabled] { background: #f3f6f4; color: #aab6b1; }
 .feature-hint { display: block; margin-top: 14rpx; color: #9aa7a1; font-size: 22rpx; line-height: 1.5; }
 .quick-actions { display: flex; gap: 16rpx; margin-top: 18rpx; }
+.quick-generate { position: fixed; right: 28rpx; bottom: calc(24rpx + env(safe-area-inset-bottom)); left: 28rpx; z-index: 20; min-height: 92rpx; margin: 0; border-radius: 16rpx; box-shadow: 0 10rpx 24rpx rgba(31, 93, 73, 0.2); }
 /* 微信 button 的边框伪元素绝对定位，必须限制在按钮内，避免覆盖相邻按钮。 */
 .quick-action { position: relative; min-height: 78rpx; flex: 1; margin: 0; padding: 0 16rpx; line-height: 78rpx; }
 .quick-action::after { pointer-events: none; }
@@ -344,6 +346,9 @@
 .line-icon--scan::before, .line-icon--scan::after { position: absolute; width: 9rpx; height: 9rpx; border-color: currentColor; content: ""; }
 .line-icon--scan::before { top: -3rpx; left: -3rpx; border-top: 3rpx solid; border-left: 3rpx solid; }
 .line-icon--scan::after { right: -3rpx; bottom: -3rpx; border-right: 3rpx solid; border-bottom: 3rpx solid; }
+.line-icon--date-scan { border: 3rpx solid currentColor; border-radius: 4rpx; }
+.line-icon--date-scan::before { position: absolute; top: 7rpx; left: 4rpx; width: 18rpx; border-top: 3rpx solid currentColor; content: ""; }
+.line-icon--date-scan::after { position: absolute; right: -5rpx; bottom: -5rpx; width: 12rpx; height: 12rpx; border-right: 3rpx solid currentColor; border-bottom: 3rpx solid currentColor; content: ""; }
 
 @keyframes entry-sheet-up {
   from {
