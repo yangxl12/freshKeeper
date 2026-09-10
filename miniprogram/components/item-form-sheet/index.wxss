@@ -3,17 +3,21 @@
   padding-bottom: calc(154rpx + env(safe-area-inset-bottom));
 }
 
-.form-sheet-page button,
-.form-sheet-page input,
-.form-sheet-page textarea {
+/* 必须用裸标签选择器（组件默认样式隔离，不会外泄）。
+   若写成 `.form-sheet-page button`（特异性 0,1,1），会盖过下面的
+   .primary-button / .mode-switch__item（0,1,0），把 font-size / font-weight /
+   line-height 一并重置为继承值，表现为按钮文字贴顶、不垂直居中。 */
+button,
+input,
+textarea {
   font: inherit;
 }
 
-.form-sheet-page button::after {
+button::after {
   border: 0;
 }
 
-.form-sheet-page button {
+button {
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
