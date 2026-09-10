@@ -6,8 +6,10 @@ const { currentDateKey, normalizePhotoResult, normalizeTextResult } = require('.
 const { providerConfigured, requestProvider } = require('./provider')
 const { assert, assertNoClientIdentity, validateMedia, validateText, mediaOwnerPrefix } = require('./validation')
 const { parseText: parseLocally } = require('./quick-text')
+const { aiEnabled } = require('./ai-client')
+const { aiParseText } = require('./ai-parse')
 
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 })
 
 async function removeTemporaryFile(fileID) {
   try {
@@ -29,12 +31,27 @@ async function getCapabilities() {
     text: true,
     voice: providerConfigured('STT'),
     datePhoto: providerConfigured('OCR'),
+    aiText: aiEnabled(),
   }
 }
 
+/**
+ * 三级降级：AI → 自定义 provider → 本地 rules-v3。
+ * AI 只是加速路径，任何失败都必须静默降级——错误码不暴露给用户（前端 toast 会被截断，且这里没有可执行的补救动作）。
+ */
 async function parseText(event) {
   const text = validateText(event.text)
   const serverToday = currentDateKey()
+  if (aiEnabled()) {
+    const startedAt = Date.now()
+    try {
+      const result = await aiParseText({ text, serverToday })
+      console.info(JSON.stringify({ resultCode: 'AI_PARSE_OK', durationMs: Date.now() - startedAt, itemCount: result.items.length }))
+      return result
+    } catch (error) {
+      console.warn(JSON.stringify({ resultCode: 'AI_PARSE_DEGRADED', reason: error?.code || 'AI_FAILED', durationMs: Date.now() - startedAt }))
+    }
+  }
   if (!providerConfigured('TEXT')) return parseLocally(text, serverToday)
   return normalizeTextResult(await requestProvider('TEXT', { text, serverToday }), serverToday)
 }
