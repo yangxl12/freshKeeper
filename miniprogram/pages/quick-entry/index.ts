@@ -89,6 +89,7 @@ Page({
     loadingError: '',
     inputError: '',
     inputText: '',
+    quickInputFocused: true,
     quickKeyboardHeight: 0,
     activeTab: 'quick' as 'quick' | 'full',
     quickTab: 'text' as 'text' | 'recent',
@@ -212,15 +213,16 @@ Page({
     if (tab === 'full') this.openFullTab()
     else {
       this.cancelVoice()
-      this.setData({ activeTab: 'quick' })
+      this.setData({ activeTab: 'quick', quickTab: 'text', quickInputFocused: true })
     }
   },
 
   openFullTab() {
     this.cancelVoice()
     this.cancelRecognition()
+    wx.hideKeyboard?.()
     track('quick_entry_switch_tab', { tab: 'full' })
-    this.setData({ activeTab: 'full', fullMounted: true })
+    this.setData({ activeTab: 'full', fullMounted: true, quickInputFocused: false })
   },
 
   handleFullFormSaved(event: WechatMiniprogram.CustomEvent) {
@@ -244,12 +246,17 @@ Page({
     }, 40)
   },
 
-  switchQuickTab(event: WechatMiniprogram.BaseEvent) {
-    const tab = event.currentTarget.dataset.tab
-    if ((tab !== 'text' && tab !== 'recent') || tab === this.data.quickTab || this.data.saving) return
+  openRecentList() {
+    if (this.data.saving || this.data.quickTab === 'recent') return
     this.cancelVoice()
     this.cancelRecognition()
-    this.setData({ quickTab: tab, photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
+    wx.hideKeyboard?.()
+    this.setData({ quickTab: 'recent', quickInputFocused: false, quickKeyboardHeight: 0, photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
+  },
+
+  closeRecentList() {
+    if (this.data.saving || this.data.quickTab !== 'recent') return
+    this.setData({ quickTab: 'text', quickInputFocused: false })
   },
 
   closePopup() {
@@ -292,6 +299,16 @@ Page({
     // 让整个底部输入卡片避让键盘，包括文本框下方的操作按钮。
     const height = Number(event.detail.height)
     this.setData({ quickKeyboardHeight: Number.isFinite(height) ? Math.max(0, height) : 0 })
+  },
+
+  handleQuickInputFocus(event: WechatMiniprogram.CustomEvent<{ height?: number }>) {
+    this.setData({ quickInputFocused: true })
+    this.handleQuickKeyboardHeightChange(event)
+  },
+
+  handleQuickInputBlur() {
+    this.setData({ quickInputFocused: false })
+    this.resetQuickKeyboardHeight()
   },
 
   resetQuickKeyboardHeight() {

@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createDraftFromParsed, parseQuickTextLocally } from '../../miniprogram/domain/quick-entry'
 
 import { CloudServiceError } from '../../miniprogram/services/cloud-client'
@@ -38,6 +40,7 @@ beforeEach(() => {
     showModal: vi.fn(),
     navigateBack: vi.fn(),
     navigateTo: vi.fn(),
+    hideKeyboard: vi.fn(),
     reportAnalytics: vi.fn(),
   } as never
 })
@@ -64,6 +67,38 @@ function completeDraft(name: string) {
 }
 
 describe('quick entry page compatibility', () => {
+  it('focuses the quick text input as soon as the add page is rendered', () => {
+    const page = pageInstance()
+    expect(page.data.quickInputFocused).toBe(true)
+  })
+
+  it('opens and closes the recent list without losing the current text session', () => {
+    const page = pageInstance()
+    const draft = completeDraft('牛奶')
+    page.data.inputText = '牛奶明天到期'
+    page.commitDrafts([draft])
+
+    page.openRecentList()
+    expect(page.data.quickTab).toBe('recent')
+    expect(page.data.quickInputFocused).toBe(false)
+    expect(wx.hideKeyboard).toHaveBeenCalled()
+
+    page.closeRecentList()
+    expect(page.data.quickTab).toBe('text')
+    expect(page.data.inputText).toBe('牛奶明天到期')
+    expect(page.data.drafts).toEqual([draft])
+  })
+
+  it('replaces the quick-entry subtabs with a recent-entry button and close control', () => {
+    const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
+    expect(template).not.toContain('class="quick-tabs"')
+    expect(template).toContain('class="recent-entry-button"')
+    expect(template).toContain('bindtap="openRecentList"')
+    expect(template).toContain('class="recent-page__close"')
+    expect(template).toContain('bindtap="closeRecentList"')
+    expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('class="quick-input"'))
+  })
+
   it('generates from the native form value even before the textarea input event arrives', async () => {
     const page = pageInstance()
     const text = '香蕉，2026年9月14号过期，位置 厨房柜子'
@@ -238,14 +273,14 @@ describe('quick entry page compatibility', () => {
     page.data.inputText = '牛奶明天到期'
     const draft = completeDraft('牛奶')
     page.commitDrafts([draft])
-    page.switchQuickTab({ currentTarget: { dataset: { tab: 'recent' } } })
+    page.openRecentList()
     page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
     page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
     expect(page.data.popup).toBe('recent')
     expect(page.data.drafts).toHaveLength(1)
     expect(page.data.drafts[0].fields.name).toBe('面包')
     page.closePopup()
-    page.switchQuickTab({ currentTarget: { dataset: { tab: 'text' } } })
+    page.closeRecentList()
     expect(page.data.popup).toBe('none')
     expect(page.data.inputText).toBe('牛奶明天到期')
     expect(page.data.drafts).toEqual([draft])

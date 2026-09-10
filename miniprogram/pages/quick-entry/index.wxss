@@ -6,6 +6,35 @@
   padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
 }
 
+.recent-page__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.recent-page__title {
+  color: #173b31;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.recent-page__close {
+  display: flex;
+  width: 64rpx;
+  height: 64rpx;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 0 6rpx;
+  border-radius: 50%;
+  background: #edf3ef;
+  color: #53645d;
+  font-size: 46rpx;
+  font-weight: 300;
+  line-height: 1;
+}
+
 .quick-entry__loading {
   padding: 260rpx 0;
   color: #718078;
@@ -72,6 +101,27 @@
   border-radius: 28rpx;
   background: #ffffff;
   box-shadow: 0 6rpx 24rpx rgba(23, 59, 49, 0.05);
+}
+
+.quick-input-card__head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8rpx;
+}
+
+.recent-entry-button {
+  margin: 0;
+  padding: 0 18rpx;
+  border: 2rpx solid #cbd8d2;
+  border-radius: 999rpx;
+  background: #f7faf8;
+  color: #1f5d49;
+  font-size: 23rpx;
+  line-height: 52rpx;
+}
+
+.recent-entry-button--pressed {
+  background: #e7f0eb;
 }
 
 .quick-input-row { display: flex; }
@@ -237,12 +287,9 @@
   color: #1f5d49;
 }
 
-.quick-tabs { display: flex; gap: 32rpx; margin: -6rpx 0 28rpx; border-bottom: 2rpx solid #dce6e0; }
-.quick-tabs__item { margin: 0; padding: 0 0 18rpx; border-radius: 0; border-bottom: 4rpx solid transparent; background: transparent; color: #788880; font-size: 27rpx; line-height: 48rpx; }
-.quick-tabs__item--active { border-bottom-color: #1f5d49; color: #1f5d49; font-weight: 650; }
 .inline-entry { position: static; z-index: auto; pointer-events: auto; }
 .quick-entry--text { display: flex; height: 100vh; min-height: 0; flex-direction: column; overflow: hidden; padding-bottom: calc(20rpx + env(safe-area-inset-bottom)); }
-.quick-entry--text .entry-tabs, .quick-entry--text .quick-tabs { flex-shrink: 0; }
+.quick-entry--text .entry-tabs { flex-shrink: 0; }
 .quick-entry--text .inline-entry { flex: 1; min-height: 0; }
 .inline-entry__panel { display: flex; box-sizing: border-box; height: 100%; min-height: 0; flex-direction: column; }
 .inline-entry__body { width: 100%; height: 0; min-height: 0; flex: 1; }

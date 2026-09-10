@@ -14,13 +14,11 @@
     >完整录入</button>
   </view>
 
-  <block wx:if="{{activeTab === 'quick'}}">
-    <view class="quick-tabs" role="tablist">
-      <button class="quick-tabs__item {{quickTab === 'text' ? 'quick-tabs__item--active' : ''}}" data-tab="text" bindtap="switchQuickTab" aria-selected="{{quickTab === 'text'}}">一句话录入</button>
-      <button class="quick-tabs__item {{quickTab === 'recent' ? 'quick-tabs__item--active' : ''}}" data-tab="recent" bindtap="switchQuickTab" aria-selected="{{quickTab === 'recent'}}">从最近录入添加</button>
+  <block wx:if="{{activeTab === 'quick' && quickTab === 'recent'}}">
+    <view class="recent-page__head">
+      <text class="recent-page__title">最近录入</text>
+      <button class="recent-page__close" bindtap="closeRecentList" aria-label="关闭最近录入">×</button>
     </view>
-
-    <block wx:if="{{quickTab === 'recent'}}">
       <view wx:if="{{loading}}" class="quick-entry__loading">正在准备快速录入…</view>
       <view wx:if="{{loadingError}}" class="quick-entry__notice" role="alert">
         <text>{{loadingError}}</text>
@@ -40,8 +38,6 @@
           </view>
         </view>
         <view wx:else class="quick-entry__empty">还没有录入记录，先用一句话或直接完整录入。</view>
-    </block>
-    </block>
   </block>
 
   <view wx:if="{{fullMounted}}" style="display: {{activeTab === 'full' ? 'block' : 'none'}};">
@@ -56,9 +52,12 @@
       </view>
 
         <form wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
+          <view class="quick-input-card__head">
+            <button wx:if="{{features.recent}}" class="recent-entry-button" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
+          </view>
           <view class="quick-input-row">
             <view class="quick-input-wrap">
-              <textarea wx:if="{{features.text || features.voice}}" class="quick-input" name="quickText" value="{{inputText}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" bindfocus="handleQuickKeyboardHeightChange" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="resetQuickKeyboardHeight" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
+              <textarea wx:if="{{features.text || features.voice}}" class="quick-input" name="quickText" value="{{inputText}}" focus="{{quickInputFocused}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" bindfocus="handleQuickInputFocus" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="handleQuickInputBlur" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
               <view class="quick-input-tools">
                 <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle'}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
                   <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
