@@ -1,3 +1,5 @@
+import { markPendingHomeSort } from '../../utils/home-intent'
+
 interface SavedDetail {
   restoring: boolean
   itemId: string
@@ -22,6 +24,8 @@ Page({
 
   handleSaved(event: WechatMiniprogram.CustomEvent) {
     const detail = event.detail as unknown as SavedDetail
+    // 只有「新增」才让首页切到录入时间排序；编辑和重新入库保持用户原有排序。
+    if (!detail.itemId && !detail.restoring) markPendingHomeSort()
     wx.showToast({
       title: detail.restoring ? '已重新入库' : detail.itemId ? '修改成功' : '已加入库存',
       icon: 'success',

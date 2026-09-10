@@ -106,9 +106,20 @@ Page({
   onShow() {
     this.syncTabBar()
     this.subscribeCoverUpdates()
+    this.applyPendingHomeSort()
     void this.refreshOverview()
     void this.refresh(true, false)
     this.scheduleMidnightRefresh()
+  },
+
+  /** 保存物品后回首页的一次性排序意图：消费即清空，之后用户自己选的排序不受影响。 */
+  applyPendingHomeSort() {
+    const app = getApp<IAppOption>()
+    const intent = app.globalData.pendingHomeSortIntent
+    if (!intent) return
+    app.globalData.pendingHomeSortIntent = null
+    if (intent.sort === this.data.sort) return
+    this.setData({ sort: intent.sort })
   },
 
   onHide() {

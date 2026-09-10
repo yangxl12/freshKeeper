@@ -4,6 +4,7 @@ App<IAppOption>({
   globalData: {
     pendingInventoryIntent: null,
     pendingBatchIntent: null,
+    pendingHomeSortIntent: null,
   },
   onLaunch() {
     if (!wx.cloud) {

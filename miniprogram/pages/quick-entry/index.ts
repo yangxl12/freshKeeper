@@ -26,6 +26,7 @@ import { getSettings } from '../../services/settings-service'
 import type { ShelfLifeUnit } from '../../types/inventory'
 import type { QuickEntryCapabilities, QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
+import { markPendingHomeSort } from '../../utils/home-intent'
 import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
 import { todayKey } from '../../domain/quick-text'
 import { toDayOrdinal } from '../../utils/date-key'
@@ -341,8 +342,15 @@ Page({
     const detail = event.detail as unknown as { restoring: boolean; name: string }
     wx.disableAlertBeforeUnload?.()
     wx.showToast({ title: detail.restoring ? '已重新入库' : '已加入库存', icon: 'success' })
-    this.withForm((form) => form.resetEntry())
-    void this.loadRecentProfiles()
+    // 保存成功后直接回首页，配合录入时间排序让用户看到刚录入的物品。
+    markPendingHomeSort()
+    wx.navigateBack()
+  },
+
+  /** 保存成功后退出到首页；页面栈里没有首页时（如扫码直达）退回 tab。 */
+  exitToHome() {
+    markPendingHomeSort()
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/home/index' }) })
   },
 
   /** 组件首次渲染后 selectComponent 才可用，失败时退到下一帧再取一次。 */
@@ -645,10 +653,9 @@ Page({
   handleModeChange(event: WechatMiniprogram.BaseEvent) {
     const index = Number(event.currentTarget.dataset.index)
     const mode = event.currentTarget.dataset.mode as QuickEntryDraftFields['expiryInputMode']
-    this.updateDraft(index, (draft) => ({
-      ...draft,
-      fields: { ...draft.fields, expiryInputMode: mode, expiryDate: mode === 'direct' ? draft.fields.expiryDate : null, productionDate: mode === 'shelf_life' ? draft.fields.productionDate : null },
-    }))
+    // 只切模式，不清另一模式里已填的值：来回切换不能丢用户已确认的数据。
+    // 两种值不会一起入库——asInventorySaveInput 按 expiryInputMode 裁剪。
+    this.updateDraft(index, (draft) => ({ ...draft, fields: { ...draft.fields, expiryInputMode: mode } }))
   },
 
   chooseCandidate(event: WechatMiniprogram.BaseEvent) {
@@ -953,6 +960,7 @@ Page({
       wx.showToast({ title: '已加入库存', icon: 'success' })
       this.closePopup()
       void this.loadRecentProfiles()
+      this.exitToHome()
     }
   },
 })

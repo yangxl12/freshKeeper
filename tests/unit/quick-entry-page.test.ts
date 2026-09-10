@@ -467,6 +467,18 @@ describe('quick entry page compatibility', () => {
     expect(page.data.popup).toBe('none')
     expect(page.data.drafts).toHaveLength(0)
     expect(listRecentProfilesMock).toHaveBeenCalledTimes(2)
+    // 全部保存成功后自动回首页，让用户看到刚录入的物品
+    expect(wx.navigateBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the chosen expiry date when toggling between expiry modes', () => {
+    const page = pageInstance()
+    const draft = completeDraft('牛奶')
+    page.commitDrafts([draft])
+    page.handleModeChange({ currentTarget: { dataset: { index: 0, mode: 'shelf_life' } } })
+    page.handleModeChange({ currentTarget: { dataset: { index: 0, mode: 'direct' } } })
+    expect(page.data.drafts[0].fields.expiryDate).toBe(draft.fields.expiryDate)
+    expect(page.data.drafts[0].status).toBe('savable')
   })
 
   it('keeps the recent list usable and appends drafts instead of replacing them', () => {
