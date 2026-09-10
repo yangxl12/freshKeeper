@@ -143,18 +143,23 @@ Page({
   getTabBarInstance() {
     return (
       this as unknown as {
-        getTabBar?: () => { setData?: (data: Record<string, unknown>) => void } | undefined
+        getTabBar?: () =>
+          | { data?: Record<string, unknown>; setData?: (data: Record<string, unknown>) => void }
+          | undefined
       }
     ).getTabBar?.()
   },
 
   syncTabBar() {
-    this.getTabBarInstance()?.setData?.({ selected: 0, hidden: false })
+    this.setTabBarHidden(false)
+    this.getTabBarInstance()?.setData?.({ selected: 0 })
   },
 
-  /* 弹窗打开时收起自定义标签栏：遮罩可能与标签栏处于不同层级，收起可确保弹窗始终在最上层 */
+  /* 弹窗打开时收起自定义标签栏：自定义标签栏由框架单独渲染，页面内的 z-index 无法盖住它 */
   setTabBarHidden(hidden: boolean) {
-    this.getTabBarInstance()?.setData?.({ hidden })
+    const tabBar = this.getTabBarInstance()
+    if (!tabBar?.data || tabBar.data.hidden === hidden) return
+    tabBar.setData?.({ hidden })
   },
 
   async refreshOverview() {
@@ -370,10 +375,12 @@ Page({
     const item = this.findItem(event.detail.itemId)
     if (!item) return
     this.setData({ moreSheet: { visible: true, itemId: item._id, name: item.name } })
+    this.setTabBarHidden(true)
   },
 
   closeMore() {
     this.setData({ moreSheet: emptyMoreSheet() })
+    this.setTabBarHidden(false)
   },
 
   async handleMoreAction(event: WechatMiniprogram.CustomEvent) {
