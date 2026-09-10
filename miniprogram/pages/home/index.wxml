@@ -3,8 +3,6 @@
     <view class="hero__leaf hero__leaf--one"></view>
     <view class="hero__leaf hero__leaf--two"></view>
     <text class="hero__title" style="max-width: {{titleWidth}}px;">保质记</text>
-    <text class="hero__subtitle">记录食材保质期 · 让每一份食物都不浪费</text>
-    <view class="hero__note"><text>新鲜生活</text><text>从管理开始</text></view>
   </view>
   <view wx:if="{{errorMessage}}" class="error-banner">
     <text class="error-banner__text">{{errorMessage}}</text>
