@@ -39,6 +39,7 @@ export interface InventoryItem {
   expiryDate: string
   reminderLeadDays: number
   inventoryStatus: InventoryStatus
+  coverFileId?: string
   version: number
   createdAt?: string | Date
   updatedAt?: string | Date

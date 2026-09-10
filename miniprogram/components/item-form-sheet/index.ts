@@ -1,6 +1,6 @@
 import { CATEGORY_OPTIONS, SHELF_LIFE_OPTIONS } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
-import { getItem, restoreItem, saveItem } from '../../services/inventory-service'
+import { getItem, generateItemCover, restoreItem, saveItem } from '../../services/inventory-service'
 import { getSettings } from '../../services/settings-service'
 import type {
   Category,
@@ -278,7 +278,11 @@ Component({
       this.setData({ saving: true, errorMessage: '' })
       try {
         if (restoring) await restoreItem(input)
-        else await saveItem(input, this.data.source === 'quick-entry' ? { idempotencyKey: this.data.quickSaveKey } : undefined)
+        else {
+          const saved = await saveItem(input, this.data.source === 'quick-entry' ? { idempotencyKey: this.data.quickSaveKey } : undefined)
+          // 新增物品后异步生成 AI 封面：不等待结果，失败保持默认占位图。
+          if (!itemId) void generateItemCover(saved.itemId).catch(() => {})
+        }
         if (!itemId) track('item_create_success')
         const finalExpiryDate = this.data.mode === 'direct' ? this.data.expiryDate : this.data.expiryPreview
         if (itemId && !restoring && finalExpiryDate !== this.data.originalExpiryDate) {

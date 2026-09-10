@@ -1,7 +1,10 @@
 interface CardItem {
   _id?: string
   quantity?: number
+  coverFileId?: string
 }
+
+const COVER_PLACEHOLDER = '/assets/inventory-placeholder.svg'
 
 Component({
   properties: {
@@ -11,11 +14,38 @@ Component({
     },
   },
 
+  data: {
+    coverFor: '',
+    coverSrc: COVER_PLACEHOLDER,
+    coverError: false,
+  },
+
+  observers: {
+    item(item: CardItem) {
+      const cover = item && item.coverFileId ? String(item.coverFileId) : ''
+      if (cover !== this.data.coverFor) {
+        // 换了封面：重置错误态重新加载；没有封面则回到占位图。
+        this.setData({ coverFor: cover, coverSrc: cover || COVER_PLACEHOLDER, coverError: false })
+        return
+      }
+      const nextSrc = cover || COVER_PLACEHOLDER
+      if (!this.data.coverError && this.data.coverSrc !== nextSrc) {
+        this.setData({ coverSrc: nextSrc })
+      }
+    },
+  },
+
   methods: {
     emit(eventName: 'select' | 'edit' | 'quantity' | 'more') {
       const item = this.properties.item as CardItem
       if (!item._id) return
       this.triggerEvent(eventName, { itemId: item._id })
+    },
+
+    // 封面加载失败（文件被清理/临时链接失效）→ 回退默认占位图，同一封面不再反复重试。
+    handleCoverError() {
+      if (this.data.coverError || this.data.coverSrc === COVER_PLACEHOLDER) return
+      this.setData({ coverSrc: COVER_PLACEHOLDER, coverError: true })
     },
 
     handleTap() {

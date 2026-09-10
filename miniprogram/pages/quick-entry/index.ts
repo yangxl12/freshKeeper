@@ -12,7 +12,7 @@ import {
   refreshDraftValidation,
 } from '../../domain/quick-entry'
 import { getErrorMessage, CloudServiceError } from '../../services/cloud-client'
-import { saveItem } from '../../services/inventory-service'
+import { generateItemCover, saveItem } from '../../services/inventory-service'
 import {
   getQuickEntryCapabilities,
   listRecentProfiles,
@@ -886,6 +886,17 @@ Page({
     })
   },
 
+  /** 保存成功后逐条生成 AI 封面：串行避开生图并发限制，失败静默（卡片保持默认占位图）。 */
+  async requestCovers(itemIds: string[]) {
+    for (const itemId of itemIds) {
+      try {
+        await generateItemCover(itemId)
+      } catch (_error) {
+        // 封面生成失败不影响保存结果，物品继续用默认占位图。
+      }
+    }
+  },
+
   retryDraft(event: WechatMiniprogram.BaseEvent) {
     const index = Number(event.currentTarget.dataset.index)
     const draft = this.data.drafts[index]
@@ -932,6 +943,10 @@ Page({
     this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
     this.savedCount += succeeded
     this.commitDrafts(updated)
+    const savedItemIds = results
+      .map((result) => (result.status === 'fulfilled' ? result.value.itemId : ''))
+      .filter(Boolean)
+    if (savedItemIds.length) void this.requestCovers(savedItemIds)
     track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draftCount: targets.length, durationMs: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
     if (!updated.some((draft) => draft.status !== 'saved')) {
       wx.disableAlertBeforeUnload?.()

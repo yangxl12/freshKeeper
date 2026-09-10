@@ -113,6 +113,11 @@ export function restoreItem(input: InventorySaveInput): Promise<{
   return callCloud('inventoryApi', { action: 'restore', data: input })
 }
 
+// 生成/补取物品 AI 封面小图。失败由调用方吞掉（封面缺失时卡片用默认占位图）。
+export function generateItemCover(itemId: string): Promise<{ coverFileId: string }> {
+  return callCloud('inventoryApi', { action: 'generateCover', itemId })
+}
+
 export function batchCompleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
   return callCloud('inventoryApi', { action: 'batchComplete', items })
 }

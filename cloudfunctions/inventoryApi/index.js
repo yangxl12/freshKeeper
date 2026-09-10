@@ -27,6 +27,10 @@ const {
 } = require('./validation')
 const { readRecentProfiles } = require('./recent')
 const { fingerprint, stableItemId } = require('./idempotency')
+const { coverEnabled, createCoverService } = require('./image-cover')
+
+// 懒加载 wx-server-sdk 的 ai/上传能力；单测注入假依赖时不会加载真 SDK。
+const generateCoverImage = createCoverService({})
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
@@ -616,6 +620,33 @@ async function listTrash(ownerId, event) {
   }
 }
 
+// 封面是展示数据，故意不 bump version：避免和并发编辑互相打出 CONFLICT。
+async function generateCover(ownerId, event) {
+  const itemId = validateItemId(event.itemId)
+  assert(coverEnabled(), 'COVER_IMAGE_DISABLED', '封面生成未开启')
+  const item = await getOwnedItem(ownerId, itemId)
+  if (item.coverFileId) return { coverFileId: item.coverFileId, reused: 'self' }
+
+  // 同名物品已有封面直接复用，省生图额度也不产生重复图。
+  const sameName = await db.collection(ITEMS)
+    .where({ ownerId, name: item.name, inventoryStatus: 'active' })
+    .limit(20)
+    .get()
+  const reusable = sameName.data.find((doc) => doc.coverFileId)
+  if (reusable) {
+    await db.collection(ITEMS).doc(itemId).update({
+      data: { coverFileId: reusable.coverFileId, coverUpdatedAt: db.serverDate() },
+    })
+    return { coverFileId: reusable.coverFileId, reused: 'same-name' }
+  }
+
+  const { fileID } = await generateCoverImage({ ownerId, itemId, name: item.name })
+  await db.collection(ITEMS).doc(itemId).update({
+    data: { coverFileId: fileID, coverUpdatedAt: db.serverDate() },
+  })
+  return { coverFileId: fileID, reused: false }
+}
+
 const handlers = {
   listActive,
   getOverview,
@@ -623,6 +654,7 @@ const handlers = {
   listRecentProfiles,
   get,
   save,
+  generateCover,
   decrement,
   complete: (ownerId, event) => transition(ownerId, event, 'used_up'),
   discard: moveToTrash,

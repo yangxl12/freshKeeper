@@ -1,5 +1,5 @@
 <view class="item-card item-card--{{item.isActive ? item.expiryTone : 'muted'}}" bindtap="handleTap" hover-class="item-card--pressed" role="button" aria-label="{{item.name}}，{{item.categoryLabel}}{{item.hasLocation ? '，' + item.locationText : ''}}，{{item.isActive ? item.remainingDaysText : '已用完'}}，数量 {{item.quantityText}}">
-  <image class="item-card__image" src="/assets/inventory-placeholder.svg" mode="aspectFit" aria-hidden="true" />
+  <image class="item-card__image" src="{{coverSrc}}" mode="aspectFit" binderror="handleCoverError" aria-hidden="true" />
   <view class="item-card__body">
     <text class="item-card__name">{{item.name}}</text>
     <view class="item-card__meta">
