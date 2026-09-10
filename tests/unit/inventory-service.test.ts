@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   batchDeleteItems,
   deleteItem,
+  generateItemCover,
   listTrash,
+  onItemCoverReady,
 } from '../../miniprogram/services/inventory-service'
 
 const originalWx = globalThis.wx
@@ -90,5 +92,39 @@ describe('inventory service compatibility', () => {
       { action: 'listTrash', search: '', cursor: null, pageSize: 30 },
       { action: 'listHistory', search: '', status: 'discarded', cursor: null, pageSize: 30 },
     ])
+  })
+})
+
+describe('cover ready notification', () => {
+  it('broadcasts the generated cover so the home list can fill it in without a refetch', async () => {
+    installCloudCall((request) => {
+      request.success({
+        result: { ok: true, data: { coverFileId: 'cloud://env.covers/x.png', reused: false }, requestId: 'req-cover' },
+      })
+    })
+
+    const received: Array<{ itemId: string; coverFileId: string }> = []
+    const unsubscribe = onItemCoverReady((cover) => received.push(cover))
+
+    await generateItemCover('item-1')
+    expect(received).toEqual([{ itemId: 'item-1', coverFileId: 'cloud://env.covers/x.png' }])
+
+    // 退订后不再收到，避免页面 onHide 之后还往已销毁的实例上 setData。
+    unsubscribe()
+    await generateItemCover('item-2')
+    expect(received).toHaveLength(1)
+  })
+
+  it('stays silent when the cloud returns no cover so callers keep the placeholder', async () => {
+    installCloudCall((request) => {
+      request.success({ result: { ok: true, data: { coverFileId: '' }, requestId: 'req-cover' } })
+    })
+
+    const received: unknown[] = []
+    const unsubscribe = onItemCoverReady((cover) => received.push(cover))
+    await generateItemCover('item-3')
+    unsubscribe()
+
+    expect(received).toEqual([])
   })
 })

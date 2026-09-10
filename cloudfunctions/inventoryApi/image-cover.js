@@ -13,11 +13,14 @@ const https = require('node:https')
 const http = require('node:http')
 
 const IMAGE_PROVIDER = 'hunyuan-image' // provider / 模型名只允许出现在这个文件里
-const IMAGE_MODEL = 'hunyuan-image'
-// inventoryApi 云函数整体超时 10s：生图 8s + 下载 6s 并行不可能都顶满，
-// 两个预算各自独立限制，保证最坏情况也能在 10s 内失败返回。
-const GENERATE_TIMEOUT_MS = 8000
-const DOWNLOAD_TIMEOUT_MS = 6000
+// 2026-07-15 起 model 参数 'hunyuan-image' 已下线（cloud.ai 会直接报错），必须用具体版本号。
+// 换模型只改这里；provider 仍是 'hunyuan-image'。
+const IMAGE_MODEL = 'HY-Image-3.0-Plus-4090-Tob-v1.0'
+const IMAGE_SIZE = '1024x1024'
+// inventoryApi 云函数超时 60s（控制台配置）：生图 30s + 下载 10s 各自独立限制，
+// 保证最坏情况也能在云函数被杀之前失败返回，物品保持无封面而不是让调用方超时。
+const GENERATE_TIMEOUT_MS = 30000
+const DOWNLOAD_TIMEOUT_MS = 10000
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const MAX_NAME_LENGTH = 30
 
@@ -133,8 +136,17 @@ function createCoverService(options = {}) {
     const imageModel = ai.createImageModel(deps.provider)
     assert(imageModel && typeof imageModel.generateImage === 'function', 'IMAGE_GEN_UNAVAILABLE')
 
+    // revise / enable_thinking 默认可能开启：前者改写提示词 +10s，后者最长 +60s，
+    // 都会撞超时。封面图不需要推理，显式关掉，只留最省时的一条路径。
     const result = await withTimeout(
-      imageModel.generateImage({ model: deps.model, prompt: buildCoverPrompt(name), n: 1 }),
+      imageModel.generateImage({
+        model: deps.model,
+        prompt: buildCoverPrompt(name),
+        size: IMAGE_SIZE,
+        n: 1,
+        revise: { value: false },
+        enable_thinking: { value: false },
+      }),
       deps.generateTimeoutMs,
       'IMAGE_GENERATE',
     )
@@ -157,7 +169,10 @@ function assert(condition, code) {
 }
 
 module.exports = {
+  DOWNLOAD_TIMEOUT_MS,
   GENERATE_TIMEOUT_MS,
+  IMAGE_MODEL,
+  IMAGE_SIZE,
   buildCoverPrompt,
   coverCloudPath,
   coverEnabled,

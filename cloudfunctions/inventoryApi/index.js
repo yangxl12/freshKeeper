@@ -32,7 +32,9 @@ const { coverEnabled, createCoverService } = require('./image-cover')
 // 懒加载 wx-server-sdk 的 ai/上传能力；单测注入假依赖时不会加载真 SDK。
 const generateCoverImage = createCoverService({})
 
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
+// timeout 是 SDK 单次 HTTP 请求超时（默认约 15s），不是云函数超时。
+// 生图属于长耗时 HTTP 请求，必须显式放大，否则 SDK 内部先抛 request timeout。
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 45000 })
 
 const db = cloud.database()
 const command = db.command

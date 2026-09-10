@@ -114,8 +114,44 @@ export function restoreItem(input: InventorySaveInput): Promise<{
 }
 
 // 生成/补取物品 AI 封面小图。失败由调用方吞掉（封面缺失时卡片用默认占位图）。
-export function generateItemCover(itemId: string): Promise<{ coverFileId: string }> {
-  return callCloud('inventoryApi', { action: 'generateCover', itemId })
+//
+// 封面是异步落库的：保存成功后物品先写入（此时没有 coverFileId），生图完成才回写。
+// 首页 onShow 拉列表的时机通常早于生图完成，拿到的是没有封面的数据，而且不会自愈——
+// 用户看到的就是"功能没生效"。所以这里在生成成功后广播一次，让首页把结果直接补到卡片上。
+export interface ItemCoverReady {
+  itemId: string
+  coverFileId: string
+}
+
+type CoverListener = (cover: ItemCoverReady) => void
+
+const coverListeners = new Set<CoverListener>()
+
+/** 订阅封面就绪事件，返回取消订阅函数（页面 onHide/onUnload 必须调用）。 */
+export function onItemCoverReady(listener: CoverListener): () => void {
+  coverListeners.add(listener)
+  return () => {
+    coverListeners.delete(listener)
+  }
+}
+
+function emitItemCoverReady(cover: ItemCoverReady) {
+  coverListeners.forEach((listener) => {
+    try {
+      listener(cover)
+    } catch (_error) {
+      // 监听方异常不能影响封面主流程：对调用方而言封面始终是尽力而为。
+    }
+  })
+}
+
+export async function generateItemCover(itemId: string): Promise<{ coverFileId: string }> {
+  const result = await callCloud<{ coverFileId: string }>('inventoryApi', {
+    action: 'generateCover',
+    itemId,
+  })
+  if (result && result.coverFileId) emitItemCoverReady({ itemId, coverFileId: result.coverFileId })
+  return result
 }
 
 export function batchCompleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {

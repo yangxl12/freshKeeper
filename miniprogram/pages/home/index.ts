@@ -18,6 +18,7 @@ import {
   deleteItem,
   getOverview,
   listInventory,
+  onItemCoverReady,
   updateQuantity,
 } from '../../services/inventory-service'
 import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
@@ -50,6 +51,8 @@ let searchTimer: number | undefined
 let midnightTimer: number | undefined
 let listRequestSequence = 0
 let overviewRequestSequence = 0
+// 封面异步生成完成后回填卡片的订阅句柄（onShow 订阅 / onHide 退订，避免重复绑定）。
+let coverUnsubscribe: (() => void) | null = null
 
 function emptyQuantitySheet(): QuantitySheet {
   return { visible: false, itemId: '', name: '', unit: '', value: '1' }
@@ -102,19 +105,37 @@ Page({
 
   onShow() {
     this.syncTabBar()
+    this.subscribeCoverUpdates()
     void this.refreshOverview()
     void this.refresh(true, false)
     this.scheduleMidnightRefresh()
   },
 
   onHide() {
+    this.unsubscribeCoverUpdates()
     if (searchTimer) clearTimeout(searchTimer)
     if (midnightTimer) clearTimeout(midnightTimer)
   },
 
   onUnload() {
+    this.unsubscribeCoverUpdates()
     if (searchTimer) clearTimeout(searchTimer)
     if (midnightTimer) clearTimeout(midnightTimer)
+  },
+
+  // 保存物品时封面是后台生成的：返回首页的那一刻列表里还没有 coverFileId，
+  // 等生图完成后把结果直接补到已渲染的卡片上，用户不必再手动下拉刷新。
+  subscribeCoverUpdates() {
+    if (coverUnsubscribe) return
+    coverUnsubscribe = onItemCoverReady(({ itemId, coverFileId }) => {
+      this.patchItem(itemId, { coverFileId })
+    })
+  },
+
+  unsubscribeCoverUpdates() {
+    if (!coverUnsubscribe) return
+    coverUnsubscribe()
+    coverUnsubscribe = null
   },
 
   onPullDownRefresh() {

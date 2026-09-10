@@ -27,7 +27,11 @@
 2. 起 `~/AppData/Local/uv/cache/archive-v0/<hash>/wechat_devtools_mcp/scripts/dist/daemon.bundle.js`（cwd 设同目录 scripts/），
    它先输出 `{"ready":true}`，再发 NDJSON `{"id":1,"script":"run_test_script","args":["--port","9420","--script","<探针绝对路径>","--timeout","90"]}`。
 3. 探针格式：`module.exports = async function (miniProgram) { return await miniProgram.evaluate(...) }`，
-   内部可 `new Promise(r => wx.cloud.callFunction({...}))`。driver 示例见 `C:/Users/BYS/AppData/Local/Temp/wx-probe/`。
+   内部可 `new Promise(r => wx.cloud.callFunction({...}))`。driver 示例见 `C:/Users/BYS/AppData/Local/Temp/wx-probe/`
+   （`probe-cover.js` + `run-cover.mjs` 是排查封面用的现成模板，改函数名即可复用）。
+4. **云函数返回结构是 `{ok, data, requestId}`，探针里取字段必须 `res.result.data.xxx`**；
+   写成 `res.result.itemId` 会静默拿到 undefined，看起来像"功能没返回"。`save` 的 `idempotencyKey` 必须是
+   标准 UUID v4，随便编字符串会 `INVALID_ARGUMENT: 快速录入请求编号不正确`。
 
 ## 快速录入：能力三档开关
 - ① `QUICK_ENTRY_FEATURES`（`config/runtime.ts`）决定按钮**显不显示**；
@@ -71,6 +75,22 @@
 - 文档：计划 `docs/ai-parse-plan.md`；`docs/ai-parse-research.md` 结论已过时（node-sdk 说法作废）。
 - 真机/后台待办：`quickEntryApi` 超时 60s（已确认线上是 60）、隐私指引补「输入发送至大模型」、
   `quick-entry/` 存储生命周期清理、ASR/OCR 密钥与腾讯云计费、复核 `AI_*` 日志。
+
+## 物品封面：AI 生图（inventoryApi generateCover）
+- 通道：`cloud.ai().createImageModel('hunyuan-image')` → `generateImage({model,prompt,size,n,revise,enable_thinking})`
+  → `data[0].url`（临时 URL，必须下载转存云存储）。provider/模型名只在 `cloudfunctions/inventoryApi/image-cover.js`。
+- **model 必须传 `HY-Image-3.0-Plus-4090-Tob-v1.0`**：`hunyuan-image` 作为 model 已于 2026-07-15 下线
+  （provider 名仍叫 `hunyuan-image`）。且**必须显式 `revise:{value:false}` / `enable_thinking:{value:false}`**，
+  否则 +10s 到 +60s 必撞超时。
+- `cloud.init({ timeout: 45000 })` 是 SDK 单次 HTTP 超时（默认约 15s），不是云函数超时，写代码里生效。
+- 物品落 `coverFileId`（cloud://，image 组件原生支持），**不 bump version**（展示数据，避免并发编辑 CONFLICT）。
+  同名物品复用封面；急停 `COVER_IMAGE_ENABLED`；生图 30s/下载 10s 独立超时（函数需 60s）。
+- 触发：保存成功后前端 fire-and-forget（快录批量串行、表单单条），失败静默 → 卡片用默认占位图。
+  `inventory-row` data 记 `coverFor/coverError`，封面 ID 变化才重试，失败回退 `/assets/inventory-placeholder.svg`。
+- **封面回填**：生图异步落库，首页 onShow 拉取常早于生图完成 → 卡片停在占位图且不自愈。
+  `inventory-service.ts` 暴露 `onItemCoverReady(listener)`，`generateItemCover` 成功后广播 `{itemId,coverFileId}`；
+  首页 onShow 订阅 / onHide 退订，收到直接 `patchItem`。别退回轮询或"延迟二次刷新"。
+- 待办：编辑改名不重新生成；item-detail 页仍用默认图；线上 inventoryApi 超时需 60s（见部署章节）。
 
 ## UI / 工程约定
 - 自定义 tabBar（`app.json` `tabBar.custom: true`，z-index 900）遮罩盖不住时**别硬提 z-index**（层叠上下文不可靠）；

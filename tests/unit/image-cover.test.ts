@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 const imageCover = require('../../cloudfunctions/inventoryApi/image-cover') as {
+  DOWNLOAD_TIMEOUT_MS: number
   GENERATE_TIMEOUT_MS: number
+  IMAGE_MODEL: string
+  IMAGE_SIZE: string
   buildCoverPrompt(name: string): string
   coverCloudPath(ownerId: string, itemId: string, extension: string): string
   coverEnabled(): boolean
@@ -134,6 +137,29 @@ describe('image-cover service', () => {
       fetchImage: () => Promise.resolve(Buffer.from('x')),
     })
     await expect(generate({ ownerId, itemId, name: '牛奶' })).rejects.toThrow('IMAGE_GENERATE_TIMEOUT')
-    expect(imageCover.GENERATE_TIMEOUT_MS).toBeLessThan(10_000)
+    // 云函数超时是 60s（只能在云开发控制台配置）：两条独立预算之和必须留足余量，
+    // 否则云函数被杀，调用方拿到的是 FUNCTION_TIMEOUT 而不是可降级的业务错误。
+    expect(imageCover.GENERATE_TIMEOUT_MS + imageCover.DOWNLOAD_TIMEOUT_MS).toBeLessThan(50_000)
+  })
+
+  it('sends the live model id with revise/thinking disabled (old alias was retired)', async () => {
+    let captured: Record<string, unknown> = {}
+    const sdk = fakeSdk((input: unknown) => {
+      captured = input as Record<string, unknown>
+      return Promise.resolve({ data: [{ url: 'https://cdn/img.png' }] })
+    })
+    const generate = imageCover.createCoverService({
+      sdk,
+      fetchImage: () => Promise.resolve(Buffer.from('fake-image')),
+      uploadFile: () => Promise.resolve({ fileID: 'cloud://f.png' }),
+    })
+    await generate({ ownerId, itemId, name: '牛奶' })
+    // 'hunyuan-image' 作为 model 已于 2026-07-15 下线；必须是带版本号的具体模型。
+    expect(captured.model).toBe(imageCover.IMAGE_MODEL)
+    expect(captured.model).not.toBe('hunyuan-image')
+    expect(captured.size).toBe(imageCover.IMAGE_SIZE)
+    expect(captured.revise).toEqual({ value: false })
+    expect(captured.enable_thinking).toEqual({ value: false })
+    expect(captured.prompt).toContain('牛奶')
   })
 })
