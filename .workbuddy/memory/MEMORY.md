@@ -101,6 +101,36 @@
 - **踩坑预警**：`normalizeTextResult()` 用 `assert` 抛错——一条 item 有个脏字段会导致**整批** `INVALID_PROVIDER_RESPONSE`。
   所以 AI 层必须先做逐字段宽容清洗（非法值丢成 null），再喂给它做严格兜底。
 - 计划文档见 `docs/ai-parse-plan.md`；旧调研见 `docs/ai-parse-research.md`（结论部分已过时）。
+- **P0 已落地（2026-09-10，commit 4c0f835）**：`ai-client.js`（唯一知道 provider/模型名/返回结构的地方，
+  顶层不 require wx-server-sdk，调用时才 lazy require，否则单测会加载真 SDK）、`ai-prompt.js`（system + 4 few-shot）、
+  `ai-parse.js`（`aiParseText({text, serverToday, generate, timeoutMs})`，宽容清洗 → `normalizeTextResult` 严格兜底，
+  `parserVersion='ai-v1'`）。`index.js` 的 AI 分支**吞掉一切错误**静默降级（连 `TOO_MANY_DRAFTS` 也吞，模型幻觉 6 件时降级更对）。
+- AI 超时用独立 `QUICK_ENTRY_AI_TIMEOUT_MS`（默认 6000，再取 min 于 `QUICK_ENTRY_TIMEOUT_MS`）——
+  不能用满 8s，前端 `recognizeTextItems` 有 8s `Promise.race`，撑满等于用户已降级。
+- `createModel('hunyuan-v3')` 不在 `@cloudbase/ai` 的 MODELS 表内，会走 DefaultSimpleModel：
+  URL = `…/v1/ai/hunyuan-v3/chat/completions`，body 原样透出 `{model:'hy3', messages}`，这是正常路径不是 bug。
+- 待办：P1 = 证据回链 `evidence` + `ai-quota.js` 限流缓存 + `EXCEED_CONCURRENT_REQUEST_LIMIT` 退避重试；
+  P2 = `runtime.ts` 的 `aiParse` 开关、识别中文案 + `AI` 徽章、隐私政策。真机验证前必须先部署 `quickEntryApi`。
+
+## 云函数部署（踩过的坑，2026-09-10）
+
+- **`config.json` 的 `timeout` / `envVariables` / `triggers` 只在函数首次创建时写入云端。**
+  `cli cloud functions deploy`（和开发者工具对已存在函数的上传）**只更新代码**，不重新应用函数配置。
+  改超时/环境变量必须去**云开发控制台 → 云函数 → 配置**（或删函数重新部署，慎用，会重置调用权限）。
+  CLI 没有改配置的命令；IDE 本地 HTTP 服务端只有 `/cloud/functions/{list,info,deploy,inc-deploy,download}`。
+  实证：config.json 写 `timeout: 60`，线上仍是默认 **3 秒**。
+- **微信云函数默认超时只有 3 秒**，调用 LLM 一定撞墙（单条输入 1.6~2.4s，五条物品约 4.9s →
+  `FUNCTIONS_TIME_LIMIT_EXCEEDED`）。凡是加 AI/长任务的函数，上线第一件事就是把超时调到 60s。
+- 查线上函数配置：`cli cloud functions info --env <环境ID> --names <函数名> --project <项目目录>`
+  （CLI 在 `D:\微信web开发者工具\cli.bat`；`scripts/start-wechat-devtools-mcp.mjs --check` 在本机因沙箱禁 `reg.exe` 定位失败，
+  直接走 `/d/微信web开发者工具/cli.bat`）。
+- **在模拟器里真调云函数**（验收用，可复用）：先 `cli auto --project ... --auto-port 9420 --trust-project`，
+  再起 `wechat-devtools-mcp` 包里的 `scripts/dist/daemon.bundle.js`（在 uv 缓存
+  `~/AppData/Local/uv/cache/archive-v0/<hash>/wechat_devtools_mcp/` 下），发 NDJSON
+  `{"id":1,"script":"run_test_script","args":["--port","9420","--script","<探针绝对路径>","--timeout","90"]}`；
+  探针导出 `async function(miniProgram)`，内部 `miniProgram.evaluate(() => new Promise(r => wx.cloud.callFunction({...})))`。
+- `QUICK_ENTRY_AI_ENABLED` 默认开启、只在取值 `false/0/off/no` 时关闭（急停开关）。
+  开启不能依赖环境变量，否则新环境部署完直接是死的。
 
 ## 目录速记
 
