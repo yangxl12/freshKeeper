@@ -66,8 +66,48 @@ describe('quick entry drafts', () => {
         }],
       }],
       serverToday: '2026-09-08',
-      parserVersion: 'rules-v2',
+      parserVersion: 'rules-v3',
     })
+  })
+
+  it.each([
+    ['瓜子一包，2周后过期，放客厅柜子', '2026-09-24'],
+    ['瓜子一包，三周后过期，放客厅柜子', '2026-10-01'],
+    ['瓜子一包，四天后过期，放客厅柜子', '2026-09-14'],
+    ['瓜子一包，半个月后过期，放客厅柜子', '2026-09-25'],
+    ['瓜子一包，半年后过期，放客厅柜子', '2027-03-10'],
+    ['瓜子一包，有效期还有两周，放客厅柜子', '2026-09-24'],
+    ['瓜子一包，过期时间是2周后，放客厅柜子', '2026-09-24'],
+  ])('recognizes natural relative expiry in %s', (text, expiryDate) => {
+    const [item] = parseQuickTextLocally(text, '2026-09-10').items
+
+    expect(item).toMatchObject({
+      name: '瓜子',
+      quantity: 1,
+      unit: '包',
+      storageLocation: '客厅柜子',
+    })
+    expect(item.dateCandidates?.[0]).toMatchObject({ date: expiryDate, role: 'expiry', complete: true })
+  })
+
+  it.each([
+    ['瓜子一包，下周三过期，放客厅柜子', '2026-09-16'],
+    ['瓜子一包，这周三过期，放客厅柜子', '2026-09-09'],
+    ['瓜子一包，上星期三过期，放客厅柜子', '2026-09-02'],
+  ])('keeps weekday prefixes out of the item name in %s', (text, expiryDate) => {
+    const [item] = parseQuickTextLocally(text, '2026-09-10').items
+
+    expect(item.name).toBe('瓜子')
+    expect(item.dateCandidates?.[0]).toMatchObject({ date: expiryDate, role: 'expiry' })
+  })
+
+  it.each([
+    ['瓜子一包，生产日期2026-09-10，保质期半年', 6, 'month'],
+    ['瓜子一包，生产日期2026-09-10，保质期半个月', 15, 'day'],
+  ])('normalizes half-unit shelf life in %s', (text, shelfLifeValue, shelfLifeUnit) => {
+    const [item] = parseQuickTextLocally(text, '2026-09-10').items
+
+    expect(item).toMatchObject({ name: '瓜子', shelfLifeValue, shelfLifeUnit, expiryInputMode: 'shelf_life' })
   })
 
   it('keeps ambiguous local dates for explicit confirmation', () => {
