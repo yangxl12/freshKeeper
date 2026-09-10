@@ -91,6 +91,9 @@ describe('quick entry page compatibility', () => {
 
   it('replaces the quick-entry subtabs with a recent-entry button and close control', () => {
     const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
+    const blockOpenCount = template.match(/<block\b/g)?.length || 0
+    const blockCloseCount = template.match(/<\/block>/g)?.length || 0
+    expect(blockOpenCount).toBe(blockCloseCount)
     expect(template).not.toContain('class="quick-tabs"')
     expect(template).toContain('class="recent-entry-button"')
     expect(template).toContain('bindtap="openRecentList"')
