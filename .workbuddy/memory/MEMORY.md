@@ -101,6 +101,11 @@
 - **踩坑预警**：`normalizeTextResult()` 用 `assert` 抛错——一条 item 有个脏字段会导致**整批** `INVALID_PROVIDER_RESPONSE`。
   所以 AI 层必须先做逐字段宽容清洗（非法值丢成 null），再喂给它做严格兜底。
 - 计划文档见 `docs/ai-parse-plan.md`；旧调研见 `docs/ai-parse-research.md`（结论部分已过时）。
+- **本地调试跑不了 `cloud.ai()`**（2026-09-10 实测）：开发者工具的「云函数本地调试」是本地 node 进程，
+  **没有云开发网关注入**，`/v1/ai/` 请求直接 404（日志 `AI_PARSE_DEGRADED` + `reason:"404"`，约 0.48s 快速返回后降级，
+  接口照样 `OK`）。`ai-client.js` 按 `TENCENTCLOUD_RUNENV === 'WX_LOCAL_SCF'`（SDK 内部区分本地/线上用的同一变量）
+  识别该形态并**默认跳过 AI**，`capabilities.aiText` 随之返回 false；逃生门 `QUICK_ENTRY_AI_LOCAL_DEBUG=true`。
+  **要验证 AI 路径只能走云端**（关本地调试，用模拟器或真机）。
 - **P0 已落地（2026-09-10，commit 4c0f835）**：`ai-client.js`（唯一知道 provider/模型名/返回结构的地方，
   顶层不 require wx-server-sdk，调用时才 lazy require，否则单测会加载真 SDK）、`ai-prompt.js`（system + 4 few-shot）、
   `ai-parse.js`（`aiParseText({text, serverToday, generate, timeoutMs})`，宽容清洗 → `normalizeTextResult` 严格兜底，
