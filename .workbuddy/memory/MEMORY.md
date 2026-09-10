@@ -77,14 +77,21 @@
   `docs/ai-parse-research.md` 里的 node-sdk 结论已作废。
   ```js
   cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 })
-  const model = cloud.ai().createModel('cloudbase')
+  const model = cloud.ai().createModel('hunyuan-v3')   // 不是 'cloudbase'，见下条
   const result = await model.generateText({ model: 'hy3', messages })  // result.text / result.usage
   ```
 - **模型用 `hy3`，不要用 `hy3-preview`（官方已公告即将下线）。** 模型名只允许出现在 adapter 文件里。
-- provider 二选一：`cloudbase`（有免费额度时**优先消耗免费额度**，耗尽自动转套餐额度）／`hunyuan-v3`（**只**吃免费额度，
-  来源不允许直接报错）。云函数端用 `cloudbase`。**控制台需手动开启 `hy3` 模型开关**。
+- **provider 必须用 `hunyuan-v3`，不是 `cloudbase`**（2026-09-10 踩坑确认）：
+  `cloudbase` **仅资源点套餐可用**且**需在控制台手动开 `hy3` 开关**；`hunyuan-v3` 资源点/非资源点套餐**均可**、
+  **无需开关也不支持关闭**、**只消耗免费额度**。本项目环境 `cloud1-d0gkh66ce94b1be08` 是非资源点计费，
+  在控制台点 hy3 开关会被拦（提示"需先切换为资源点套餐"）——**别去切套餐**，那开关属于 cloudbase 通道。
+  微信官方 FAQ 原话：「生文模型：使用 `ai.createModel("hunyuan-v3")`，model 传 `hy3`」。
+  provider 名只允许出现在 `ai-client.js` 一处，将来额度耗尽切资源点套餐时只改这一行（`hunyuan-v3` → `cloudbase`）。
+- **`hunyuan-v3` 通道两个硬约束**：① 免费额度耗尽**直接报错**（不静默扣套餐），降级链是必需品不是可选项；
+  ② 体验模型**单环境仅 5 并发**，超了报 `EXCEED_CONCURRENT_REQUEST_LIMIT`，必须退避重试。
+  「CloudBase 内置模型调用」在免费体验版环境不支持，个人版/资源点套餐才支持（成长计划报名会升级或发代金券）。
 - 计费：1000 Token 点 = 1 元；单次解析约 1 点（0.001 元）。「小程序成长计划」送 10 亿混元 Token，
-  **仅限小程序/云函数调用**。**注意套餐等级**：免费体验版控制台「CloudBase 内置模型调用」不支持，个人版（19.9/月）才支持。
+  **仅限小程序/云函数调用**；在 AI 工具等非小程序场景调用会走套餐扣费。
 - 无 `response_format: json_schema`。降级链：AI → 自定义 provider → 本地 `rules-v3`。
 - **两个关键设计（别丢）**：
   1. **不让模型算日期**。模型只输出 `dateFacts`（`kind: absolute` 给年月日 / `kind: relative` 给 `offsetDays` /

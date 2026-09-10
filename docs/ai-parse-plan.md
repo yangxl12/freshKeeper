@@ -5,7 +5,8 @@
 
 ## 0. 一句话结论
 
-用 `wx-server-sdk` 的 `cloud.ai()` 在**现有云函数 `quickEntryApi` 内**调用 `hy3` 模型做结构化抽取，
+用 `wx-server-sdk` 的 `cloud.ai()` 在**现有云函数 `quickEntryApi` 内**调用 `hy3` 模型做结构化抽取
+（provider 用 `hunyuan-v3`，见第 2 节），
 返回结构保持不变（`QuickEntryParseResult`），前端只加一个开关和一个来源标识，下游零改动。
 
 **但"准确无误"做不到，也不该追求。** 能做的是三件事：
@@ -20,7 +21,7 @@
 | --- | --- | --- | --- |
 | 云函数端 SDK | `@cloudbase/node-sdk` 的 `app.ai()` | **`wx-server-sdk` ≥ 3.0.5-beta.1 的 `cloud.ai()`**（本项目 4.0.2 ✅） | 不装新依赖，不用改包体积 |
 | 模型名 | `hy3-preview` | `hy3-preview` **即将下线**，用 `hy3` | 直接用 `hy3`，别写 preview |
-| provider | 未提及 | `cloudbase`：有免费额度时优先消耗，耗尽后自动转套餐额度<br>`hunyuan-v3`：**只**消耗免费额度，来源不允许时直接报错 | 用 `cloudbase`，可用性更好 |
+| provider | 未提及 | `cloudbase`：**仅资源点套餐可用**，需手动开模型开关<br>`hunyuan-v3`：**资源点 / 非资源点套餐均可**，无需开关，只消耗免费额度 | **用 `hunyuan-v3`**，原因见第 2 节 |
 | 返回值 | `res.text` | `result.text` / `result.usage` / `result.messages` | 取 `result.text` |
 | 超时 | 未提及 | 建议 `cloud.init({ timeout: 60000 })` | 云函数 `config.json` timeout 现为 30s，够用但建议同步调 |
 
@@ -29,18 +30,55 @@
 ```js
 const cloud = require('wx-server-sdk')
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 })
-const model = cloud.ai().createModel('cloudbase')
+const model = cloud.ai().createModel('hunyuan-v3')
 const result = await model.generateText({ model: 'hy3', messages })
 // result.text 是生成文本；result.usage 是 token 用量
 ```
 
-## 2. 开工前你需要确认的三件事
+## 2. provider 必须选 `hunyuan-v3`（踩过的坑）
 
-1. **控制台开启 `hy3` 模型开关** —— 云开发控制台 → AI → 生文模型 → 启用 `hy3`。
-   （`cloudbase` provider **需要手动开关**；`hunyuan-v3` 不需要，但扩展性差。）
-2. **环境套餐支持「CloudBase 内置模型调用」** —— 免费体验版不支持此能力，个人版（19.9 元/月）才支持。
-   成长计划报名后若已自动升级为个人版即可直接用，去控制台「套餐」页确认一下。
-3. **免费额度已到账** —— 控制台 AI 页能看到资源点余额。成长计划赠送额度**仅限小程序和云函数调用**，正好覆盖本方案。
+**结论：用 `hunyuan-v3`，不要开 hy3 模型开关，不要切换套餐。**
+
+两个 provider 是两条独立通道，别搞混：
+
+| 对比项 | `cloudbase` | `hunyuan-v3` |
+| --- | --- | --- |
+| 适用套餐 | **仅资源点套餐** | 资源点 + **非资源点套餐均可** |
+| 模型开关 | **需在控制台手动开启 `hy3`** | **无需开启，也不支持关闭** |
+| 免费额度消耗 | 来源允许时优先消耗免费额度 | **仅消耗免费额度** |
+| 免费额度耗尽 | 自动转套餐额度扣费 | **直接报错** |
+| 来源不允许时 | 自动转套餐额度 | 报错 |
+
+本项目环境 `cloud1-d0gkh66ce94b1be08` 是**非资源点计费**（成长计划一期报名的环境属"配额制套餐"，
+或环境仍为体验版）。控制台里点 `hy3` 开关会提示"需先切换为资源点套餐"——
+**那是 `cloudbase` 通道的开关，与本项目无关，不要跟着去切套餐。**
+
+微信官方 FAQ 原话：
+
+> 生文模型：使用 `ai.createModel("hunyuan-v3")`，model 传 `hy3`。
+
+**什么时候才需要切套餐？** 免费额度耗尽之后。官方给的迁移路径：
+
+```js
+// 额度用尽前
+const model = ai.createModel('hunyuan-v3')
+// 切换资源点套餐后
+const model = ai.createModel('cloudbase')
+```
+
+provider 名只允许出现在 `ai-client.js` 一处，将来切换只改一行。
+
+### 由此带来的两个硬约束
+
+1. **额度耗尽 = 硬失败，不是静默扣费。** 所以降级链（AI → provider → 本地 `rules-v3`）不是可选项，
+   是必需品。额度告警也不能省（控制台在 80% / 90% / 100% 发公众号消息提醒）。
+2. **并发只有 5**（体验模型限制）。超了报 `EXCEED_CONCURRENT_REQUEST_LIMIT`，
+   必须做退避重试 + 前端排队，不能让用户看到错误码。
+
+### 开工前你只需要确认一件事
+
+**免费额度已到账** —— 用小程序扫码登录云开发 Web 控制台，或微信开发者工具「云开发 → AI」模块查看用量。
+成长计划赠送额度**仅限小程序和云函数调用**，正好覆盖本方案。
 
 ## 3. 架构与降级链
 
@@ -144,7 +182,7 @@ system prompt 里写死：
 | 文件 | 改动 |
 | --- | --- |
 | `cloudfunctions/quickEntryApi/index.js` | `parseText()` 增加 AI 优先分支；`getCapabilities()` 增加 `aiText` 字段 |
-| `cloudfunctions/quickEntryApi/config.json` | 增加 `QUICK_ENTRY_AI_ENABLED` / `QUICK_ENTRY_AI_MODEL`（默认 `hy3`）；timeout 视情况调到 60 |
+| `cloudfunctions/quickEntryApi/config.json` | 增加 `QUICK_ENTRY_AI_ENABLED` / `QUICK_ENTRY_AI_PROVIDER`（默认 `hunyuan-v3`）/ `QUICK_ENTRY_AI_MODEL`（默认 `hy3`）；timeout 视情况调到 60 |
 | `miniprogram/config/runtime.ts` | `QUICK_ENTRY_FEATURES` 增加 `aiParse: true` |
 | `miniprogram/pages/quick-entry/index.ts` | 识别中文案（"AI 识别中…"，超 3 秒改"正在仔细识别…"）；草稿卡片显示 `AI` 徽章（`parserVersion` 以 `ai-` 开头时） |
 | `miniprogram/types/quick-entry.ts` | `QuickEntryCapabilities` 增加可选的 `aiText?: boolean` |
@@ -164,7 +202,8 @@ system prompt 里写死：
 | --- | --- | --- |
 | 结果缓存 | key = `sha256(normalizedText \| serverToday)`，命中直接返回，0 成本 | 先放云函数实例内存 `Map`（足够），后续可换云数据库集合 |
 | 每日限次 | 按 `OPENID` 计，默认 50 次/天，存云数据库 | 超限返回 `AI_QUOTA_EXCEEDED` → 前端**静默**降级本地规则，不弹提示 |
-| 并发超限 | 捕获 `EXCEED_CONCURRENT_REQUEST_LIMIT`，退避重试 1 次 | 免费额度并发有限，必加 |
+| 并发超限 | 捕获 `EXCEED_CONCURRENT_REQUEST_LIMIT`，退避重试 1 次 | **体验模型单环境只有 5 并发**，这是最容易撞的墙 |
+| 日均用量告警 | 云函数内统计调用次数，接近日限时记 `warn` 日志 | 控制台 80%/90%/100% 有公众号提醒，但自己留一份可观测数据 |
 | 超时 | 云函数内 8s 超时（复用 `QUICK_ENTRY_TIMEOUT_MS` 语义），前端已有 8s `Promise.race` 兜底 | 双层超时，避免用户干等 |
 
 ## 7. 测试计划
@@ -206,7 +245,7 @@ system prompt 里写死：
 ## 9. 分阶段实施
 
 ### P0 — 打通链路（最小可用）
-1. 控制台开启 `hy3`，确认套餐与额度
+1. 确认免费额度已到账（控制台 AI 页）；**provider 用 `hunyuan-v3`，不开模型开关、不切套餐**
 2. 写 `ai-client.js` + `ai-prompt.js`
 3. 写 `ai-parse.js` 基础版（调模型 → 解析 JSON → 清洗 → 复用 `normalizeTextResult`）
 4. `index.js` 挂上 AI 分支
@@ -232,8 +271,8 @@ system prompt 里写死：
 | **幻觉写脏数据** | 证据回链 + 未提及必须 null + `confirmationFields` 兜底（本方案核心） |
 | **一条脏数据毁整批** | `ai-parse.js` 宽容清洗前置，不让 `assert` 整批抛错 |
 | **延迟 1~3 秒** | loading 文案 + 8s 双层超时 + 静默降级本地规则 |
-| **免费额度并发不够** | 捕获并发超限退避重试；`hy3` 与 `hunyuan-v3` 可互为备选 |
-| **额度用尽** | `cloudbase` provider 会自动转套餐额度；同时监控用量、设每日限次上限 |
+| **免费额度并发不够（上限 5）** | 捕获 `EXCEED_CONCURRENT_REQUEST_LIMIT` 退避重试 1 次；前端提示"稍后重试"而非报错码 |
+| **额度用尽** | `hunyuan-v3` 通道会**直接报错**（不静默扣费）→ 必须降级本地 `rules-v3`；同时做每日限次 + 用量日志；真耗尽后再切资源点套餐并把 provider 改成 `cloudbase`（只改 `ai-client.js` 一行） |
 | **`hy3-preview` 下线** | 直接用 `hy3`，模型名只出现在 `ai-client.js` 一处 |
 | **SDK 返回结构演进** | 全部收敛在 `ai-client.js`，散落即失控（旧调研已提过 `finish_reasion` 拼写错误的前车之鉴） |
 | **隐私合规** | 隐私政策补充说明；小程序审核会看这一条，别漏 |
@@ -242,7 +281,8 @@ system prompt 里写死：
 ## 11. 参考来源
 
 - [小程序成长计划使用指南](https://docs.cloudbase.net/ai/ai-inspire-plan-guide)
+- [小程序成长计划（微信官方，含 provider FAQ）](https://developers.weixin.qq.com/miniprogram/dev/wxcloudservice/wxcloud/billing/ai-inspire-plan.html)
 - [wx-server-sdk 调用大模型](https://docs.cloudbase.net/ai/model/wx-server-sdk-access)
 - [小程序端调用大模型](https://docs.cloudbase.net/ai/model/miniprogram-access)
-- [接入大模型总览（模型开关）](https://docs.cloudbase.net/ai/model/overview)
+- [接入大模型总览（模型开关、资源点套餐）](https://docs.cloudbase.net/ai/model/overview)
 - [Hy3 preview 下线通知](https://docs.cloudbase.net/ai/announcement/hy3-preview-offline)
