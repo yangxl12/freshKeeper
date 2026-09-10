@@ -70,6 +70,31 @@
 - **不要**再用 `focus` 自动聚焦草稿的名称输入框（`focusNameId` 已删），会把键盘重新弹起来；
   用 `nameMissingFlags` 做视觉高亮即可。
 
+## 快速录入：AI 解析（2026-09-10，已按官方文档校正）
+
+- 云开发已内置大模型能力，不必买第三方 API。**云函数端用 `wx-server-sdk` 的 `cloud.ai()`**（本项目已装 4.0.2，
+  要求 ≥3.0.5-beta.1），**不是** `@cloudbase/node-sdk` 的 `app.ai()` —— 这是 2026-09-10 读官方文档后的校正，
+  `docs/ai-parse-research.md` 里的 node-sdk 结论已作废。
+  ```js
+  cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 })
+  const model = cloud.ai().createModel('cloudbase')
+  const result = await model.generateText({ model: 'hy3', messages })  // result.text / result.usage
+  ```
+- **模型用 `hy3`，不要用 `hy3-preview`（官方已公告即将下线）。** 模型名只允许出现在 adapter 文件里。
+- provider 二选一：`cloudbase`（有免费额度时**优先消耗免费额度**，耗尽自动转套餐额度）／`hunyuan-v3`（**只**吃免费额度，
+  来源不允许直接报错）。云函数端用 `cloudbase`。**控制台需手动开启 `hy3` 模型开关**。
+- 计费：1000 Token 点 = 1 元；单次解析约 1 点（0.001 元）。「小程序成长计划」送 10 亿混元 Token，
+  **仅限小程序/云函数调用**。**注意套餐等级**：免费体验版控制台「CloudBase 内置模型调用」不支持，个人版（19.9/月）才支持。
+- 无 `response_format: json_schema`。降级链：AI → 自定义 provider → 本地 `rules-v3`。
+- **两个关键设计（别丢）**：
+  1. **不让模型算日期**。模型只输出 `dateFacts`（`kind: absolute` 给年月日 / `kind: relative` 给 `offsetDays` /
+     `kind: shelf_life` 给 value+unit），日期换算交给现成的 `date-facts.js:normalizeFacts()`，零新增日期逻辑。
+  2. **证据回链防幻觉**。要求模型对每个非推断字段给原文片段（`evidence`），服务端去空白后校验它确实出现在用户原文里，
+     对不上就把该字段置 `null` 走 `confirmationFields`，绝不静默入库。
+- **踩坑预警**：`normalizeTextResult()` 用 `assert` 抛错——一条 item 有个脏字段会导致**整批** `INVALID_PROVIDER_RESPONSE`。
+  所以 AI 层必须先做逐字段宽容清洗（非法值丢成 null），再喂给它做严格兜底。
+- 计划文档见 `docs/ai-parse-plan.md`；旧调研见 `docs/ai-parse-research.md`（结论部分已过时）。
+
 ## 目录速记
 
 - `miniprogram/pages/quick-entry/`：AI 快速录入页，含草稿卡片、日期/保质期模式切换。

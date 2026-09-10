@@ -1,0 +1,248 @@
+# 快速录入接入 AI 解析：实现计划
+
+> 制定时间：2026-09-10 ｜ 状态：仅计划，未改动任何代码
+> 前置调研见 `docs/ai-parse-research.md`（部分结论已被本文档纠正）
+
+## 0. 一句话结论
+
+用 `wx-server-sdk` 的 `cloud.ai()` 在**现有云函数 `quickEntryApi` 内**调用 `hy3` 模型做结构化抽取，
+返回结构保持不变（`QuickEntryParseResult`），前端只加一个开关和一个来源标识，下游零改动。
+
+**但"准确无误"做不到，也不该追求。** 能做的是三件事：
+
+1. 让模型**只输出原文里有的信息**，没说的必须返回 `null`；
+2. 服务端**不信任模型**，每个字段都要能追回原文（证据回链），追不回就丢弃；
+3. 丢弃的字段进现有的 `confirmationFields` 流程，**交给用户确认**，而不是静默入库。
+
+## 1. 与旧调研的差异（必须纠正）
+
+| 项 | 旧调研结论 | 官方文档现状 | 影响 |
+| --- | --- | --- | --- |
+| 云函数端 SDK | `@cloudbase/node-sdk` 的 `app.ai()` | **`wx-server-sdk` ≥ 3.0.5-beta.1 的 `cloud.ai()`**（本项目 4.0.2 ✅） | 不装新依赖，不用改包体积 |
+| 模型名 | `hy3-preview` | `hy3-preview` **即将下线**，用 `hy3` | 直接用 `hy3`，别写 preview |
+| provider | 未提及 | `cloudbase`：有免费额度时优先消耗，耗尽后自动转套餐额度<br>`hunyuan-v3`：**只**消耗免费额度，来源不允许时直接报错 | 用 `cloudbase`，可用性更好 |
+| 返回值 | `res.text` | `result.text` / `result.usage` / `result.messages` | 取 `result.text` |
+| 超时 | 未提及 | 建议 `cloud.init({ timeout: 60000 })` | 云函数 `config.json` timeout 现为 30s，够用但建议同步调 |
+
+`cloud.ai()` 调用形态（已确认，与 node-sdk 不同）：
+
+```js
+const cloud = require('wx-server-sdk')
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 })
+const model = cloud.ai().createModel('cloudbase')
+const result = await model.generateText({ model: 'hy3', messages })
+// result.text 是生成文本；result.usage 是 token 用量
+```
+
+## 2. 开工前你需要确认的三件事
+
+1. **控制台开启 `hy3` 模型开关** —— 云开发控制台 → AI → 生文模型 → 启用 `hy3`。
+   （`cloudbase` provider **需要手动开关**；`hunyuan-v3` 不需要，但扩展性差。）
+2. **环境套餐支持「CloudBase 内置模型调用」** —— 免费体验版不支持此能力，个人版（19.9 元/月）才支持。
+   成长计划报名后若已自动升级为个人版即可直接用，去控制台「套餐」页确认一下。
+3. **免费额度已到账** —— 控制台 AI 页能看到资源点余额。成长计划赠送额度**仅限小程序和云函数调用**，正好覆盖本方案。
+
+## 3. 架构与降级链
+
+```
+用户输入
+  └─ 前端 parseQuickText()                        ← 不改签名、不改返回结构
+       └─ 云函数 parseText
+            ├─ ① AI 解析（ai-parse.js）           ← 新增，主路径
+            │    失败 / 超时 / 输出不合规
+            ├─ ② 自定义 provider（provider.js）    ← 保留现状，不动
+            │    未配置
+            └─ ③ 本地 rules-v3（quick-text.js）    ← 最终兜底，已有
+```
+
+- 三级降级对前端**完全透明**，`services/quick-entry-service.ts` 不用改。
+- AI 不可用时**不发 toast**（微信 toast 超 7 字被截断，已被吐槽过），只在 UI 上不显示 `AI` 徽章。
+
+## 4. 核心设计：让"准确"可验证
+
+这是整个方案能不能落地的关键，不是技术问题是产品问题。
+
+### 4.1 约束模型输出（L1）
+
+system prompt 里写死：
+
+- 完整的字段清单 + 类型 + 枚举白名单（`category` ∈ `food/medicine/household/other`）
+- 3 条 few-shot（覆盖三种典型句式，见第 8 节验收用例）
+- 铁律：**"未在原文中明确出现的字段一律返回 null，禁止推测、禁止补全、禁止使用常识。"**
+- 铁律：**"不要计算日期，只把原文里的时间表达转成结构化事实。"**
+- 只输出 JSON，不要 markdown 代码块，不要解释文字
+
+### 4.2 让模型不碰日期（L2）
+
+日期换算是幻觉高发区（"2周后"→ 模型算错、闰月算错、跨年算错）。
+
+**模型只输出事实，服务端算日期：**
+
+```json
+{ "kind": "relative", "offsetDays": 14, "label": "expiry", "rawText": "2周后过期" }
+{ "kind": "absolute", "year": 2026, "month": 9, "day": 12, "label": "expiry", "rawText": "9月12日过期" }
+{ "kind": "shelf_life", "value": 6, "unit": "month", "rawText": "保质期6个月" }
+```
+
+这套协议**现有的 `date-facts.js:normalizeFacts()` 已经完整支持**，包括 `offsetDays` 换算、`nearestMonthDay` 就近推年。
+零新增日期逻辑。
+
+### 4.3 证据回链（L3，最关键的一层）
+
+要求模型对**每个非推断字段**附带原文片段：
+
+```json
+{
+  "items": [{
+    "name": "牛奶",
+    "quantity": 2,
+    "unit": "盒",
+    "category": "food",
+    "storageLocation": "冰箱",
+    "dateFacts": [{ "kind": "absolute", "year": 2026, "month": 9, "day": 12, "label": "expiry", "rawText": "9月12日过期" }],
+    "evidence": { "name": "牛奶", "quantity": "2盒", "unit": "2盒", "storageLocation": "放冰箱" }
+  }]
+}
+```
+
+服务端逐字段校验：**把 `evidence` 去空白后，检测它是否真的出现在用户原文中**。
+
+- 对得上 → 保留该字段
+- 对不上（模型编的）→ **该字段置 `null`**，让它走 `confirmationFields` 强制用户确认
+
+这一招直接干掉"买了牛奶 → 模型自信返回 `quantity: 1`"这类幻觉。成本几乎为零（一次 `includes`），
+且**可测试**——单测里塞一个"没有数量的原文 + 模型硬编数量"的假响应，断言字段被丢弃。
+
+`category` 是例外：它本来就是从名称推断的，允许无证据，但必须落在枚举白名单内。
+
+### 4.4 服务端宽容清洗（重要，别踩坑）
+
+`date-facts.js:normalizeTextResult()` 用的是 **`assert` + 抛错**：任何一条 item 里有一个脏字段
+（如 `quantity: "两盒"` 非整数），**整批请求抛 `INVALID_PROVIDER_RESPONSE`**，前端直接降级本地规则，
+连本来识别对的物品一起丢。
+
+所以 `ai-parse.js` 必须**先做逐字段宽容清洗**（非法值 → 丢弃成 `null`），
+再把干净 body 喂给 `normalizeTextResult` 做严格兜底校验。两层职责不同：
+
+- `ai-parse.js` = 宽容 sanitize，尽量保住能用的字段
+- `normalizeTextResult` = 严格 validate，兜住一切漏网的
+
+## 5. 文件改动清单
+
+### 新增
+
+| 文件 | 职责 |
+| --- | --- |
+| `cloudfunctions/quickEntryApi/ai-client.js` | **SDK 适配层**。隔离 `cloud.ai()`、模型名、返回结构。风险 6 要求"模型名与返回结构集中在一个 adapter 文件里，不要散落各处"；同时便于单测注入假实现 |
+| `cloudfunctions/quickEntryApi/ai-prompt.js` | system prompt + few-shot。独立成文件，方便迭代和回归对比 |
+| `cloudfunctions/quickEntryApi/ai-parse.js` | 编排：调模型 → 提取 JSON → 证据回链校验 → 宽容清洗 → 转 dateFacts body |
+| `cloudfunctions/quickEntryApi/ai-quota.js` | 按 openid 每日限次 + 结果缓存（见第 6 节） |
+| `tests/unit/ai-parse.test.ts` | 单测，注入假 AI client（见第 7 节） |
+
+### 修改
+
+| 文件 | 改动 |
+| --- | --- |
+| `cloudfunctions/quickEntryApi/index.js` | `parseText()` 增加 AI 优先分支；`getCapabilities()` 增加 `aiText` 字段 |
+| `cloudfunctions/quickEntryApi/config.json` | 增加 `QUICK_ENTRY_AI_ENABLED` / `QUICK_ENTRY_AI_MODEL`（默认 `hy3`）；timeout 视情况调到 60 |
+| `miniprogram/config/runtime.ts` | `QUICK_ENTRY_FEATURES` 增加 `aiParse: true` |
+| `miniprogram/pages/quick-entry/index.ts` | 识别中文案（"AI 识别中…"，超 3 秒改"正在仔细识别…"）；草稿卡片显示 `AI` 徽章（`parserVersion` 以 `ai-` 开头时） |
+| `miniprogram/types/quick-entry.ts` | `QuickEntryCapabilities` 增加可选的 `aiText?: boolean` |
+
+### 明确不动
+
+- `miniprogram/services/quick-entry-service.ts` —— 返回结构一致，签名不变
+- `miniprogram/domain/quick-entry.ts` —— `createDraftFromParsed` 等下游全部逻辑零改动
+- `cloudfunctions/quickEntryApi/date-facts.js` / `quick-text.js` —— 完全复用
+- `scripts/sync-quick-parser.mjs` 的同步关系 —— 新模块不参与双副本同步
+
+## 6. 限流、缓存与并发
+
+**钱不是问题**（单次约 1 点 = 0.001 元），要防的是滥用和并发。
+
+| 机制 | 做法 | 说明 |
+| --- | --- | --- |
+| 结果缓存 | key = `sha256(normalizedText \| serverToday)`，命中直接返回，0 成本 | 先放云函数实例内存 `Map`（足够），后续可换云数据库集合 |
+| 每日限次 | 按 `OPENID` 计，默认 50 次/天，存云数据库 | 超限返回 `AI_QUOTA_EXCEEDED` → 前端**静默**降级本地规则，不弹提示 |
+| 并发超限 | 捕获 `EXCEED_CONCURRENT_REQUEST_LIMIT`，退避重试 1 次 | 免费额度并发有限，必加 |
+| 超时 | 云函数内 8s 超时（复用 `QUICK_ENTRY_TIMEOUT_MS` 语义），前端已有 8s `Promise.race` 兜底 | 双层超时，避免用户干等 |
+
+## 7. 测试计划
+
+新增 `tests/unit/ai-parse.test.ts`，**注入假 AI client**，不真调模型（快、可重复、免费）：
+
+| 用例 | 断言 |
+| --- | --- |
+| 正常输入（名称+数量+单位+绝对日期+存放位置） | 字段全部正确映射，无 `confirmationFields` |
+| 模型输出带 markdown 代码块包裹 | 能正确剥离并解析 |
+| **幻觉：原文无数量，模型返回 `quantity: 1`** | 证据回链失败 → `quantity` 被置 null → 进 `confirmationFields` |
+| **幻觉：模型编了个原文没有的日期** | 该 dateFact 被丢弃 |
+| 相对时间"2周后" | 换算成 `today + 14`，且由服务端算，不由模型算 |
+| 保质期"保质期6个月" | `expiryInputMode: 'shelf_life'`，`shelfLifeValue: 6` |
+| 一条 item 里数量是脏值（`"两盒"`） | 只丢该字段，**其余字段和其余 item 全部保住**（不整批失败） |
+| JSON 截断 / 解析失败 | 重试一次 → 再失败抛 `AI_UNAVAILABLE`，前端降级 |
+| 模型返回 6 个物品 | 抛 `TOO_MANY_DRAFTS` |
+| 超时 | 抛 `QUICK_ENTRY_TIMEOUT` |
+| 空物品 / 闲聊输入（"今天天气怎么样"） | 不产出物品，走前端 fallback 草稿 |
+
+跑 `npm run check` 必须全绿。
+
+## 8. 验收标准
+
+给一组固定用例，上线前手工过一遍（也是 few-shot 的素材来源）：
+
+| 输入 | 期望 |
+| --- | --- |
+| `牛奶2盒9月12日过期放冰箱` | name=牛奶, qty=2, unit=盒, expiry=2026-09-12, storage=冰箱，无需确认 |
+| `瓜子一包2周后过期` | name=瓜子, qty=1, unit=包, expiry=today+14，无需确认 |
+| `买了三个苹果` | name=苹果, qty=3；**unit 为 null → 需用户确认单位** |
+| `牛奶` | name=牛奶；**qty/unit/日期全部 null → 全部需确认**，绝不填 1 |
+| `今天买的酸奶，保质期21天` | name=酸奶, shelfLifeValue=21, unit=day |
+| `帮我看看今天天气` | 不产出物品，走 fallback 草稿，不报错 |
+
+**准确率目标：字段级 precision ≥ 0.95，recall 允许偏低。**
+即"宁可让它说不知道，也不许猜错"——猜错会写脏数据，说不知道用户补一下就行。
+
+## 9. 分阶段实施
+
+### P0 — 打通链路（最小可用）
+1. 控制台开启 `hy3`，确认套餐与额度
+2. 写 `ai-client.js` + `ai-prompt.js`
+3. 写 `ai-parse.js` 基础版（调模型 → 解析 JSON → 清洗 → 复用 `normalizeTextResult`）
+4. `index.js` 挂上 AI 分支
+5. 写单测正常/异常路径
+6. 微信开发者工具真机验证 3 条用例
+
+### P1 — 上强度
+7. 证据回链校验 + 幻觉单测
+8. 相对时间 / 保质期协议打通
+9. 限流 + 缓存 + 并发重试
+10. 跑满第 8 节全部验收用例，调 prompt
+
+### P2 — 收尾
+11. UI：识别中文案 + `AI` 徽章 + 降级静默
+12. `QUICK_ENTRY_FEATURES.aiParse` 开关 + capabilities 下发
+13. 隐私政策补一条（用户输入会发送至大模型），处理 `runtime.ts` 里"P1 provider 完成隐私评审后再逐项开启"这句注释的约束
+14. 语音链路接上 AI（同声传译插件转文字 → 同一套抽取流程）
+
+## 10. 风险清单
+
+| 风险 | 应对 |
+| --- | --- |
+| **幻觉写脏数据** | 证据回链 + 未提及必须 null + `confirmationFields` 兜底（本方案核心） |
+| **一条脏数据毁整批** | `ai-parse.js` 宽容清洗前置，不让 `assert` 整批抛错 |
+| **延迟 1~3 秒** | loading 文案 + 8s 双层超时 + 静默降级本地规则 |
+| **免费额度并发不够** | 捕获并发超限退避重试；`hy3` 与 `hunyuan-v3` 可互为备选 |
+| **额度用尽** | `cloudbase` provider 会自动转套餐额度；同时监控用量、设每日限次上限 |
+| **`hy3-preview` 下线** | 直接用 `hy3`，模型名只出现在 `ai-client.js` 一处 |
+| **SDK 返回结构演进** | 全部收敛在 `ai-client.js`，散落即失控（旧调研已提过 `finish_reasion` 拼写错误的前车之鉴） |
+| **隐私合规** | 隐私政策补充说明；小程序审核会看这一条，别漏 |
+| **prompt 回归无保障** | prompt 独立成 `ai-prompt.js` + 固定验收用例，改动后必跑 |
+
+## 11. 参考来源
+
+- [小程序成长计划使用指南](https://docs.cloudbase.net/ai/ai-inspire-plan-guide)
+- [wx-server-sdk 调用大模型](https://docs.cloudbase.net/ai/model/wx-server-sdk-access)
+- [小程序端调用大模型](https://docs.cloudbase.net/ai/model/miniprogram-access)
+- [接入大模型总览（模型开关）](https://docs.cloudbase.net/ai/model/overview)
+- [Hy3 preview 下线通知](https://docs.cloudbase.net/ai/announcement/hy3-preview-offline)
