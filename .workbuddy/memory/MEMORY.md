@@ -32,6 +32,10 @@
 4. **云函数返回结构是 `{ok, data, requestId}`，探针里取字段必须 `res.result.data.xxx`**；
    写成 `res.result.itemId` 会静默拿到 undefined，看起来像"功能没返回"。`save` 的 `idempotencyKey` 必须是
    标准 UUID v4，随便编字符串会 `INVALID_ARGUMENT: 快速录入请求编号不正确`。
+5. **automator 的 page node 会失效**：`page node not found` / `createSelectorQuery` 超时 / 截图全白，
+   但 `miniProgram.evaluate` 仍正常（能读 route、能 `wx.switchTab`）。该形态下
+   `getCurrentPages()[i].data` 只暴露 `__webviewId__`，**读不到业务字段，别用它断言页面数据**。
+   验收渲染只能靠用户在模拟器里看，别在截图/节点查询上反复消耗时间。
 
 ## 快速录入：能力三档开关
 - ① `QUICK_ENTRY_FEATURES`（`config/runtime.ts`）决定按钮**显不显示**；
@@ -82,6 +86,10 @@
 - **model 必须传 `HY-Image-3.0-Plus-4090-Tob-v1.0`**：`hunyuan-image` 作为 model 已于 2026-07-15 下线
   （provider 名仍叫 `hunyuan-image`）。且**必须显式 `revise:{value:false}` / `enable_thinking:{value:false}`**，
   否则 +10s 到 +60s 必撞超时。
+- **prompt 不能写"贴纸风格"**：模型会理解成带白边和灰底板的实体贴纸，出图是灰底方块，贴白卡片上很脏。
+  正确写法是"背景是纯白色，主体周围不要阴影"。出图约 5.8s。
+- **扩展名必须按文件头魔数嗅探**（`sniffExtension`）：生图返回的字节实测是 JPEG，
+  但 URL 无后缀、Content-Type 也谎报 `image/png`，按后两者命名会把 JPEG 存成 `.png`。
 - `cloud.init({ timeout: 45000 })` 是 SDK 单次 HTTP 超时（默认约 15s），不是云函数超时，写代码里生效。
 - 物品落 `coverFileId`（cloud://，image 组件原生支持），**不 bump version**（展示数据，避免并发编辑 CONFLICT）。
   同名物品复用封面；急停 `COVER_IMAGE_ENABLED`；生图 30s/下载 10s 独立超时（函数需 60s）。

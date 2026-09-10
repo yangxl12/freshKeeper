@@ -45,8 +45,10 @@ function sanitizeName(name) {
     .slice(0, MAX_NAME_LENGTH)
 }
 
+// 注意：不要写"贴纸风格"。模型会把"贴纸"理解成带白边和灰色底板的实体贴纸，
+// 出图就是灰底方块，贴在白卡片上非常脏。这里是直接画在白底上的插画。
 function buildCoverPrompt(name) {
-  return `手绘儿童绘本贴纸风格的${sanitizeName(name)}插画，单个主体居中构图，圆润可爱的粗线条描边，柔和明快的暖色调，扁平简洁，纯白色背景，画面中没有任何文字`
+  return `手绘儿童绘本风格的${sanitizeName(name)}插画，单个主体居中构图，圆润可爱的粗线条描边，柔和明快的暖色调，扁平简洁，背景是纯白色，主体周围不要阴影，画面中没有任何文字`
 }
 
 // 生图返回结构只在这里收敛：优先 OpenAI 风格 data[0].url，宽容收 imageUrl / url。
@@ -95,7 +97,10 @@ function downloadImage(url) {
         }
         chunks.push(chunk)
       })
-      response.on('end', () => resolve(Buffer.concat(chunks)))
+      response.on('end', () => resolve({
+        buffer: Buffer.concat(chunks),
+        contentType: String(response.headers['content-type'] || ''),
+      }))
       response.on('error', reject)
     })
     request.on('error', reject)
@@ -103,7 +108,23 @@ function downloadImage(url) {
   })
 }
 
-function extensionOf(url) {
+// 内容才是真相。生图接口的 Content-Type 和 URL 后缀都实测过不靠谱：
+// 返回的字节是 JPEG，但 URL 无后缀、Content-Type 也声明成 image/png。
+// 只按后两者命名会把 JPEG 存成 .png，所以优先嗅探文件头魔数。
+function sniffExtension(buffer) {
+  if (!buffer || buffer.length < 12) return ''
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpg'
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return 'png'
+  if (buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') return 'webp'
+  if (buffer.slice(0, 3).toString('ascii') === 'GIF') return 'gif'
+  return ''
+}
+
+function extensionOf(url, contentType = '', buffer = null) {
+  const sniffed = sniffExtension(buffer)
+  if (sniffed) return sniffed
+  const fromType = /image\/(png|jpe?g|webp)/.exec(String(contentType).toLowerCase())
+  if (fromType) return fromType[1] === 'jpeg' ? 'jpg' : fromType[1]
   const match = /\.([a-z0-9]{3,5})(?:[?#]|$)/i.exec(String(url || ''))
   const extension = match && match[1] ? match[1].toLowerCase() : 'png'
   return ['png', 'jpg', 'jpeg', 'webp'].includes(extension) ? extension : 'png'
@@ -153,10 +174,13 @@ function createCoverService(options = {}) {
     const imageUrl = extractImageUrl(result)
     if (!imageUrl) throw new Error('IMAGE_URL_MISSING')
 
-    const buffer = await withTimeout(Promise.resolve(deps.fetchImage(imageUrl)), DOWNLOAD_TIMEOUT_MS, 'IMAGE_DOWNLOAD')
+    // fetchImage 默认返回 { buffer, contentType }；单测里可以直接给 Buffer。
+    const downloaded = await withTimeout(Promise.resolve(deps.fetchImage(imageUrl)), DOWNLOAD_TIMEOUT_MS, 'IMAGE_DOWNLOAD')
+    const buffer = Buffer.isBuffer(downloaded) ? downloaded : downloaded && downloaded.buffer
+    const contentType = Buffer.isBuffer(downloaded) ? '' : String((downloaded && downloaded.contentType) || '')
     if (!buffer || !buffer.length) throw new Error('IMAGE_EMPTY')
 
-    const cloudPath = coverCloudPath(ownerId, itemId, extensionOf(imageUrl))
+    const cloudPath = coverCloudPath(ownerId, itemId, extensionOf(imageUrl, contentType, buffer))
     const upload = deps.uploadFile || ((params) => client.uploadFile(params))
     const uploadResult = await upload({ cloudPath, fileContent: buffer })
     if (!uploadResult || !uploadResult.fileID) throw new Error('IMAGE_UPLOAD_FAILED')
@@ -180,4 +204,5 @@ module.exports = {
   extensionOf,
   extractImageUrl,
   sanitizeName,
+  sniffExtension,
 }
