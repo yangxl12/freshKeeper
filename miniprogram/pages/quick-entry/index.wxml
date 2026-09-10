@@ -173,7 +173,7 @@
                 <text class="qe-row__label">物品名称 <text class="required-mark">*</text></text>
                 <view class="qe-row__content qe-row__content--stacked">
                   <input class="qe-input qe-input--name {{nameMissingFlags[draftIndex] ? 'qe-input--missing' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.name}}" maxlength="40" placeholder="给它起个名字，例如 鲜牛奶" placeholder-class="field-placeholder" data-index="{{draftIndex}}" data-field="name" bindinput="handleTextInput" />
-                  <text class="qe-count">{{(draft.fields.name || '').length}}/40</text>
+                  <text class="qe-count">{{draft.fields.name.length}}/40</text>
                 </view>
               </view>
 
