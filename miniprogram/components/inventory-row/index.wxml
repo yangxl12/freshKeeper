@@ -3,14 +3,14 @@
   <view class="item-card__body">
     <text class="item-card__name">{{item.name}}</text>
     <view class="item-card__meta">
-      <view class="item-card__meta-item item-card__meta-item--category">
-        <view class="meta-icon meta-icon--tag" aria-hidden="true"></view>
-        <text class="item-card__meta-text">{{item.categoryLabel}}</text>
-      </view>
-      <view wx:if="{{item.hasLocation}}" class="item-card__meta-item item-card__meta-item--location">
-        <view class="meta-icon meta-icon--pin" aria-hidden="true"></view>
-        <text class="item-card__meta-text">{{item.locationText}}</text>
-      </view>
+      <text class="item-card__meta-text item-card__meta-text--category">{{item.categoryLabel}}</text>
+      <block wx:if="{{item.hasLocation}}">
+        <view class="item-card__meta-divider" aria-hidden="true"></view>
+        <view class="item-card__meta-item item-card__meta-item--location">
+          <view class="meta-icon meta-icon--pin" aria-hidden="true"></view>
+          <text class="item-card__meta-text">{{item.locationText}}</text>
+        </view>
+      </block>
     </view>
   </view>
   <view class="item-card__side">
