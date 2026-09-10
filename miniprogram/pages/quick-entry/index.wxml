@@ -1,4 +1,4 @@
-<view class="quick-entry page-shell {{activeTab === 'quick' && quickTab === 'text' && popup !== 'recent' ? 'quick-entry--text' : ''}} {{activeTab === 'quick' && quickTab === 'recent' ? 'quick-entry--recent' : ''}}" style="{{activeTab === 'quick' && quickTab === 'text' && popup !== 'recent' && quickKeyboardHeight > 0 ? 'height: calc(100vh - ' + quickKeyboardHeight + 'px); padding-bottom: 12rpx;' : ''}}">
+<view class="quick-entry page-shell {{activeTab === 'quick' && quickTab === 'text' ? 'quick-entry--text' : ''}} {{activeTab === 'quick' && quickTab === 'recent' ? 'quick-entry--recent' : ''}}">
   <view class="entry-tabs" role="tablist">
     <button
       class="entry-tabs__item {{activeTab === 'quick' ? 'entry-tabs__item--active' : ''}}"
@@ -45,79 +45,128 @@
     <item-form-sheet id="fullForm" source="quick-entry" bind:saved="handleFullFormSaved" />
   </view>
 
-  <view wx:if="{{activeTab === 'quick' && (quickTab === 'text' || popup === 'recent')}}" class="{{popup === 'recent' ? 'entry-sheet' : 'inline-entry'}}">
-    <view wx:if="{{popup === 'recent'}}" class="entry-sheet__mask" bindtap="requestClosePopup" />
-    <view class="{{popup === 'recent' ? 'entry-sheet__panel' : 'inline-entry__panel'}}">
-      <view wx:if="{{popup === 'recent'}}" class="entry-sheet__head">
-        <view class="entry-sheet__handle" aria-hidden="true"></view>
-        <text class="entry-sheet__title">确认录入</text>
+  <view wx:if="{{activeTab === 'quick' && quickTab === 'text'}}" class="quick-stage">
+    <view class="quick-top">
+      <view wx:if="{{features.recent}}" class="quick-input-toolbar">
+        <button class="recent-entry-button" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
       </view>
 
-        <view wx:if="{{popup !== 'recent' && features.recent}}" class="quick-input-toolbar">
-          <button class="recent-entry-button" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
+      <form wx:if="{{features.text || features.voice || features.datePhoto}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
+        <textarea class="quick-input" name="quickText" value="{{inputText}}" focus="{{quickInputFocused}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" bindfocus="handleQuickInputFocus" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="handleQuickInputBlur" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
+        <view class="quick-input-tools">
+          <view class="quick-input-tools__group">
+            <button wx:if="{{features.voice}}" class="tool-button {{voiceState === 'recording' ? 'tool-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
+              <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
+            </button>
+            <button wx:if="{{features.datePhoto}}" class="tool-button {{photoStage !== 'idle' ? 'tool-button--active' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}" bindtap="chooseDatePhoto" aria-label="{{photoStage !== 'idle' ? '收起拍日期' : '拍摄日期'}}">
+              <view class="line-icon line-icon--date-scan" aria-hidden="true"></view>
+            </button>
+          </view>
+          <button wx:if="{{features.text}}" class="quick-generate" disabled="{{saving || recognitionState !== 'idle'}}" form-type="submit" hover-class="pressable--pressed" aria-label="{{recognitionState === 'parsing' ? '正在生成' : '生成物品草稿'}}">
+            <text class="quick-generate__label">{{recognitionState === 'parsing' ? '识别中…' : '识别生成'}}</text>
+            <view class="{{recognitionState === 'parsing' ? 'quick-generate__loading' : 'quick-generate__arrow'}}" aria-hidden="true"></view>
+          </button>
+        </view>
+        <view wx:if="{{voiceState === 'recording'}}" class="quick-entry__notice">{{voiceSeconds}} / 30 秒 · {{voiceCancelling ? '松开取消录音' : '再次点击麦克风结束并转写'}}</view>
+        <text wx:if="{{features.voice && capabilities.voice}}" class="camera-help">麦克风仅用于识别本次录入内容，转写后可修改文字。</text>
+        <text wx:for="{{unavailableHints}}" wx:key="*this" class="feature-hint">{{item}}</text>
+      </form>
+    </view>
+
+    <scroll-view class="quick-body" scroll-y>
+      <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionState === 'transcribing' ? '正在转写语音…' : recognitionTip}}<button bindtap="cancelRecognition">取消本次识别</button></view>
+
+      <view wx:if="{{photoStage !== 'idle'}}" class="date-camera-panel">
+        <text class="section-heading__title">将包装上的日期喷码放入框内</text>
+        <text class="camera-help">避开反光、阴影和弯曲边缘，让日期尽量占满画面。</text>
+        <view wx:if="{{photoStage === 'camera' && !cameraError}}" class="camera-frame">
+          <camera class="date-camera" mode="normal" device-position="back" flash="off" binderror="cameraFailed" />
+          <cover-view class="camera-guide">对准生产日期、保质期或到期日</cover-view>
+        </view>
+        <image wx:if="{{photoStage === 'preview'}}" class="date-photo-preview" src="{{photoPreview}}" mode="aspectFit" />
+        <view class="quick-actions">
+          <button wx:if="{{photoStage === 'camera' && !cameraError}}" bindtap="takeDatePhoto">拍摄日期</button>
+          <button wx:if="{{cameraError}}" bindtap="openPermissionSettings">前往设置</button>
+          <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="recognizePhoto">{{inputError ? '重试本次识别' : '识别这张照片'}}</button>
+          <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="retakePhoto">重拍</button>
+          <button disabled="{{recognitionState !== 'idle'}}" bindtap="chooseAlbum">从相册选择</button>
+        </view>
+        <button class="manual-button" bindtap="closePhoto">返回手动填写</button>
+      </view>
+
+      <view wx:if="{{inputError}}" class="quick-entry__notice" role="alert">{{inputError}}</view>
+
+      <view wx:if="{{drafts.length}}" class="draft-area">
+        <view class="draft-area__head">
+          <text class="draft-area__title">识别结果</text>
+          <text class="draft-area__meta">{{drafts.length}} 条 · {{selectableCount}} 条可入库</text>
         </view>
 
-        <form wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
-          <view class="quick-input-row">
-            <view class="quick-input-wrap">
-              <textarea wx:if="{{features.text || features.voice}}" class="quick-input" name="quickText" value="{{inputText}}" focus="{{quickInputFocused}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" bindfocus="handleQuickInputFocus" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="handleQuickInputBlur" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
-              <view class="quick-input-tools">
-                <button wx:if="{{features.voice}}" class="voice-button {{voiceState === 'recording' ? 'voice-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
-                  <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
-                </button>
-                <button wx:if="{{features.datePhoto}}" class="photo-button {{photoStage !== 'idle' ? 'photo-button--active' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}" bindtap="chooseDatePhoto" aria-label="{{photoStage !== 'idle' ? '收起拍日期' : '拍摄日期'}}">
-                  <view class="line-icon line-icon--date-scan" aria-hidden="true"></view>
-                </button>
-                <button wx:if="{{features.text}}" class="quick-generate" disabled="{{saving || recognitionState !== 'idle'}}" form-type="submit" hover-class="pressable--pressed" aria-label="{{recognitionState === 'parsing' ? '正在生成' : '生成物品草稿'}}">
-                  <view class="{{recognitionState === 'parsing' ? 'quick-generate__loading' : 'quick-generate__arrow'}}" aria-hidden="true"></view>
-                </button>
-              </view>
+        <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex" class="draft-card draft-card--{{draft.status}} draft-card--tone-{{statusTones[draftIndex]}}">
+          <view class="draft-card__head">
+            <text class="draft-card__status draft-card__status--{{statusTones[draftIndex]}}">{{statusLabels[draftIndex]}}</text>
+            <text wx:if="{{aiFlags[draftIndex]}}" class="draft-card__ai">AI</text>
+            <text class="draft-card__source">{{sourceLabels[draftIndex]}}</text>
+            <view class="draft-card__ops">
+              <button wx:if="{{draft.status !== 'saving' && draft.status !== 'saved'}}" class="draft-card__edit" data-index="{{draftIndex}}" bindtap="openDraftEditor" aria-label="编辑物品" hover-class="draft-card__remove--pressed">
+                <view class="line-icon line-icon--edit" aria-hidden="true"></view>
+                <text>编辑</text>
+              </button>
+              <button wx:if="{{draft.status !== 'saving'}}" class="draft-card__remove" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿" hover-class="draft-card__remove--pressed"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
             </view>
           </view>
-          <view wx:if="{{voiceState === 'recording'}}" class="quick-entry__notice">{{voiceSeconds}} / 30 秒 · {{voiceCancelling ? '松开取消录音' : '再次点击麦克风结束并转写'}}</view>
-          <text wx:if="{{features.voice && capabilities.voice}}" class="camera-help">麦克风仅用于识别本次录入内容，转写后可修改文字。</text>
-          <text wx:for="{{unavailableHints}}" wx:key="*this" class="feature-hint">{{item}}</text>
-          <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionState === 'transcribing' ? '正在转写语音…' : recognitionTip}}<button bindtap="cancelRecognition">取消本次识别</button></view>
-        </form>
 
-      <scroll-view class="{{popup === 'recent' ? 'entry-sheet__body' : 'inline-entry__body'}}" scroll-y>
-        <view wx:if="{{photoStage !== 'idle'}}" class="date-camera-panel">
-          <text class="section-heading__title">将包装上的日期喷码放入框内</text>
-          <text class="camera-help">避开反光、阴影和弯曲边缘，让日期尽量占满画面。</text>
-          <view wx:if="{{photoStage === 'camera' && !cameraError}}" class="camera-frame">
-            <camera class="date-camera" mode="normal" device-position="back" flash="off" binderror="cameraFailed" />
-            <cover-view class="camera-guide">对准生产日期、保质期或到期日</cover-view>
+          <view class="draft-card__body">
+            <view class="draft-card__name-row">
+              <text class="draft-card__name {{nameMissingFlags[draftIndex] ? 'draft-card__name--missing' : ''}}">{{draft.fields.name || '待命名'}}</text>
+              <text wx:if="{{draft.fields.quantity}}" class="draft-card__qty">{{draft.fields.quantity}}{{draft.fields.unit}}</text>
+            </view>
+            <view class="draft-card__expiry">
+              <text class="draft-card__expiry-date {{expiryTones[draftIndex] === 'empty' ? 'draft-card__expiry-date--empty' : ''}}">{{expirySummaries[draftIndex]}}</text>
+              <text class="draft-card__badge draft-card__badge--{{expiryTones[draftIndex]}}">{{expiryBadges[draftIndex]}}</text>
+            </view>
+            <text wx:if="{{draft.fields.storageLocation}}" class="draft-card__loc">{{draft.fields.storageLocation}}</text>
           </view>
-          <image wx:if="{{photoStage === 'preview'}}" class="date-photo-preview" src="{{photoPreview}}" mode="aspectFit" />
-          <view class="quick-actions">
-            <button wx:if="{{photoStage === 'camera' && !cameraError}}" bindtap="takeDatePhoto">拍摄日期</button>
-            <button wx:if="{{cameraError}}" bindtap="openPermissionSettings">前往设置</button>
-            <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="recognizePhoto">{{inputError ? '重试本次识别' : '识别这张照片'}}</button>
-            <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="retakePhoto">重拍</button>
-            <button disabled="{{recognitionState !== 'idle'}}" bindtap="chooseAlbum">从相册选择</button>
+
+          <view wx:if="{{aiMissingHints[draftIndex] && draft.status !== 'saved'}}" class="draft-card__hint">{{aiMissingHints[draftIndex]}}</view>
+          <view wx:if="{{expiredFlags[draftIndex] && draft.status !== 'saved'}}" class="draft-card__error">该物品已过期，请确认日期</view>
+          <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
+          <button wx:if="{{draft.status === 'failed'}}" class="draft-card__retry" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="retryDraft">重试这条草稿</button>
+          <view wx:if="{{draft.issues.length && draft.status !== 'saved'}}" class="draft-card__issues">
+            <block wx:for="{{draft.issues}}" wx:key="message" wx:for-item="issue">
+              <view class="draft-card__issue {{issue.code === 'DATE_CONFLICT' ? 'draft-card__issue--alert' : ''}}">{{issue.message}}</view>
+            </block>
           </view>
-          <button class="manual-button" bindtap="closePhoto">返回手动填写</button>
         </view>
 
-        <view wx:if="{{inputError}}" class="quick-entry__notice" role="alert">{{inputError}}</view>
+        <view wx:if="{{saveSummary}}" class="quick-entry__notice">{{saveSummary}}</view>
+      </view>
 
-        <view wx:if="{{drafts.length}}" class="draft-area">
-          <view wx:if="{{popup !== 'recent'}}" class="draft-area__head">
-            <text class="draft-area__title">识别结果</text>
-            <text class="draft-area__meta">{{drafts.length}} 条 · {{selectableCount}} 条可入库</text>
-          </view>
-          <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex" class="draft-card draft-card--{{draft.status}} draft-card--tone-{{statusTones[draftIndex]}}">
-            <view wx:if="{{popup !== 'recent'}}" class="draft-card__head">
-              <text class="draft-card__source">{{sourceLabels[draftIndex]}}</text>
-              <text wx:if="{{aiFlags[draftIndex]}}" class="draft-card__ai">AI</text>
-              <text class="draft-card__status draft-card__status--{{statusTones[draftIndex]}}">{{statusLabels[draftIndex]}}</text>
-              <button class="draft-card__remove" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿" hover-class="draft-card__remove--pressed"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
-            </view>
+      <view wx:if="{{!drafts.length && photoStage === 'idle' && recognitionState === 'idle'}}" class="quick-entry__tip">
+        <text class="quick-entry__tip-title">一句话快速录入</text>
+        <text class="quick-entry__tip-text">说出或输入物品和日期，例如「牛奶2盒，3天后到期，放冰箱」，识别后点右上角编辑就能修改。</text>
+      </view>
+    </scroll-view>
+  </view>
 
+  <view wx:if="{{activeTab === 'quick' && quickTab === 'text' && drafts.length}}" class="quick-footer">
+    <view wx:if="{{pendingCount > 0}}" class="quick-footer__hint">{{pendingCount}} 条待补全或确认，补全后才会入库</view>
+    <button class="primary-button quick-footer__submit" hover-class="entry-sheet__button--pressed" disabled="{{saving || selectableCount === 0 || recognitionState !== 'idle'}}" bindtap="saveDrafts">{{saving ? '正在加入…' : (drafts.length > 1 ? '加入库存（' + selectableCount + '）' : '加入库存')}}</button>
+  </view>
+
+  <view wx:if="{{editingIndex >= 0}}" class="draft-editor">
+    <view class="draft-editor__mask" bindtap="closeDraftEditor" />
+    <view class="draft-editor__panel">
+      <view class="draft-editor__head">
+        <view class="draft-editor__handle" aria-hidden="true"></view>
+        <text class="draft-editor__title">编辑物品信息</text>
+        <button class="draft-editor__close" bindtap="closeDraftEditor" aria-label="关闭编辑">×</button>
+      </view>
+      <scroll-view class="draft-editor__body" scroll-y>
+        <block wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex">
+          <view wx:if="{{draftIndex === editingIndex}}" class="draft-editor__form">
             <view wx:if="{{aiMissingHints[draftIndex] && draft.status !== 'saved'}}" class="draft-card__hint">{{aiMissingHints[draftIndex]}}</view>
-
             <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
-            <button wx:if="{{draft.status === 'failed'}}" class="draft-card__retry" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="retryDraft">重试这条草稿</button>
 
             <view class="name-field">
               <text class="name-field__label">物品名称 <text class="required-mark">*</text></text>
@@ -163,7 +212,7 @@
 
             <view wx:if="{{draft.issues.length}}" class="draft-card__issues">
               <block wx:for="{{draft.issues}}" wx:key="message" wx:for-item="issue">
-                <view wx:if="{{popup !== 'recent' || issue.code !== 'MISSING_EXPIRY'}}" class="draft-card__issue {{issue.code === 'DATE_CONFLICT' ? 'draft-card__issue--alert' : ''}}">{{issue.message}}</view>
+                <view class="draft-card__issue {{issue.code === 'DATE_CONFLICT' ? 'draft-card__issue--alert' : ''}}">{{issue.message}}</view>
               </block>
             </view>
 
@@ -177,11 +226,10 @@
                 </view>
               </view>
             </view>
+
             <button wx:if="{{draft.confirmationFields.length && draft.status !== 'saved'}}" class="manual-button" data-index="{{draftIndex}}" bindtap="confirmFallback">确认已修正的非日期字段</button>
-            <button class="draft-card__summary" data-index="{{draftIndex}}" bindtap="toggleDetails">
-              <text class="draft-card__summary-text">{{draftSummaries[draftIndex]}}</text><text class="draft-card__more">{{draft.expanded ? '收起' : '更多信息'}}</text>
-            </button>
-            <view wx:if="{{draft.expanded}}" class="draft-card__details">
+
+            <view class="draft-editor__details">
               <view class="field-row">
                 <view class="field field-row__item"><text class="field-label">数量</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.quantity || ''}}" type="number" data-index="{{draftIndex}}" data-field="quantity" bindinput="handleTextInput" /></view>
                 <view class="field field-row__item"><text class="field-label">单位</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.unit}}" data-index="{{draftIndex}}" data-field="unit" maxlength="8" bindinput="handleTextInput" /></view>
@@ -191,15 +239,11 @@
               <view class="field"><text class="field-label">提前提醒天数</text><view class="number-suffix-control"><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="number-suffix-control__input" value="{{draft.fields.reminderLeadDays || 0}}" type="number" maxlength="2" data-index="{{draftIndex}}" data-field="reminderLeadDays" bindinput="handleTextInput" /><text>天</text></view></view>
             </view>
           </view>
-
-          <view wx:if="{{saveSummary}}" class="quick-entry__notice">{{saveSummary}}</view>
-        </view>
-
+        </block>
       </scroll-view>
-
-      <view wx:if="{{drafts.length}}" class="entry-sheet__foot">
-        <button wx:if="{{popup === 'recent'}}" class="entry-sheet__cancel" hover-class="entry-sheet__button--pressed" bindtap="requestClosePopup" disabled="{{saving}}">取消</button>
-        <button class="primary-button entry-sheet__submit" hover-class="entry-sheet__button--pressed" disabled="{{saving || selectableCount === 0 || recognitionState !== 'idle'}}" bindtap="saveDrafts">{{saving ? '正在加入…' : (drafts.length > 1 ? '加入库存（' + selectableCount + '）' : '加入库存')}}</button>
+      <view class="draft-editor__foot">
+        <button class="draft-editor__cancel" hover-class="entry-sheet__button--pressed" bindtap="closeDraftEditor" disabled="{{saving}}">取消</button>
+        <button class="primary-button draft-editor__done" hover-class="entry-sheet__button--pressed" bindtap="closeDraftEditor" disabled="{{saving}}">完成</button>
       </view>
     </view>
   </view>

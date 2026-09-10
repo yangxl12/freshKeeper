@@ -140,6 +140,45 @@ describe('quick entry page compatibility', () => {
     expect(wx.hideKeyboard).toHaveBeenCalled()
   })
 
+  it('opens the edit sheet for editable drafts and keeps edits after closing', () => {
+    const page = pageInstance()
+    page.commitDrafts([completeDraft('牛奶')])
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    expect(page.data.editingIndex).toBe(0)
+    expect(page.data.quickInputFocused).toBe(false)
+    // 假 setData 不支持 drafts[0] 路径 key，编辑结果通过捕获 patch 验证
+    const patches: Record<string, unknown>[] = []
+    const originalSetData = page.setData
+    page.setData = (patch: Record<string, unknown>, callback?: () => void) => { patches.push(patch); originalSetData(patch, callback) }
+    page.handleTextInput({ currentTarget: { dataset: { index: 0, field: 'name' } }, detail: { value: '鲜牛奶' } })
+    expect(patches).toContainEqual(expect.objectContaining({ 'drafts[0]': expect.objectContaining({ fields: expect.objectContaining({ name: '鲜牛奶' }) }) }))
+    page.closeDraftEditor()
+    expect(page.data.editingIndex).toBe(-1)
+  })
+
+  it('refuses to open the editor for saved or failed drafts', () => {
+    const page = pageInstance()
+    const saved = completeDraft('牛奶')
+    saved.status = 'saved'
+    page.commitDrafts([saved])
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    expect(page.data.editingIndex).toBe(-1)
+  })
+
+  it('puts the input on top, preview cards below, and the save button in a fixed footer', () => {
+    const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
+    expect(template.indexOf('class="quick-input-card"')).toBeGreaterThan(-1)
+    expect(template.indexOf('class="quick-input-card"')).toBeLessThan(template.indexOf('class="draft-area"'))
+    expect(template).toContain('bindtap="openDraftEditor"')
+    expect(template).toContain('class="quick-footer"')
+    expect(template).toContain('bindtap="saveDrafts"')
+    expect(template).toContain('wx:if="{{editingIndex >= 0}}"')
+    // 预览卡不再内嵌日期表单：picker 只允许出现在编辑弹窗里
+    const previewArea = template.slice(template.indexOf('class="draft-area"'), template.indexOf('class="quick-footer"'))
+    expect(previewArea).not.toContain('<picker')
+    expect(previewArea).not.toContain('mode-switch')
+  })
+
   it('renders a freshness badge and status label on the confirmation card', () => {
     const page = pageInstance()
     page.data.today = '2026-09-08'
@@ -316,7 +355,7 @@ describe('quick entry page compatibility', () => {
     expect(page.data.recognitionState).toBe('idle')
   })
 
-  it('preserves the text session when opening and closing a recent item', () => {
+  it('appends a recent item to the preview list and keeps the text session', () => {
     const page = pageInstance()
     page.data.inputText = '牛奶明天到期'
     const draft = completeDraft('牛奶')
@@ -324,14 +363,12 @@ describe('quick entry page compatibility', () => {
     page.openRecentList()
     page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
     page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    expect(page.data.popup).toBe('recent')
-    expect(page.data.drafts).toHaveLength(1)
-    expect(page.data.drafts[0].fields.name).toBe('面包')
-    page.closePopup()
+    // 选完直接回到录入视图，草稿追加到预览列表，不丢当前文字会话
+    expect(page.data.quickTab).toBe('text')
+    expect(page.data.drafts.map((item: any) => item.fields.name)).toEqual(['牛奶', '面包'])
     page.closeRecentList()
-    expect(page.data.popup).toBe('none')
+    expect(page.data.quickTab).toBe('text')
     expect(page.data.inputText).toBe('牛奶明天到期')
-    expect(page.data.drafts).toEqual([draft])
   })
 
   it('generates through the tap handler and recovers from a cloud request that never completes', async () => {
@@ -451,7 +488,7 @@ describe('quick entry page compatibility', () => {
     expect(page.data.recentProfiles).toHaveLength(1)
 
     page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    expect(page.data.popup).toBe('recent')
+    expect(page.data.quickTab).toBe('text')
     expect(page.data.drafts).toHaveLength(1)
     expect(page.data.drafts[0].status).toBe('needs_input')
 
@@ -463,8 +500,7 @@ describe('quick entry page compatibility', () => {
     saveMock.mockResolvedValue({ itemId: 'milk' })
     await page.saveDrafts()
     expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ name: '鲜牛奶', expiryDate: '2026-09-20' }), expect.objectContaining({ idempotencyKey: expect.any(String) }))
-    // 全部入库后弹窗关闭、草稿清空，同时刷新最近录入
-    expect(page.data.popup).toBe('none')
+    // 全部入库后草稿清空，同时刷新最近录入
     expect(page.data.drafts).toHaveLength(0)
     expect(listRecentProfilesMock).toHaveBeenCalledTimes(2)
     // 全部保存成功后自动回首页，让用户看到刚录入的物品

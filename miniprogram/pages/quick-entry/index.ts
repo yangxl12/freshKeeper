@@ -119,6 +119,11 @@ function countSelectable(drafts: QuickEntryDraft[]): number {
   return drafts.filter((draft) => draft.selected && !draft.issues.length && draft.status === 'savable').length
 }
 
+/** 还没达到可入库条件的未保存草稿数，用于底部按钮上方的必要提示。 */
+function countPending(drafts: QuickEntryDraft[]): number {
+  return drafts.filter((draft) => draft.status !== 'saved' && !(draft.selected && !draft.issues.length && draft.status === 'savable')).length
+}
+
 function statusMeta(draft: QuickEntryDraft): { label: string; tone: string } {
   if (draft.status === 'saved') return { label: '已加入库存', tone: 'done' }
   if (draft.status === 'saving') return { label: '正在保存', tone: 'busy' }
@@ -198,7 +203,9 @@ Page({
     photoPreview: '',
     saving: false,
     selectableCount: 0,
+    pendingCount: 0,
     saveSummary: '',
+    editingIndex: -1,
   },
 
   onLoad() {
@@ -223,7 +230,6 @@ Page({
   manualHandoff: false,
   exitOnShow: false,
   pendingRecognition: false,
-  textSession: null as { drafts: QuickEntryDraft[]; inputError: string; saveSummary: string } | null,
   voiceTimer: null as ReturnType<typeof setInterval> | null,
   recognitionTipTimer: null as ReturnType<typeof setTimeout> | null,
   voiceBounds: null as { left: number; right: number; top: number; bottom: number } | null,
@@ -379,18 +385,17 @@ Page({
     this.setData({ quickTab: 'text', quickInputFocused: false })
   },
 
-  closePopup() {
-    this.cancelRecognition()
-    this.cancelVoice()
-    const session = this.textSession
-    this.textSession = null
-    this.setData({ popup: 'none', inputText: session ? this.data.inputText : '', inputError: session?.inputError || '', saveSummary: session?.saveSummary || '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
-    this.commitDrafts(session?.drafts || [])
+  openDraftEditor(event: WechatMiniprogram.BaseEvent) {
+    const index = Number(event.currentTarget.dataset.index)
+    const draft = this.data.drafts[index]
+    if (this.data.saving || !draft || ['saving', 'saved', 'failed'].includes(draft.status)) return
+    this.blurQuickInput()
+    this.setData({ editingIndex: index })
   },
 
-  requestClosePopup() {
+  closeDraftEditor() {
     if (this.data.saving) return
-    this.closePopup()
+    this.setData({ editingIndex: -1 })
   },
 
   /** 卡片展示需要的派生信息，任何一次草稿变更都要走这里，避免视图与数据脱节。 */
@@ -417,6 +422,7 @@ Page({
       drafts,
       ...this.draftView(drafts),
       selectableCount: countSelectable(drafts),
+      pendingCount: countPending(drafts),
     }, () => this.syncUnloadPrompt())
   },
 
@@ -571,17 +577,15 @@ Page({
     if (this.data.saving || this.data.recognitionState !== 'idle') return
     const profile = this.data.recentProfiles[Number(event.currentTarget.dataset.index)]
     if (!profile) return
-    const pending = this.data.popup === 'recent' ? this.data.drafts.filter((draft) => draft.status !== 'saved') : []
+    const pending = this.data.drafts.filter((draft) => draft.status !== 'saved')
     if (pending.length >= MAX_DRAFTS) {
       this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
       return
     }
     const draft = createDraftFromRecent(profile, this.data.defaultReminderLeadDays)
-    if (this.data.popup !== 'recent') {
-      this.textSession = { drafts: this.data.drafts, inputError: this.data.inputError, saveSummary: this.data.saveSummary }
-    }
     track('recent_item_select')
-    this.setData({ popup: 'recent', saveSummary: '', inputError: '', photoStage: 'idle', photoPreview: '', photoTargetId: '' }, () => {
+    // 选完直接回到录入视图，草稿追加到预览列表，不再走二次确认弹窗。
+    this.setData({ quickTab: 'text', saveSummary: '', inputError: '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false }, () => {
       this.commitDrafts([...pending, draft])
     })
   },
@@ -623,6 +627,7 @@ Page({
       [`aiMissingHints[${index}]`]: aiMissingHint(nextDraft),
       [`nameMissingFlags[${index}]`]: nextDraft.issues.some(issue => issue.field === 'name'),
       selectableCount: countSelectable(drafts),
+      pendingCount: countPending(drafts),
     }, () => this.syncUnloadPrompt())
     track('draft_field_corrected', { field })
   },
@@ -668,11 +673,6 @@ Page({
   toggleSelected(event: WechatMiniprogram.BaseEvent) {
     const index = Number(event.currentTarget.dataset.index)
     this.updateDraft(index, (draft) => ({ ...draft, selected: !draft.selected }))
-  },
-
-  toggleDetails(event: WechatMiniprogram.BaseEvent) {
-    const index = Number(event.currentTarget.dataset.index)
-    this.updateDraft(index, (draft) => ({ ...draft, expanded: !draft.expanded }))
   },
 
   removeDraft(event: WechatMiniprogram.BaseEvent) {
@@ -785,7 +785,8 @@ Page({
       this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
       return
     }
-    this.setData({ photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
+    // 从编辑弹窗里发起拍日期时先收起弹窗，相机面板才可见。
+    this.setData({ editingIndex: -1, photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
   },
 
   cameraFailed() {
@@ -958,7 +959,7 @@ Page({
     if (!updated.some((draft) => draft.status !== 'saved')) {
       wx.disableAlertBeforeUnload?.()
       wx.showToast({ title: '已加入库存', icon: 'success' })
-      this.closePopup()
+      this.commitDrafts([])
       void this.loadRecentProfiles()
       this.exitToHome()
     }
