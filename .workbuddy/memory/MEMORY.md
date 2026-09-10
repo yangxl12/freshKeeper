@@ -109,8 +109,23 @@
   不能用满 8s，前端 `recognizeTextItems` 有 8s `Promise.race`，撑满等于用户已降级。
 - `createModel('hunyuan-v3')` 不在 `@cloudbase/ai` 的 MODELS 表内，会走 DefaultSimpleModel：
   URL = `…/v1/ai/hunyuan-v3/chat/completions`，body 原样透出 `{model:'hy3', messages}`，这是正常路径不是 bug。
-- 待办：P1 = 证据回链 `evidence` + `ai-quota.js` 限流缓存 + `EXCEED_CONCURRENT_REQUEST_LIMIT` 退避重试；
-  P2 = `runtime.ts` 的 `aiParse` 开关、识别中文案 + `AI` 徽章、隐私政策。真机验证前必须先部署 `quickEntryApi`。
+- **P1/P2 已落地（2026-09-10，commit e7478d9，已 push）**：证据回链（`normalizeForTrace` 归一化 +
+  `traceableText/traceableNumber`，数字用 `(?<!\d)N(?!\d)` 边界；无 evidence 时退化为拿字段值核对原文；
+  dateFact 的 `rawText` 必须能在原文找到，否则丢弃；`category` 只查白名单；丢弃记 `AI_EVIDENCE_REJECTED`）、
+  `ai-quota.js`（结果缓存 + 按 openid 每日限次 50，**故意用实例内存不落云数据库**）、
+  `EXCEED_CONCURRENT_REQUEST_LIMIT` 退避 300ms 重试一次（测试传 `retryDelayMs: 1`）。
+  超量判断必须在**清洗之前**按 `rawItems.length` 抛 `TOO_MANY_DRAFTS`。
+  前端 `features.aiParse` + `capabilities.aiText` 双开关、识别中文案超 3 秒切换、草稿卡 AI 徽章
+  （`parserVersion` 以 `ai-` 开头）、`aiMissingHints` 提示核对缺失字段。
+- **`domain/quick-entry.ts` 的 `createDraftFromParsed` 多了第 6 个参数 `parserVersion`**，
+  并新增 `aiMissingFields`。AI 缺失字段**故意不写进 `confirmationFields`**——那会把本来 savable 的草稿
+  变成「待确认」，破坏 `tests/unit/quick-entry-acceptance.test.ts` 的契约。`recognizeTextItems` 现在返回
+  `{ items, parserVersion }` 而不是裸 items。
+- **页面测试坑**：`quick-entry-page.test.ts` 的假 setData 是 `Object.assign`，不认 `drafts[0]` 路径 key，
+  验证路径 setData 要自己捕获 patch 数组。
+- 语音链路复用同一套抽取（转写回填 → `generateDrafts('voice')`），无需单独改动。
+- 剩下的都是真机项：`quickEntryApi` 超时必须改成 60s（控制台），隐私指引补「输入发送至大模型」，
+  复核 `AI_CONCURRENCY_RETRY` / `AI_PARSE_CACHE_HIT` / `AI_QUOTA_NEAR_LIMIT` / `AI_TOKEN_USAGE` 日志。
 
 ## 云函数部署（踩过的坑，2026-09-10）
 

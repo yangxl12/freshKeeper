@@ -370,6 +370,22 @@ P0 已通，本轮补齐 few-shot（`2周后过期`、`保质期21天`、`买了
 - 草稿卡在 `parserVersion` 以 `ai-` 开头时显示 `AI` 徽章。
 - 三级降级对用户完全静默：不弹 toast、不暴露错误码。
 
+### 本地调试跑不了 AI（2026-09-10 实测）
+
+开发者工具的「云函数本地调试」跑的是本地 node 进程，没有云开发网关注入，`cloud.ai()` 的 `/v1/ai/`
+请求会被直接 **404**，日志长这样：
+
+```text
+{"resultCode":"AI_PARSE_DEGRADED","reason":"404","durationMs":485}
+{"requestId":"...","action":"parseText","resultCode":"OK","durationMs":506}
+```
+
+485ms 后静默降级本地规则、接口照样返回 `OK`——功能没坏，但每次白等约 0.5s，日志还会被误读成代码 bug。
+`ai-client.js` 现在按 `TENCENTCLOUD_RUNENV === 'WX_LOCAL_SCF'`（SDK 内部区分本地调试用的同一个变量）
+识别该形态并**默认跳过 AI**，`capabilities.aiText` 也如实返回 `false`，前端不显示 AI 文案与徽章；
+要在本地调试里联调云端 AI，把 `QUICK_ENTRY_AI_LOCAL_DEBUG` 设为 `true`。
+**验证 AI 路径只能走云端**：关掉本地调试开关，用模拟器非本地调试模式或真机。
+
 ### P2-13 隐私
 
 `runtime.ts` 的注释约束已落地为明确要求：在微信公众平台「用户隐私保护指引」声明

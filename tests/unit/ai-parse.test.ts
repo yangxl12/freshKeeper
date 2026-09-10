@@ -22,6 +22,7 @@ const aiClient = require('../../cloudfunctions/quickEntryApi/ai-client') as {
   aiTimeoutMs(): number
   createTextGenerator(options?: { sdk?: unknown }): Generate
   extractText(result: unknown): string
+  isLocalDebug(): boolean
   modelName(): string
   providerName(): string
 }
@@ -83,6 +84,29 @@ describe('ai client adapter', () => {
     for (const value of ['false', '0', 'off', 'FALSE', ' no ']) {
       withEnv('QUICK_ENTRY_AI_ENABLED', value, () => expect(aiClient.aiEnabled()).toBe(false))
     }
+  })
+
+  // 本地调试没有云开发网关注入，/v1/ai/ 请求会 404——每次白等约 0.5s 才降级，日志还误导人。
+  it('skips AI inside the devtool local debugger', () => {
+    withEnv('TENCENTCLOUD_RUNENV', 'WX_LOCAL_SCF', () => {
+      expect(aiClient.isLocalDebug()).toBe(true)
+      withEnv('QUICK_ENTRY_AI_ENABLED', undefined, () => {
+        withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', undefined, () => expect(aiClient.aiEnabled()).toBe(false))
+        // 逃生门：确实要联调云端 AI 时显式打开
+        withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', 'true', () => expect(aiClient.aiEnabled()).toBe(true))
+      })
+      // 急停开关优先于本地调试逃生门
+      withEnv('QUICK_ENTRY_AI_ENABLED', 'false', () => {
+        withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', 'true', () => expect(aiClient.aiEnabled()).toBe(false))
+      })
+    })
+
+    withEnv('TENCENTCLOUD_RUNENV', 'SCF', () => {
+      expect(aiClient.isLocalDebug()).toBe(false)
+      withEnv('QUICK_ENTRY_AI_ENABLED', undefined, () => {
+        withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', undefined, () => expect(aiClient.aiEnabled()).toBe(true))
+      })
+    })
   })
 
   it('keeps the hunyuan-v3 / hy3 defaults and allows env overrides', () => {

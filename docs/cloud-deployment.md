@@ -111,10 +111,15 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
   `category` 例外。所以「原文没说数量，模型却给了 1」这类幻觉进不了草稿。
 - 观测日志：`AI_PARSE_OK` / `AI_PARSE_CACHE_HIT` / `AI_PARSE_DEGRADED` / `AI_EVIDENCE_REJECTED` /
   `AI_QUOTA_EXCEEDED` / `AI_QUOTA_NEAR_LIMIT`（80% 水位）/ `AI_TOKEN_USAGE` / `AI_CONCURRENCY_RETRY`。
+- **本地调试跑不了 AI**。微信开发者工具的「云函数本地调试」是本地 node 进程，没有云开发网关注入，
+  `cloud.ai()` 的 `/v1/ai/` 请求会直接 **404**（日志表现为 `AI_PARSE_DEGRADED` + `reason:"404"`，约 0.48s 后降级）。
+  代码已按 `TENCENTCLOUD_RUNENV=WX_LOCAL_SCF` 识别该形态并**默认跳过 AI**，省掉这次白等；
+  确实要在本地调试联调云端 AI，把 `QUICK_ENTRY_AI_LOCAL_DEBUG` 设为 `true`。
+  **验证 AI 路径必须走云端**：关掉本地调试开关，用模拟器或真机调。
 - 变量都在**云开发控制台**配置。代码默认值已经可用，下列变量只用于覆盖：
   `QUICK_ENTRY_AI_PROVIDER`（默认 `hunyuan-v3`）、`QUICK_ENTRY_AI_MODEL`（默认 `hy3`）、
   `QUICK_ENTRY_AI_TIMEOUT_MS`（默认 6000，且不会超过 `QUICK_ENTRY_TIMEOUT_MS`）、
-  `QUICK_ENTRY_AI_DAILY_LIMIT`（默认 50）。
+  `QUICK_ENTRY_AI_DAILY_LIMIT`（默认 50）、`QUICK_ENTRY_AI_LOCAL_DEBUG`（仅本地调试用，默认关）。
 - **隐私**：文字/语音解析会把用户输入发送至大模型。必须在微信公众平台「用户隐私保护指引」里声明这一用途，
   通过审核后再保持 `QUICK_ENTRY_FEATURES.aiParse = true`；评审未过时置 false，页面会退回确定性规则（不弹提示）。
 

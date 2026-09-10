@@ -22,12 +22,27 @@ function envText(name, fallback) {
   return value || fallback
 }
 
+// 微信开发者工具的「云函数本地调试」跑的是本地 node 进程，没有云开发网关注入：
+// cloud.ai() 的 /v1/ai/ 请求会被直接 404（SDK 内部就是用这个变量区分该形态的）。
+// 本地调试下默认跳过 AI，省掉每次约 0.5s 的白等和一行误导性的降级日志；
+// capabilities.aiText 也会如实返回 false，前端不显示 AI 文案与徽章。
+// 确实要用本地调试联调云端 AI 时，把 QUICK_ENTRY_AI_LOCAL_DEBUG 设为 true 强制开启。
+function isLocalDebug() {
+  return String(process.env.TENCENTCLOUD_RUNENV || '').trim() === 'WX_LOCAL_SCF'
+}
+
+function localAiForced() {
+  const value = String(process.env.QUICK_ENTRY_AI_LOCAL_DEBUG || '').trim().toLowerCase()
+  return ['1', 'true', 'on', 'yes'].includes(value)
+}
+
 // 默认开启。微信云函数的环境变量只能在云开发控制台设置（config.json 的 envVariables
 // 不随 CLI 部署生效），所以开启不能依赖环境变量，否则新环境部署完是死的。
 // 这个变量是急停开关：免费额度耗尽时在控制台把它设成 false/0/off 即可整体停用。
 function aiEnabled() {
   const value = String(process.env.QUICK_ENTRY_AI_ENABLED || '').trim().toLowerCase()
-  return !['0', 'false', 'off', 'no'].includes(value)
+  if (['0', 'false', 'off', 'no'].includes(value)) return false
+  return !isLocalDebug() || localAiForced()
 }
 
 function providerName() {
@@ -95,4 +110,4 @@ function createTextGenerator(options = {}) {
   }
 }
 
-module.exports = { aiEnabled, aiTimeoutMs, createTextGenerator, extractText, modelName, providerName }
+module.exports = { aiEnabled, aiTimeoutMs, createTextGenerator, extractText, isLocalDebug, modelName, providerName }
