@@ -6,8 +6,6 @@ import {
   INVENTORY_SORT_OPTIONS,
   INVENTORY_VIEW_STATUS_OPTIONS,
   MAX_ITEM_QUANTITY,
-  parseQuantity,
-  sanitizeQuantityInput,
   stepQuantity,
   toInventoryCardItem,
   type InventoryCardItem,
@@ -31,14 +29,6 @@ import type {
 import { track } from '../../utils/analytics'
 import { millisecondsUntilShanghaiTomorrow } from '../../utils/shanghai-time'
 
-interface QuantitySheet {
-  visible: boolean
-  itemId: string
-  name: string
-  unit: string
-  value: string
-}
-
 interface MoreSheet {
   visible: boolean
   itemId: string
@@ -53,10 +43,6 @@ let listRequestSequence = 0
 let overviewRequestSequence = 0
 // 封面异步生成完成后回填卡片的订阅句柄（onShow 订阅 / onHide 退订，避免重复绑定）。
 let coverUnsubscribe: (() => void) | null = null
-
-function emptyQuantitySheet(): QuantitySheet {
-  return { visible: false, itemId: '', name: '', unit: '', value: '1' }
-}
 
 function emptyMoreSheet(): MoreSheet {
   return { visible: false, itemId: '', name: '' }
@@ -84,7 +70,6 @@ Page({
     loadMoreError: '',
     hasActiveConditions: false,
     actionLoading: false,
-    quantitySheet: emptyQuantitySheet(),
     moreSheet: emptyMoreSheet(),
   },
 
@@ -335,60 +320,31 @@ Page({
     wx.navigateTo({ url: `/pages/item-form/index?id=${event.detail.itemId}` })
   },
 
+  // ±1 直接落库；数量事件只带 delta，0 视为无效忽略（数字点击走 quantityset 内联编辑）。
   openQuantity(event: WechatMiniprogram.CustomEvent<{ itemId: string; delta?: number }>) {
     const item = this.findItem(event.detail.itemId)
     if (!item) return
-    this.setData({
-      quantitySheet: {
-        visible: true,
-        itemId: item._id,
-        name: item.name,
-        unit: item.unit,
-        value: String(stepQuantity(item.quantity, event.detail.delta === 1 ? 1 : event.detail.delta === -1 ? -1 : 0)),
-      },
-    })
-    this.setTabBarHidden(true)
+    const delta = event.detail.delta === 1 || event.detail.delta === -1 ? event.detail.delta : 0
+    if (!delta) return
+    const quantity = stepQuantity(item.quantity, delta)
+    if (quantity === item.quantity) return
+    void this.applyQuantity(item, quantity)
   },
 
-  closeQuantity() {
-    this.setData({ quantitySheet: emptyQuantitySheet() })
-    this.setTabBarHidden(false)
+  setQuantity(event: WechatMiniprogram.CustomEvent<{ itemId: string; quantity: number }>) {
+    const item = this.findItem(event.detail.itemId)
+    if (!item) return
+    const quantity = event.detail.quantity
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_ITEM_QUANTITY) return
+    void this.applyQuantity(item, quantity)
   },
 
-  handleQuantityInput(event: WechatMiniprogram.Input) {
-    this.setData({ 'quantitySheet.value': sanitizeQuantityInput(event.detail.value) })
-  },
-
-  stepQuantity(event: WechatMiniprogram.CustomEvent) {
-    const delta = Number(event.currentTarget.dataset.delta)
-    if (delta !== 1 && delta !== -1) return
-    const current = parseQuantity(this.data.quantitySheet.value) ?? 0
-    this.setData({ 'quantitySheet.value': String(stepQuantity(current, delta)) })
-  },
-
-  async submitQuantity() {
-    const sheet = this.data.quantitySheet
-    const item = this.findItem(sheet.itemId)
-    if (!item) {
-      this.closeQuantity()
-      return
-    }
-    const quantity = parseQuantity(sheet.value)
-    if (quantity === null) {
-      wx.showToast({ title: `请输入 1～${MAX_ITEM_QUANTITY} 的整数`, icon: 'none' })
-      return
-    }
-    if (quantity === item.quantity) {
-      this.closeQuantity()
-      return
-    }
+  async applyQuantity(item: InventoryCardItem, quantity: number) {
     if (this.data.actionLoading) return
-
     this.setData({ actionLoading: true })
     try {
       const result = await updateQuantity(item, quantity)
       this.setData({ actionLoading: false })
-      this.closeQuantity()
       this.patchItem(item._id, { quantity, version: result.version })
       wx.showToast({ title: `数量已改为 ${quantity}${item.unit}`, icon: 'success' })
     } catch (error) {

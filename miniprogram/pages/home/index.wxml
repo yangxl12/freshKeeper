@@ -157,6 +157,7 @@
           bind:select="openItem"
           bind:edit="editItem"
           bind:quantity="openQuantity"
+          bind:quantityset="setQuantity"
           bind:more="openMore"
         />
       </view>
@@ -176,47 +177,6 @@
       action-text="{{hasActiveConditions ? '清除筛选' : '新增物品'}}"
       bind:action="handleEmptyAction"
     />
-  </view>
-
-  <view wx:if="{{quantitySheet.visible}}" class="sheet-mask" bindtap="closeQuantity" catchtouchmove="noop">
-    <view class="dialog" catchtap="noop" role="dialog" aria-modal="true" aria-label="调整数量">
-      <text class="dialog__title">调整数量</text>
-      <text class="dialog__subtitle">{{quantitySheet.name}}</text>
-      <view class="stepper">
-        <button
-          class="stepper__button"
-          data-delta="-1"
-          bindtap="stepQuantity"
-          hover-class="stepper__button--pressed"
-          aria-label="减少 1"
-        >−</button>
-        <input
-          class="stepper__input"
-          type="number"
-          value="{{quantitySheet.value}}"
-          maxlength="4"
-          bindinput="handleQuantityInput"
-          aria-label="物品数量"
-        />
-        <button
-          class="stepper__button"
-          data-delta="1"
-          bindtap="stepQuantity"
-          hover-class="stepper__button--pressed"
-          aria-label="增加 1"
-        >＋</button>
-      </view>
-      <text class="dialog__hint">可输入 1～9999 的正整数</text>
-      <view class="dialog__actions">
-        <button class="secondary-button dialog__button" bindtap="closeQuantity" hover-class="pressable--pressed">取消</button>
-        <button
-          class="primary-button dialog__button"
-          disabled="{{actionLoading}}"
-          bindtap="submitQuantity"
-          hover-class="pressable--pressed"
-        >保存</button>
-      </view>
-    </view>
   </view>
 
   <view wx:if="{{moreSheet.visible}}" class="sheet-mask" bindtap="closeMore" catchtouchmove="noop">

@@ -21,9 +21,25 @@
           <view class="item-card__disc-bar"></view>
         </view>
       </view>
-      <view class="item-card__quantity" catchtap="handleQuantity" hover-class="item-card__quantity--pressed" role="button" aria-label="调整数量 {{item.quantityText}}">
-        <text class="item-card__quantity-value">{{item.quantity}}</text>
-        <text class="item-card__quantity-unit">{{item.unit}}</text>
+      <view class="item-card__quantity" catchtap="handleQuantityTap" role="button" aria-label="调整数量 {{item.quantityText}}">
+        <block wx:if="{{editing}}">
+          <input
+            class="item-card__quantity-input"
+            type="number"
+            value="{{editValue}}"
+            focus="{{editing}}"
+            maxlength="4"
+            bindinput="handleEditInput"
+            bindblur="commitEdit"
+            bindconfirm="commitEdit"
+            aria-label="物品数量"
+          />
+          <text class="item-card__quantity-unit">{{item.unit}}</text>
+        </block>
+        <block wx:else>
+          <text class="item-card__quantity-value">{{item.quantity}}</text>
+          <text class="item-card__quantity-unit">{{item.unit}}</text>
+        </block>
       </view>
       <view class="item-card__step {{item.quantity >= 9999 ? 'item-card__step--disabled' : ''}}" data-delta="1" catchtap="handleQuantity" hover-class="item-card__step--pressed" role="button" aria-disabled="{{item.quantity >= 9999}}" aria-label="增加数量">
         <view class="item-card__disc" aria-hidden="true">

@@ -34,6 +34,7 @@ button::after { border: 0; }
 .item-card__quantity-value { flex-shrink: 0; max-width: 100%; overflow: hidden; color: #183039; font-family: "DIN Alternate", "Helvetica Neue", sans-serif; font-size: 29rpx; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; text-overflow: ellipsis; }
 .item-card__quantity-unit { flex-shrink: 0; margin-left: 4rpx; color: #829198; font-size: 18rpx; font-weight: 500; line-height: 1; transform: translateY(2rpx); }
 .item-card__quantity--pressed { opacity: .68; }
+.item-card__quantity-input { flex: 1 1 0; min-width: 0; height: 40rpx; min-height: 0; box-sizing: border-box; padding: 0 8rpx; border-radius: 8rpx; background: #eef4f3; color: #183039; font-family: "DIN Alternate", "Helvetica Neue", sans-serif; font-size: 29rpx; font-weight: 700; line-height: 40rpx; text-align: center; }
 .item-card__completed { align-self: center; color: #82929a; font-size: 25rpx; font-weight: 500; line-height: 52rpx; }
 .item-card__more { position: absolute; top: 12rpx; right: 10rpx; width: 56rpx; height: 56rpx; }
 .item-card__more::after { position: absolute; top: 50%; left: 50%; width: 5rpx; height: 5rpx; border-radius: 50%; background: #778b92; box-shadow: -11rpx 0 0 #778b92, 11rpx 0 0 #778b92; content: ''; transform: translate(-50%, -50%); }
