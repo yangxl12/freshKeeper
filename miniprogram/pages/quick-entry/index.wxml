@@ -47,14 +47,11 @@
 
   <view wx:if="{{activeTab === 'quick' && quickTab === 'text'}}" class="quick-stage">
     <view class="quick-top">
-      <view wx:if="{{features.recent}}" class="quick-input-toolbar">
-        <button class="recent-entry-button" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
-      </view>
-
       <form wx:if="{{features.text || features.voice || features.datePhoto}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
         <textarea class="quick-input" name="quickText" value="{{inputText}}" focus="{{quickInputFocused}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" bindfocus="handleQuickInputFocus" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="handleQuickInputBlur" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />
         <view class="quick-input-tools">
           <view class="quick-input-tools__group">
+            <button wx:if="{{features.recent}}" class="recent-entry-button" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
             <button wx:if="{{features.voice}}" class="tool-button {{voiceState === 'recording' ? 'tool-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
               <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
             </button>
@@ -151,7 +148,10 @@
 
   <view wx:if="{{activeTab === 'quick' && quickTab === 'text' && drafts.length}}" class="quick-footer">
     <view wx:if="{{pendingCount > 0}}" class="quick-footer__hint">{{pendingCount}} 条待补全或确认，补全后才会入库</view>
-    <button class="primary-button quick-footer__submit" hover-class="entry-sheet__button--pressed" disabled="{{saving || selectableCount === 0 || recognitionState !== 'idle'}}" bindtap="saveDrafts">{{saving ? '正在加入…' : (drafts.length > 1 ? '加入库存（' + selectableCount + '）' : '加入库存')}}</button>
+    <view class="quick-footer__row">
+      <button class="quick-footer__more" hover-class="entry-sheet__button--pressed" disabled="{{saving}}" bindtap="focusQuickInput">继续添加</button>
+      <button class="primary-button quick-footer__submit" hover-class="entry-sheet__button--pressed" disabled="{{saving || selectableCount === 0 || recognitionState !== 'idle'}}" bindtap="saveDrafts">{{saving ? '正在加入…' : (drafts.length > 1 ? '加入库存（' + selectableCount + '）' : '加入库存')}}</button>
+    </view>
   </view>
 
   <view wx:if="{{editingIndex >= 0}}" class="draft-editor">

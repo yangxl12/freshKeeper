@@ -99,8 +99,9 @@ describe('quick entry page compatibility', () => {
     expect(template).toContain('bindtap="openRecentList"')
     expect(template).toContain('class="recent-page__close"')
     expect(template).toContain('bindtap="closeRecentList"')
-    expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('<form'))
-    expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('class="quick-input"'))
+    // 「从最近录入添加」收进输入卡片左下角，和确认按钮同一行
+    expect(template.indexOf('recent-entry-button')).toBeGreaterThan(template.indexOf('<form'))
+    expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('class="quick-generate"'))
   })
 
   it('generates from the native form value even before the textarea input event arrives', async () => {
@@ -140,6 +141,19 @@ describe('quick entry page compatibility', () => {
     expect(wx.hideKeyboard).toHaveBeenCalled()
   })
 
+  it('re-arms the input focus when the footer continue button is tapped', () => {
+    vi.useFakeTimers()
+    try {
+      const page = pageInstance()
+      page.focusQuickInput()
+      expect(page.data.quickInputFocused).toBe(false)
+      vi.advanceTimersByTime(60)
+      expect(page.data.quickInputFocused).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('opens the edit sheet for editable drafts and keeps edits after closing', () => {
     const page = pageInstance()
     page.commitDrafts([completeDraft('牛奶')])
@@ -171,6 +185,7 @@ describe('quick entry page compatibility', () => {
     expect(template.indexOf('class="quick-input-card"')).toBeLessThan(template.indexOf('class="draft-area"'))
     expect(template).toContain('bindtap="openDraftEditor"')
     expect(template).toContain('class="quick-footer"')
+    expect(template).toContain('bindtap="focusQuickInput"')
     expect(template).toContain('bindtap="saveDrafts"')
     expect(template).toContain('wx:if="{{editingIndex >= 0}}"')
     // 预览卡不再内嵌日期表单：picker 只允许出现在编辑弹窗里

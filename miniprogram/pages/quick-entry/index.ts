@@ -398,6 +398,12 @@ Page({
     this.setData({ editingIndex: -1 })
   },
 
+  /** 底部「继续添加」：先复位再聚焦，已聚焦时也能可靠拉起键盘。 */
+  focusQuickInput() {
+    this.setData({ quickInputFocused: false })
+    setTimeout(() => this.setData({ quickInputFocused: true }), 60)
+  },
+
   /** 卡片展示需要的派生信息，任何一次草稿变更都要走这里，避免视图与数据脱节。 */
   draftView(drafts: QuickEntryDraft[]) {
     const today = this.data.today
