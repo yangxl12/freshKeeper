@@ -109,9 +109,53 @@ describe('quick entry page compatibility', () => {
     parseMock.mockResolvedValueOnce(parseQuickTextLocally(text, '2026-09-09'))
     await page.handleGenerateSubmit({ detail: { value: { quickText: text } } })
     expect(parseMock).toHaveBeenCalledWith(text)
-    expect(page.data.inputText).toBe(text)
+    // 生成成功后输入框清空，并立即收起输入法，草稿卡片才不会被键盘挡住
+    expect(page.data.inputText).toBe('')
+    expect(wx.hideKeyboard).toHaveBeenCalled()
+    expect(page.data.quickInputFocused).toBe(false)
+    expect(page.data.quickKeyboardHeight).toBe(0)
     expect(page.data.drafts[0].fields).toMatchObject({ name: '香蕉', expiryDate: '2026-09-14', storageLocation: '厨房柜子' })
     expect(page.data.selectableCount).toBe(1)
+  })
+
+  it('drops the keyboard as soon as generation starts', async () => {
+    const page = pageInstance()
+    page.data.inputText = '牛奶明天到期'
+    parseMock.mockImplementationOnce(() => new Promise(() => {}))
+    void page.handleGenerateTap()
+    expect(wx.hideKeyboard).toHaveBeenCalled()
+    expect(page.data.quickInputFocused).toBe(false)
+    page.cancelRecognition()
+  })
+
+  it('never auto focuses the name field so the keyboard stays closed', async () => {
+    const page = pageInstance()
+    page.data.inputText = '请问今天天气怎么样'
+    parseMock.mockResolvedValueOnce({ items: [] })
+    await page.generateDrafts()
+    expect(page.data.drafts).toHaveLength(1)
+    expect(page.data.drafts[0].fields.name).toBe('请问今天天气怎么样')
+    expect(page.data.nameMissingFlags).toEqual([false])
+    expect(page.data.quickInputFocused).toBe(false)
+    expect(wx.hideKeyboard).toHaveBeenCalled()
+  })
+
+  it('renders a freshness badge and status label on the confirmation card', () => {
+    const page = pageInstance()
+    page.data.today = '2026-09-08'
+    const draft = completeDraft('牛奶')
+    draft.fields.expiryDate = '2026-09-18'
+    page.commitDrafts([draft])
+    expect(page.data.expiryTones[0]).toBe('fresh')
+    expect(page.data.expiryBadges[0]).toBe('还剩 10 天')
+    expect(page.data.statusLabels[0]).toBe('可入库')
+    expect(page.data.sourceLabels[0]).toBe('文字识别')
+
+    draft.fields.expiryDate = '2026-09-05'
+    page.commitDrafts([draft])
+    expect(page.data.expiryTones[0]).toBe('expired')
+    expect(page.data.expiryBadges[0]).toBe('已过期 3 天')
+    expect(page.data.expiredFlags[0]).toBe(true)
   })
 
   it('does not submit stale page text after the native textarea was cleared', async () => {

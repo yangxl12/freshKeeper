@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=375" />
+<title>快速录入 · 确认卡片新设计预览</title>
+<style>
+  /* 预览按 750rpx = 375px 换算，仅用于评审视觉，不参与小程序编译 */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 0 48px;
+    background: #eef1ee;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  .phone {
+    width: 375px;
+    padding: 16px;
+    border-radius: 28px;
+    background: #f5f6f2;
+    box-shadow: 0 18px 40px rgba(23, 59, 49, 0.18);
+  }
+  .caption { width: 375px; color: #53645d; font-size: 13px; font-weight: 600; }
+
+  .entry-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: rgba(31,93,73,.09); margin-bottom: 16px; }
+  .entry-tabs__item { flex: 1; min-height: 42px; border-radius: 6px; background: transparent; color: #607269; font-size: 14px; font-weight: 600; line-height: 42px; text-align: center; }
+  .entry-tabs__item--active { background: #fff; color: #1f5d49; box-shadow: 0 3px 8px rgba(23,59,49,.1); }
+
+  .recent-entry-button { display: block; margin: 0 0 8px auto; padding: 0 9px; border: 1px solid #cbd8d2; border-radius: 999px; background: #f7faf8; color: #1f5d49; font-size: 11.5px; line-height: 26px; }
+  .quick-input-card { padding: 10px; border: 1px solid #dfe7e1; border-radius: 14px; background: #fff; box-shadow: 0 3px 12px rgba(23,59,49,.05); }
+  .quick-input { width: 100%; height: 72px; border: 0; background: transparent; color: #173b31; font-size: 14px; line-height: 1.6; }
+  .quick-input-tools { display: flex; justify-content: flex-end; align-items: center; gap: 14px; padding-top: 6px; }
+  .tool { width: 44px; height: 44px; border-radius: 50%; background: transparent; color: #1f5d49; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .quick-generate { background: #1f5d49; color: #fff; box-shadow: 0 3px 8px rgba(31,93,73,.18); }
+
+  .draft-area { display: grid; gap: 10px; margin-top: 8px; }
+  .draft-area__head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px; }
+  .draft-area__title { color: #173b31; font-size: 14px; font-weight: 700; }
+  .draft-area__meta { color: #84918b; font-size: 11px; }
+
+  .draft-card { position: relative; overflow: hidden; padding: 12px 12px 3px; border: 1px solid #e0ece5; border-radius: 13px; background: linear-gradient(180deg,#fff,#fbfdfc); box-shadow: 0 5px 15px rgba(23,59,49,.07); }
+  .draft-card__glow { position: absolute; top: -40px; right: -35px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, rgba(76,173,124,.18), rgba(76,173,124,0) 70%); }
+  .draft-card--tone-warn { border-color: #eddfc0; }
+  .draft-card--tone-warn .draft-card__glow { background: radial-gradient(circle, rgba(224,138,10,.18), rgba(224,138,10,0) 70%); }
+  .draft-card--tone-alert { border-color: #eecfca; }
+  .draft-card--tone-alert .draft-card__glow { background: radial-gradient(circle, rgba(223,77,88,.16), rgba(223,77,88,0) 70%); }
+  .draft-card--saved { background: linear-gradient(180deg,#f6faf8,#f2f7f4); }
+
+  .draft-card__head { display: flex; align-items: center; gap: 6px; margin-bottom: 9px; }
+  .draft-card__ordinal { display: flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 6px; background: linear-gradient(135deg,#2e8062,#4cad74); color: #fff; font-size: 11.5px; font-weight: 700; }
+  .draft-card__source { color: #788880; font-size: 11px; }
+  .draft-card__status { margin-left: auto; padding: 3px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 650; }
+  .draft-card__status--ok { background: #e7f5ee; color: #1f5d49; }
+  .draft-card__status--warn { background: #fdf3e2; color: #9a713a; }
+  .draft-card__status--alert { background: #fdecec; color: #b84a3e; }
+  .draft-card__status--done { background: #e4f0eb; color: #2e8062; }
+  .draft-card__remove { width: 28px; height: 28px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: #f1f5f2; color: #8a9d94; font-size: 13px; line-height: 28px; }
+
+  .name-field { margin-bottom: 9px; }
+  .name-field__label { display: block; margin-bottom: 5px; color: #53645d; font-size: 12px; font-weight: 600; }
+  .name-field__label i { color: #c0574a; font-style: normal; }
+  .name-field__input { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid #e2ebe5; border-radius: 9px; background: #f7faf8; color: #173b31; font-size: 16px; font-weight: 650; }
+  .name-field__input--missing { border-color: #e8c98a; background: #fffaf0; }
+
+  .expiry-hero { margin-bottom: 9px; padding: 10px 11px; border: 1px solid #dbeade; border-radius: 10px; background: linear-gradient(135deg,#eef8f2,#f5fbf7); }
+  .expiry-hero__top { display: flex; align-items: center; justify-content: space-between; }
+  .expiry-hero__label { color: #6d8177; font-size: 11px; letter-spacing: .08em; }
+  .expiry-hero__badge { padding: 2px 8px; border-radius: 999px; background: #fff; color: #2e8062; font-size: 10.5px; font-weight: 650; }
+  .expiry-hero__value { display: block; margin-top: 3px; color: #123f33; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .expiry-hero--soon { border-color: #f0dfbe; background: linear-gradient(135deg,#fdf5e8,#fffaf1); }
+  .expiry-hero--soon .expiry-hero__badge { color: #b57a12; }
+  .expiry-hero--expired { border-color: #f0cdc8; background: linear-gradient(135deg,#fdeeee,#fff6f5); }
+  .expiry-hero--expired .expiry-hero__badge { color: #c0443a; }
+  .expiry-hero--expired .expiry-hero__value { color: #9e3e34; }
+  .expiry-hero--empty { border-color: #e4ebe7; background: #f6f8f7; }
+  .expiry-hero--empty .expiry-hero__value { color: #9aa7a1; font-size: 17px; }
+  .expiry-hero--empty .expiry-hero__badge { color: #87948e; }
+
+  .date-block { margin-bottom: 9px; padding: 9px 9px 1px; border: 1px solid #e4efe9; border-radius: 10px; background: #f8fbf9; }
+  .field-label { display: block; margin-bottom: 7px; color: #53645d; font-size: 12px; font-weight: 600; }
+  .field-label i { color: #c0574a; font-style: normal; }
+  .mode-switch { display: flex; padding: 2.5px; border-radius: 6px; background: rgba(31,93,73,.09); margin-bottom: 9px; }
+  .mode-switch__item { flex: 1; min-height: 35px; border: 0; border-radius: 5px; background: transparent; color: #607269; font-size: 11.5px; }
+  .mode-switch__item--active { background: #fff; color: #1f5d49; font-weight: 650; box-shadow: 0 2px 6px rgba(23,59,49,.08); }
+  .field-control { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid #dde5e0; border-radius: 8px; background: #fff; color: #173b31; font-size: 13px; }
+  .field-control--placeholder { color: #84918b; }
+
+  .draft-card__issues { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  .draft-card__issue { padding: 4px 9px; border-radius: 999px; background: #fdf3e2; color: #8f6a33; font-size: 11px; }
+  .draft-card__issue--alert { background: #fdecec; color: #a5423a; }
+
+  .draft-card__summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 10px 0; border: 0; border-top: 1px dashed #e3ece7; background: transparent; text-align: left; }
+  .draft-card__summary-text { flex: 1; color: #718078; font-size: 11.5px; }
+  .draft-card__more { color: #1f5d49; font-size: 12px; font-weight: 650; }
+
+  .entry-sheet__foot { display: flex; gap: 8px; margin-top: 12px; }
+  .primary-button { flex: 1; min-height: 46px; border: 0; border-radius: 8px; background: #1f5d49; color: #fff; font-size: 14px; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="caption">① 识别完成：输入框清空、输入法收起，下方出现确认卡片</div>
+  <div class="phone">
+    <div class="entry-tabs">
+      <div class="entry-tabs__item entry-tabs__item--active">快速录入</div>
+      <div class="entry-tabs__item">完整录入</div>
+    </div>
+    <button class="recent-entry-button">从最近录入添加</button>
+    <div class="quick-input-card">
+      <div class="quick-input">例如：牛奶2盒，3天后到期，放冰箱</div>
+      <div class="quick-input-tools">
+        <div class="tool">🎙</div>
+        <div class="tool">📅</div>
+        <div class="tool quick-generate">↑</div>
+      </div>
+    </div>
+
+    <div class="draft-area">
+      <div class="draft-area__head">
+        <span class="draft-area__title">识别结果</span>
+        <span class="draft-area__meta">2 条 · 1 条可入库</span>
+      </div>
+
+      <!-- 状态一：可入库 -->
+      <div class="draft-card draft-card--tone-ok">
+        <div class="draft-card__glow"></div>
+        <div class="draft-card__head">
+          <div class="draft-card__ordinal">1</div>
+          <span class="draft-card__source">文字识别</span>
+          <span class="draft-card__status draft-card__status--ok">可入库</span>
+          <button class="draft-card__remove">×</button>
+        </div>
+        <div class="name-field">
+          <span class="name-field__label">物品名称 <i>*</i></span>
+          <div class="name-field__input">香蕉</div>
+        </div>
+        <div class="expiry-hero expiry-hero--fresh">
+          <div class="expiry-hero__top">
+            <span class="expiry-hero__label">到期日期</span>
+            <span class="expiry-hero__badge">还剩 4 天</span>
+          </div>
+          <span class="expiry-hero__value">2026-09-14</span>
+        </div>
+        <div class="date-block">
+          <span class="field-label">调整到期信息 <i>*</i></span>
+          <div class="mode-switch">
+            <div class="mode-switch__item mode-switch__item--active">直接选到期日</div>
+            <div class="mode-switch__item">按保质期计算</div>
+          </div>
+          <div class="field-control">2026-09-14 <span>📆</span></div>
+        </div>
+        <div class="draft-card__summary">
+          <span class="draft-card__summary-text">2根 · 食品 · 厨房柜子 · 提前1天提醒</span>
+          <span class="draft-card__more">更多信息</span>
+        </div>
+      </div>
+
+      <!-- 状态二：待补全 -->
+      <div class="draft-card draft-card--tone-warn">
+        <div class="draft-card__glow"></div>
+        <div class="draft-card__head">
+          <div class="draft-card__ordinal">2</div>
+          <span class="draft-card__source">最近记录</span>
+          <span class="draft-card__status draft-card__status--warn">待补全</span>
+          <button class="draft-card__remove">×</button>
+        </div>
+        <div class="name-field">
+          <span class="name-field__label">物品名称 <i>*</i></span>
+          <div class="name-field__input name-field__input--missing">给它起个名字，例如 鲜牛奶</div>
+        </div>
+        <div class="expiry-hero expiry-hero--empty">
+          <div class="expiry-hero__top">
+            <span class="expiry-hero__label">到期日期</span>
+            <span class="expiry-hero__badge">待补充</span>
+          </div>
+          <span class="expiry-hero__value">待补到期日</span>
+        </div>
+        <div class="date-block">
+          <span class="field-label">调整到期信息 <i>*</i></span>
+          <div class="mode-switch">
+            <div class="mode-switch__item mode-switch__item--active">直接选到期日</div>
+            <div class="mode-switch__item">按保质期计算</div>
+          </div>
+          <div class="field-control field-control--placeholder">选择本批次到期日期 <span>📆</span></div>
+        </div>
+        <div class="draft-card__issues">
+          <span class="draft-card__issue">请填写 1～40 个字符的物品名称</span>
+          <span class="draft-card__issue">请选择到期日期</span>
+        </div>
+        <div class="draft-card__summary">
+          <span class="draft-card__summary-text">2盒 · 食品 · 冰箱 · 提前1天提醒</span>
+          <span class="draft-card__more">更多信息</span>
+        </div>
+      </div>
+
+      <div class="entry-sheet__foot">
+        <div class="primary-button">加入库存</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption">② 已过期 / 保存完成 两种状态</div>
+  <div class="phone">
+    <div class="draft-area">
+      <div class="draft-card draft-card--tone-alert">
+        <div class="draft-card__glow"></div>
+        <div class="draft-card__head">
+          <div class="draft-card__ordinal">1</div>
+          <span class="draft-card__source">拍照识别</span>
+          <span class="draft-card__status draft-card__status--warn">待补全</span>
+          <button class="draft-card__remove">×</button>
+        </div>
+        <div class="name-field">
+          <span class="name-field__label">物品名称 <i>*</i></span>
+          <div class="name-field__input">牛奶</div>
+        </div>
+        <div class="expiry-hero expiry-hero--expired">
+          <div class="expiry-hero__top">
+            <span class="expiry-hero__label">到期日期</span>
+            <span class="expiry-hero__badge">已过期 2 天</span>
+          </div>
+          <span class="expiry-hero__value">2026-09-08</span>
+        </div>
+        <div class="draft-card__issues">
+          <span class="draft-card__issue draft-card__issue--alert">该物品已过期，请确认日期</span>
+        </div>
+        <div class="draft-card__summary">
+          <span class="draft-card__summary-text">2盒 · 食品 · 冰箱 · 提前1天提醒</span>
+          <span class="draft-card__more">更多信息</span>
+        </div>
+      </div>
+
+      <div class="draft-card draft-card--saved draft-card--tone-done">
+        <div class="draft-card__glow"></div>
+        <div class="draft-card__head">
+          <div class="draft-card__ordinal">2</div>
+          <span class="draft-card__source">语音识别</span>
+          <span class="draft-card__status draft-card__status--done">已加入库存</span>
+          <button class="draft-card__remove">×</button>
+        </div>
+        <div class="name-field">
+          <span class="name-field__label">物品名称 <i>*</i></span>
+          <div class="name-field__input">酸奶</div>
+        </div>
+        <div class="expiry-hero expiry-hero--soon">
+          <div class="expiry-hero__top">
+            <span class="expiry-hero__label">到期日期</span>
+            <span class="expiry-hero__badge">还剩 2 天</span>
+          </div>
+          <span class="expiry-hero__value">2026-09-12</span>
+        </div>
+        <div class="draft-card__summary">
+          <span class="draft-card__summary-text">1瓶 · 食品 · 冰箱 · 提前1天提醒</span>
+          <span class="draft-card__more">更多信息</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

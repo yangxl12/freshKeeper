@@ -28,6 +28,7 @@ import type { QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, Qui
 import { track } from '../../utils/analytics'
 import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
 import { todayKey } from '../../domain/quick-text'
+import { toDayOrdinal } from '../../utils/date-key'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
 const MAX_DRAFTS = 5
@@ -76,10 +77,57 @@ function fallbackDraftName(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, 40)
 }
 
+const SOURCE_LABELS: Record<QuickEntrySource, string> = {
+  recent: '最近记录',
+  text: '文字识别',
+  voice: '语音识别',
+  date_photo: '拍照识别',
+  manual: '手动填写',
+}
+
+function daysUntil(dateKey: string, today: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return null
+  try {
+    return toDayOrdinal(dateKey) - toDayOrdinal(today)
+  } catch (_error) {
+    return null
+  }
+}
+
+/** 到期信息的人话描述，让用户一眼看懂还剩多久。 */
+function expiryBadgeText(summary: string, today: string): string {
+  const days = daysUntil(summary, today)
+  if (days === null) return '待补充'
+  if (days < 0) return `已过期 ${Math.abs(days)} 天`
+  if (days === 0) return '今天到期'
+  if (days === 1) return '明天到期'
+  return `还剩 ${days} 天`
+}
+
+function expiryToneOf(summary: string, today: string): 'fresh' | 'soon' | 'expired' | 'empty' {
+  const days = daysUntil(summary, today)
+  if (days === null) return 'empty'
+  if (days < 0) return 'expired'
+  return days <= 3 ? 'soon' : 'fresh'
+}
+
+/** 能加入库存的草稿：选中、无待补问题且状态可保存。 */
+function countSelectable(drafts: QuickEntryDraft[]): number {
+  return drafts.filter((draft) => draft.selected && !draft.issues.length && draft.status === 'savable').length
+}
+
+function statusMeta(draft: QuickEntryDraft): { label: string; tone: string } {
+  if (draft.status === 'saved') return { label: '已加入库存', tone: 'done' }
+  if (draft.status === 'saving') return { label: '正在保存', tone: 'busy' }
+  if (draft.status === 'failed') return { label: '保存失败', tone: 'alert' }
+  if ((draft.confirmationFields || []).length) return { label: '待确认', tone: 'warn' }
+  if (draft.issues.length) return { label: '待补全', tone: 'warn' }
+  return { label: '可入库', tone: 'ok' }
+}
+
 Page({
   data: {
     today: todayKey(),
-    focusNameId: '',
     voiceSeconds: 0,
     voiceCancelling: false,
     photoTargetId: '',
@@ -100,6 +148,12 @@ Page({
     drafts: [] as QuickEntryDraft[],
     draftSummaries: [] as string[],
     expirySummaries: [] as string[],
+    expiryBadges: [] as string[],
+    expiryTones: [] as Array<'fresh' | 'soon' | 'expired' | 'empty'>,
+    statusLabels: [] as string[],
+    statusTones: [] as string[],
+    sourceLabels: [] as string[],
+    nameMissingFlags: [] as boolean[],
     expiredFlags: [] as boolean[],
     categoryOptions: FORM_CATEGORY_OPTIONS,
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
@@ -220,9 +274,9 @@ Page({
   openFullTab() {
     this.cancelVoice()
     this.cancelRecognition()
-    wx.hideKeyboard?.()
+    this.blurQuickInput()
     track('quick_entry_switch_tab', { tab: 'full' })
-    this.setData({ activeTab: 'full', fullMounted: true, quickInputFocused: false })
+    this.setData({ activeTab: 'full', fullMounted: true })
   },
 
   handleFullFormSaved(event: WechatMiniprogram.CustomEvent) {
@@ -250,8 +304,8 @@ Page({
     if (this.data.saving || this.data.quickTab === 'recent') return
     this.cancelVoice()
     this.cancelRecognition()
-    wx.hideKeyboard?.()
-    this.setData({ quickTab: 'recent', quickInputFocused: false, quickKeyboardHeight: 0, photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
+    this.blurQuickInput()
+    this.setData({ quickTab: 'recent', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
   },
 
   closeRecentList() {
@@ -273,18 +327,28 @@ Page({
     this.closePopup()
   },
 
-  commitDrafts(drafts: QuickEntryDraft[]) {
-    const selectableCount = drafts.filter((draft) => !draft.issues.length && draft.status === 'savable').length
+  /** 卡片展示需要的派生信息，任何一次草稿变更都要走这里，避免视图与数据脱节。 */
+  draftView(drafts: QuickEntryDraft[]) {
     const today = this.data.today
+    const summaries = drafts.map(getExpirySummary)
+    return {
+      draftSummaries: drafts.map(getDraftSummary),
+      expirySummaries: summaries,
+      expiryBadges: summaries.map(summary => expiryBadgeText(summary, today)),
+      expiryTones: summaries.map(summary => expiryToneOf(summary, today)),
+      expiredFlags: summaries.map(summary => expiryToneOf(summary, today) === 'expired'),
+      statusLabels: drafts.map(draft => statusMeta(draft).label),
+      statusTones: drafts.map(draft => statusMeta(draft).tone),
+      sourceLabels: drafts.map(draft => SOURCE_LABELS[draft.source] || '录入'),
+      nameMissingFlags: drafts.map(draft => draft.issues.some(issue => issue.field === 'name')),
+    }
+  },
+
+  commitDrafts(drafts: QuickEntryDraft[]) {
     this.setData({
       drafts,
-      draftSummaries: drafts.map(getDraftSummary),
-      expirySummaries: drafts.map(getExpirySummary),
-      expiredFlags: drafts.map((draft) => {
-        const summary = getExpirySummary(draft)
-        return /^\d{4}-\d{2}-\d{2}$/.test(summary) ? summary < today : false
-      }),
-      selectableCount,
+      ...this.draftView(drafts),
+      selectableCount: countSelectable(drafts),
     }, () => this.syncUnloadPrompt())
   },
 
@@ -309,6 +373,12 @@ Page({
   handleQuickInputBlur() {
     this.setData({ quickInputFocused: false })
     this.resetQuickKeyboardHeight()
+  },
+
+  /** 提交后必须收起输入法：textarea 开了 hold-keyboard，点按钮不会自动收起。 */
+  blurQuickInput() {
+    wx.hideKeyboard?.()
+    this.setData({ quickInputFocused: false, quickKeyboardHeight: 0 })
   },
 
   resetQuickKeyboardHeight() {
@@ -347,6 +417,8 @@ Page({
     if (this.pendingRecognition || this.data.saving) return
     // 上一次识别异常中断留下状态时再点会完全没反应，这里先自愈。
     if (this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') this.cancelRecognition()
+    // 先把输入法收起来，草稿卡片才不会被键盘挡住。
+    this.blurQuickInput()
     const recognitionId = ++this.recognitionId
     this.pendingRecognition = true
     this.setData({ recognitionState: 'parsing', inputError: '' })
@@ -361,8 +433,9 @@ Page({
         return
       }
       this.setData({ recognitionState: 'idle', saveSummary: '', inputError: built.notice, inputText: '' })
+      // 清空输入框后再次收起输入法，避免残留焦点把卡片顶出屏幕。
+      this.blurQuickInput()
       this.commitDrafts([...existing, ...built.drafts])
-      this.setData({ focusNameId: built.drafts.find(draft => !draft.fields.name)?.draftId || '' })
       track('quick_parse_result', { result: built.notice ? 'fallback' : 'success', durationMs: Date.now() - startedAt, draftCount: built.drafts.length })
     } catch (error) {
       if (recognitionId !== this.recognitionId) return
@@ -463,12 +536,19 @@ Page({
     })
     const drafts = [...this.data.drafts]
     drafts[index] = nextDraft
+    const summary = getExpirySummary(nextDraft)
+    const status = statusMeta(nextDraft)
     this.setData({
       [`drafts[${index}]`]: nextDraft,
       [`draftSummaries[${index}]`]: getDraftSummary(nextDraft),
-      [`expirySummaries[${index}]`]: getExpirySummary(nextDraft),
-      [`expiredFlags[${index}]`]: /^\d{4}-\d{2}-\d{2}$/.test(getExpirySummary(nextDraft)) && getExpirySummary(nextDraft) < this.data.today,
-      selectableCount: drafts.filter((item) => !item.issues.length && item.status === 'savable').length,
+      [`expirySummaries[${index}]`]: summary,
+      [`expiryBadges[${index}]`]: expiryBadgeText(summary, this.data.today),
+      [`expiryTones[${index}]`]: expiryToneOf(summary, this.data.today),
+      [`expiredFlags[${index}]`]: expiryToneOf(summary, this.data.today) === 'expired',
+      [`statusLabels[${index}]`]: status.label,
+      [`statusTones[${index}]`]: status.tone,
+      [`nameMissingFlags[${index}]`]: nextDraft.issues.some(issue => issue.field === 'name'),
+      selectableCount: countSelectable(drafts),
     }, () => this.syncUnloadPrompt())
     track('draft_field_corrected', { field })
   },
@@ -534,6 +614,8 @@ Page({
   },
 
   async startVoice() {
+    // 未接入语音能力时静默返回，避免弹出体验很差的权限框或 toast。
+    if (!this.data.capabilities.voice) return
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     this.setData({ voicePressing: true, voiceState: 'authorizing', inputError: '' })
     try {
@@ -616,6 +698,8 @@ Page({
   },
 
   chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
+    // 未接入拍日期能力时静默返回，按钮在页面上已经是置灰状态。
+    if (!this.data.capabilities.datePhoto) return
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
     if (this.data.photoStage !== 'idle') {
       this.closePhoto()
@@ -704,7 +788,7 @@ Page({
         draft.confirmationFields = [...new Set([...(draft.confirmationFields || []), ...(current.confirmationFields || []).filter(field => !field.startsWith('date:'))])]
       }
       const drafts = current ? this.data.drafts.map(item => item.draftId === targetId ? refreshDraftValidation(draft) : item) : [...this.data.drafts, draft]
-      this.setData({ recognitionState: 'idle', photoStage: 'idle', photoPreview: '', focusNameId: draft.fields.name ? '' : draft.draftId })
+      this.setData({ recognitionState: 'idle', photoStage: 'idle', photoPreview: '' })
       this.commitDrafts(drafts)
       track('date_photo_result', { result: 'success', candidateCount: result.candidates.length })
     } catch (error) {
@@ -750,7 +834,7 @@ Page({
 
   async saveDrafts() {
     if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
-    const targets = this.data.drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => !draft.issues.length && draft.status === 'savable')
+    const targets = this.data.drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => draft.selected && !draft.issues.length && draft.status === 'savable')
     await this.persistDrafts(targets)
   },
 

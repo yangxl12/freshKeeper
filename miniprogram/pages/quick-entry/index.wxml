@@ -100,28 +100,41 @@
         <view wx:if="{{inputError}}" class="quick-entry__notice" role="alert">{{inputError}}</view>
 
         <view wx:if="{{drafts.length}}" class="draft-area">
-          <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex" class="draft-card draft-card--{{draft.status}}">
-            <view wx:if="{{popup !== 'recent'}}" class="draft-card__status-row">
-              <text class="draft-card__status">{{draft.status === 'saved' ? '已加入库存' : (draft.status === 'saving' ? '正在保存' : (draft.status === 'failed' ? '保存失败，可重试' : (draft.issues.length ? '还需补充或确认' : '信息完整')))}}</text>
-              <view class="draft-card__tools">
-                <button wx:if="{{draft.status !== 'saving'}}" class="draft-heading__delete" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
-              </view>
+          <view wx:if="{{popup !== 'recent'}}" class="draft-area__head">
+            <text class="draft-area__title">识别结果</text>
+            <text class="draft-area__meta">{{drafts.length}} 条 · {{selectableCount}} 条可入库</text>
+          </view>
+          <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex" class="draft-card draft-card--{{draft.status}} draft-card--tone-{{statusTones[draftIndex]}}">
+            <view class="draft-card__glow" aria-hidden="true"></view>
+
+            <view wx:if="{{popup !== 'recent'}}" class="draft-card__head">
+              <view class="draft-card__ordinal" aria-hidden="true">{{draftIndex + 1}}</view>
+              <text class="draft-card__source">{{sourceLabels[draftIndex]}}</text>
+              <text class="draft-card__status draft-card__status--{{statusTones[draftIndex]}}">{{statusLabels[draftIndex]}}</text>
+              <button class="draft-card__remove" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿" hover-class="draft-card__remove--pressed"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
             </view>
 
             <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
-            <button wx:if="{{draft.status === 'failed'}}" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="retryDraft">重试这条草稿</button>
-            <block wx:for="{{draft.issues}}" wx:key="message" wx:for-item="issue">
-              <view wx:if="{{popup !== 'recent' || issue.code !== 'MISSING_EXPIRY'}}" class="draft-card__issue">{{issue.message}}</view>
-            </block>
+            <button wx:if="{{draft.status === 'failed'}}" class="draft-card__retry" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="retryDraft">重试这条草稿</button>
 
-            <view class="field">
-              <text class="field-label">物品名称 <text class="required-mark">*</text></text>
-              <input class="field-control" focus="{{focusNameId === draft.draftId}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.name}}" maxlength="40" placeholder="例如：鲜牛奶" data-index="{{draftIndex}}" data-field="name" bindinput="handleTextInput" />
+            <view class="name-field">
+              <text class="name-field__label">物品名称 <text class="required-mark">*</text></text>
+              <input class="name-field__input {{nameMissingFlags[draftIndex] ? 'name-field__input--missing' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.name}}" maxlength="40" placeholder="给它起个名字，例如 鲜牛奶" placeholder-class="name-field__placeholder" data-index="{{draftIndex}}" data-field="name" bindinput="handleTextInput" />
             </view>
 
-            <view class="date-focus-block">
+            <view class="expiry-hero expiry-hero--{{expiryTones[draftIndex]}}">
+              <view class="expiry-hero__top">
+                <text class="expiry-hero__label">到期日期</text>
+                <text class="expiry-hero__badge">{{expiryBadges[draftIndex]}}</text>
+              </view>
+              <text class="expiry-hero__value">{{expirySummaries[draftIndex]}}</text>
+            </view>
+
+            <view wx:if="{{expiredFlags[draftIndex]}}" class="draft-card__error">该物品已过期，请确认日期</view>
+
+            <view class="date-block">
               <view class="field-label-row">
-                <text class="field-label">到期信息 <text class="required-mark">*</text></text>
+                <text class="field-label">调整到期信息 <text class="required-mark">*</text></text>
                 <button wx:if="{{features.datePhoto && draft.status !== 'saving' && draft.status !== 'saved' && draft.status !== 'failed'}}" class="inline-photo-button" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="chooseDatePhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
               </view>
               <view class="mode-switch">
@@ -144,8 +157,12 @@
                   <picker class="field-row__item" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="selector" range="{{shelfLifeOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleShelfLifeUnitChange"><view class="field-control date-control"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron date-control__arrow"></view></view></picker>
                 </view>
               </block>
-              <view wx:if="{{popup !== 'recent' || draft.fields.expiryDate || draft.fields.productionDate}}" class="expiry-summary"><text>预计到期</text><text class="expiry-summary__value">{{expirySummaries[draftIndex]}}</text></view>
-              <view wx:if="{{expiredFlags[draftIndex]}}" class="draft-card__error">该物品已过期，请确认日期</view>
+            </view>
+
+            <view wx:if="{{draft.issues.length}}" class="draft-card__issues">
+              <block wx:for="{{draft.issues}}" wx:key="message" wx:for-item="issue">
+                <view wx:if="{{popup !== 'recent' || issue.code !== 'MISSING_EXPIRY'}}" class="draft-card__issue {{issue.code === 'DATE_CONFLICT' ? 'draft-card__issue--alert' : ''}}">{{issue.message}}</view>
+              </block>
             </view>
 
             <view wx:if="{{draft.dateCandidates.length}}" class="candidate-list">
@@ -160,7 +177,7 @@
             </view>
             <button wx:if="{{draft.confirmationFields.length && draft.status !== 'saved'}}" class="manual-button" data-index="{{draftIndex}}" bindtap="confirmFallback">确认已修正的非日期字段</button>
             <button class="draft-card__summary" data-index="{{draftIndex}}" bindtap="toggleDetails">
-              <text>{{draftSummaries[draftIndex]}}</text><text>{{draft.expanded ? '收起' : '更多信息'}}</text>
+              <text class="draft-card__summary-text">{{draftSummaries[draftIndex]}}</text><text class="draft-card__more">{{draft.expanded ? '收起' : '更多信息'}}</text>
             </button>
             <view wx:if="{{draft.expanded}}" class="draft-card__details">
               <view class="field-row">
