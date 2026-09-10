@@ -376,13 +376,13 @@ describe('quick entry page compatibility', () => {
     expect(openManual).not.toHaveBeenCalled()
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
       loading: false,
-      features: { recent: true, text: true, voice: true, datePhoto: true, aiParse: true },
+      features: { recent: true, text: true, voice: false, datePhoto: false, aiParse: true },
       capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
       defaultReminderLeadDays: 2,
     }))
   })
 
-  it('explains why the voice and photo entries are unavailable instead of staying silent', async () => {
+  it('hides the voice and photo entries so no unavailable hints are shown', async () => {
     listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
     getQuickEntryCapabilitiesMock.mockResolvedValueOnce({ text: true, voice: false, datePhoto: false, aiText: true })
     getSettingsMock.mockResolvedValueOnce({ defaultReminderLeadDays: 1 })
@@ -392,11 +392,11 @@ describe('quick entry page compatibility', () => {
 
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
       capabilities: { text: true, voice: false, datePhoto: false, aiText: true },
-      unavailableHints: ['语音识别暂未接入，可先手动输入', '拍照识别暂未接入，可先手动选择日期'],
+      unavailableHints: [],
     }))
   })
 
-  it('tells the user the recognisers are down when the capability probe itself fails', async () => {
+  it('keeps the unavailable hints silent when the capability probe fails and the entries are hidden', async () => {
     listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
     getQuickEntryCapabilitiesMock.mockRejectedValueOnce(new CloudServiceError('CLOUD_CALL_FAILED', '网络异常'))
     getSettingsMock.mockResolvedValueOnce({ defaultReminderLeadDays: 1 })
@@ -405,7 +405,7 @@ describe('quick entry page compatibility', () => {
     await (quickEntryPage.preparePage as () => Promise<void>).call({ setData })
 
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
-      unavailableHints: ['识别服务暂时不可用，可先手动输入或选择日期'],
+      unavailableHints: [],
     }))
   })
 

@@ -16,7 +16,7 @@ export const REMINDER_TEMPLATE_ID = 'jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8
 export const QUICK_ENTRY_FEATURES = {
   recent: true,
   text: true,
-  voice: true,
-  datePhoto: true,
+  voice: false,
+  datePhoto: false,
   aiParse: true,
 } as const
