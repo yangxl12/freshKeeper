@@ -17,18 +17,17 @@ function loadSdk() {
   return sdkCache
 }
 
-function envFlag(name) {
-  const value = String(process.env[name] || '').trim().toLowerCase()
-  return value === '1' || value === 'true'
-}
-
 function envText(name, fallback) {
   const value = String(process.env[name] || '').trim()
   return value || fallback
 }
 
+// 默认开启。微信云函数的环境变量只能在云开发控制台设置（config.json 的 envVariables
+// 不随 CLI 部署生效），所以开启不能依赖环境变量，否则新环境部署完是死的。
+// 这个变量是急停开关：免费额度耗尽时在控制台把它设成 false/0/off 即可整体停用。
 function aiEnabled() {
-  return envFlag('QUICK_ENTRY_AI_ENABLED')
+  const value = String(process.env.QUICK_ENTRY_AI_ENABLED || '').trim().toLowerCase()
+  return !['0', 'false', 'off', 'no'].includes(value)
 }
 
 function providerName() {

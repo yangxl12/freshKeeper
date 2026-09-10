@@ -16,6 +16,28 @@ const { aiParseText, extractJson } = require('../../cloudfunctions/quickEntryApi
   extractJson(raw: unknown): Record<string, unknown> | null
 }
 
+const aiClient = require('../../cloudfunctions/quickEntryApi/ai-client') as {
+  aiEnabled(): boolean
+  aiTimeoutMs(): number
+  createTextGenerator(options?: { sdk?: unknown }): Generate
+  extractText(result: unknown): string
+  modelName(): string
+  providerName(): string
+}
+
+/** 临时改写环境变量，跑完立刻还原。 */
+function withEnv(name: string, value: string | undefined, run: () => void) {
+  const saved = process.env[name]
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+  try {
+    run()
+  } finally {
+    if (saved === undefined) delete process.env[name]
+    else process.env[name] = saved
+  }
+}
+
 const today = '2026-09-10'
 
 /** 假 AI client：不真调模型，输出完全由用例决定。 */
@@ -45,6 +67,71 @@ describe('ai parse json extraction', () => {
     expect(extractJson('{"items":[{"name":"牛奶"')).toBeNull()
     expect(extractJson('我不确定')).toBeNull()
     expect(extractJson(null)).toBeNull()
+  })
+})
+
+describe('ai client adapter', () => {
+  it('defaults to enabled so a fresh deployment is not dead', () => {
+    withEnv('QUICK_ENTRY_AI_ENABLED', undefined, () => {
+      expect(aiClient.aiEnabled()).toBe(true)
+    })
+    withEnv('QUICK_ENTRY_AI_ENABLED', 'true', () => expect(aiClient.aiEnabled()).toBe(true))
+  })
+
+  it('can be killed from the cloud console without redeploying', () => {
+    for (const value of ['false', '0', 'off', 'FALSE', ' no ']) {
+      withEnv('QUICK_ENTRY_AI_ENABLED', value, () => expect(aiClient.aiEnabled()).toBe(false))
+    }
+  })
+
+  it('keeps the hunyuan-v3 / hy3 defaults and allows env overrides', () => {
+    withEnv('QUICK_ENTRY_AI_PROVIDER', undefined, () => expect(aiClient.providerName()).toBe('hunyuan-v3'))
+    withEnv('QUICK_ENTRY_AI_MODEL', undefined, () => expect(aiClient.modelName()).toBe('hy3'))
+    withEnv('QUICK_ENTRY_AI_MODEL', 'hy3-preview', () => expect(aiClient.modelName()).toBe('hy3-preview'))
+  })
+
+  it('never lets the AI budget exceed the shared quick-entry timeout', () => {
+    withEnv('QUICK_ENTRY_AI_TIMEOUT_MS', undefined, () => {
+      withEnv('QUICK_ENTRY_TIMEOUT_MS', undefined, () => expect(aiClient.aiTimeoutMs()).toBe(6000))
+      withEnv('QUICK_ENTRY_TIMEOUT_MS', '3000', () => expect(aiClient.aiTimeoutMs()).toBe(3000))
+    })
+    withEnv('QUICK_ENTRY_AI_TIMEOUT_MS', '9000', () => {
+      withEnv('QUICK_ENTRY_TIMEOUT_MS', '8000', () => expect(aiClient.aiTimeoutMs()).toBe(8000))
+    })
+  })
+
+  it('reads generated text from either result.text or result.messages', () => {
+    expect(aiClient.extractText({ text: '{"items":[]}' })).toBe('{"items":[]}')
+    expect(aiClient.extractText('裸字符串')).toBe('裸字符串')
+    expect(aiClient.extractText({ messages: [{ content: ' ' }, { content: '第二个' }] })).toBe('第二个')
+    expect(aiClient.extractText({ messages: [{ content: [{ text: '分段' }, { text: '内容' }] }] })).toBe('分段内容')
+    expect(aiClient.extractText({})).toBe('')
+  })
+
+  it('drives the sdk through createModel(provider).generateText({ model, messages })', async () => {
+    const calls: unknown[] = []
+    const sdk = {
+      ai: () => ({
+        createModel: (provider: string) => {
+          calls.push(provider)
+          return {
+            generateText: async (input: { model: string }) => {
+              calls.push(input.model)
+              return { text: '{"items":[]}', usage: { total_tokens: 1 } }
+            },
+          }
+        },
+      }),
+    }
+    const generate = aiClient.createTextGenerator({ sdk })
+    const result = await generate([{ role: 'user', content: '牛奶' }])
+    expect(result.text).toBe('{"items":[]}')
+    expect(result.usage).toEqual({ total_tokens: 1 })
+    expect(calls).toEqual(['hunyuan-v3', 'hy3'])
+  })
+
+  it('builds the generator lazily so the sdk is only needed when actually called', () => {
+    expect(typeof aiClient.createTextGenerator()).toBe('function')
   })
 })
 

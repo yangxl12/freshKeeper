@@ -51,6 +51,8 @@
 cli cloud functions deploy --env <环境ID> --names <函数名> --project <项目目录> --remote-npm-install
 ```
 
+注意：CLI 部署**只更新代码**。`config.json` 的 `timeout` / `envVariables` 只在函数首次创建时写入云端，更新部署不会重新应用，改过这两项必须去云开发控制台（详见 3.3 节）。
+
 部署 `settingsApi` 后，应在“我的 → 提醒设置”中修改默认提醒天数并保存一次，确认云端只校验提醒天数；保存时会同时清除当前用户历史设置中的废弃默认存放位置字段。
 
 运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用 `inventoryApi`、`settingsApi`、`reminderApi` 和 `quickEntryApi`；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
@@ -91,6 +93,41 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
 - 微信公众平台“用户隐私保护指引”声明本次语音转写、日期照片识别的数据用途、腾讯云处理方和临时处理范围，并同步审核材料。代码不能代替后台提交。
 - 麦克风使用 `wx.authorize({scope:'scope.record'})`，相机由用户点击后创建 `camera`，相册通过单张 `chooseMedia`。`app.json.permission` 不支持 `scope.record`/`scope.camera` 声明，不能用无效配置代替后台隐私指引。
 - 真机逐项检查首次授权、拒绝后改用文字/手动、移出取消录音、30 秒停止、相机/相册拒绝、弱网重试和安全区。两个账号分别验证近期列表和媒体归属。
+
+### 3.3 快速录入的 AI 解析（hy3）
+
+文字快录默认走云开发内置大模型：`wx-server-sdk` 的 `cloud.ai().createModel('hunyuan-v3')` + `model: 'hy3'`，
+解析器版本为 `ai-v1`。解析失败、超时、额度耗尽或输出不合规时**静默降级**到内置 `rules-v3`，前端无感知。
+
+- **不需要任何控制台开关**。`hunyuan-v3` 通道资源点/非资源点套餐均可、无需开启也不支持关闭，只消耗成长计划赠送的免费额度；
+  控制台里那个 `hy3` 模型开关属于 `cloudbase` 通道，本项目不要动它、也不要切套餐。
+- 免费额度耗尽时 `hunyuan-v3` 会**直接报错**（不会静默转套餐扣费），此时解析自动降级本地规则。
+  要整体停用只改云端环境变量 `QUICK_ENTRY_AI_ENABLED=false`（`false`/`0`/`off` 均识别），不需要重新部署。
+- 体验模型**单环境 5 并发**，超出会报 `EXCEED_CONCURRENT_REQUEST_LIMIT`（P1 才会加退避重试）。
+- 变量都在**云开发控制台**配置。代码默认值已经可用，下列变量只用于覆盖：
+  `QUICK_ENTRY_AI_PROVIDER`（默认 `hunyuan-v3`）、`QUICK_ENTRY_AI_MODEL`（默认 `hy3`）、
+  `QUICK_ENTRY_AI_TIMEOUT_MS`（默认 6000，且不会超过 `QUICK_ENTRY_TIMEOUT_MS`）。
+
+**上线前必须做的一步：把 `quickEntryApi` 的超时改成 60 秒。**
+
+云函数 `config.json` 的 `timeout` / `envVariables` **只在函数首次创建时写入云端**，
+之后的「更新部署」（含 `cli cloud functions deploy` 与开发者工具对已存在函数的上传）**只更新代码**，
+不会重新应用配置。新环境默认超时仅 **3 秒**，实测单条输入要 1.6～2.4 秒、五条物品的长输入直接报
+`FUNCTIONS_TIME_LIMIT_EXCEEDED ... timed out after 3 seconds`。
+
+改法二选一：
+
+1. 云开发控制台 → 云函数 → `quickEntryApi` → 配置 → 超时时间改为 60 秒（推荐，最稳）。
+2. 删除该云函数后在开发者工具里重新上传（仅首建会读 `config.json`）——会一并重置函数调用权限，慎用。
+
+改完用 CLI 复核，`timeout` 必须是 60 而不是 3：
+
+```bash
+cli cloud functions info --env cloud1-d0gkh66ce94b1be08 --names quickEntryApi --project <项目目录>
+```
+
+验证 AI 是否真的通：进「快速录入」输一句话，草稿生成后解析器版本应为 `ai-v1`；或在开发者工具里调用
+`getCapabilities`，返回的 `aiText` 为 `true` 表示 AI 分支已启用（不代表模型调用一定成功）。
 
 为 `reminderApi` 配置环境变量：
 

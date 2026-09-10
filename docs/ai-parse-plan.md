@@ -286,3 +286,48 @@ system prompt 里写死：
 - [小程序端调用大模型](https://docs.cloudbase.net/ai/model/miniprogram-access)
 - [接入大模型总览（模型开关、资源点套餐）](https://docs.cloudbase.net/ai/model/overview)
 - [Hy3 preview 下线通知](https://docs.cloudbase.net/ai/announcement/hy3-preview-offline)
+
+## 12. P0 实施记录（2026-09-10，已上线并验证）
+
+已落地：`ai-client.js`（SDK 适配层，唯一出现 provider / 模型名 / 返回结构的地方）、
+`ai-prompt.js`（system prompt + 4 条 few-shot）、`ai-parse.js`（`aiParseText({text, serverToday, generate, timeoutMs})`）、
+`index.js` 的 AI 优先分支 + `getCapabilities().aiText`、`config.json` 新增 AI 变量、
+`tests/unit/ai-parse.test.ts`（23 条，含假 SDK 注入）。`npm run check` 全绿。
+
+### 实测结论（真机 = 开发者工具模拟器 + 云端真调）
+
+- 免费额度**已到账**，`hunyuan-v3` + `hy3` 直连可用，返回 `usage: {prompt_tokens: 748, completion_tokens: 60}`（单次约 0.8 Token 点）。
+- **不需要任何控制台开关**；控制台里那个 `hy3` 开关属 `cloudbase` 通道，与本方案无关。
+- 延迟：单条输入 **1.6～2.4 秒**；五条物品的长输入 **~4.9 秒**。
+- 验收 6 条用例线上全对：`牛奶` 不会补 1、`买了三个苹果` unit 留空走确认、`2周后过期` 由服务端算成 `today+14`、闲聊走兜底草稿。
+
+### 对计划的四处修正
+
+1. **AI 超时用独立的 `QUICK_ENTRY_AI_TIMEOUT_MS`（默认 6000），且上限不超过 `QUICK_ENTRY_TIMEOUT_MS`。**
+   计划写的"复用 8s"不成立：前端 `recognizeTextItems` 有 8s `Promise.race`，AI 撑满 8s 时用户早已降级，等于白调一次模型。
+2. **`QUICK_ENTRY_AI_ENABLED` 改成"默认开启 + 急停开关"**（`false`/`0`/`off` 关闭）。
+   原因见下条踩坑：环境变量不随部署生效，若开启依赖环境变量，新环境部署完就是死的。
+3. **`index.js` 降级时吞掉所有 AI 错误**，包括 `TOO_MANY_DRAFTS`：模型幻觉出 6 件时降级本地反而更对；
+   真是 6 件本地也会自己抛同样的错。
+4. **`cloud.init` 的 `timeout` 与 `config.json` 的 `timeout` 都写 60**，但注意它们不一定生效（见下）。
+
+### 最大的坑：`config.json` 只在函数首次创建时写入云端
+
+`quickEntryApi/config.json` 里的 `timeout` / `envVariables` **不会随"更新部署"应用**——
+`cli cloud functions deploy`（以及开发者工具对已存在函数的上传）**只更新代码**。
+线上实测 `timeout = 3`（新环境默认值），而 `config.json` 写的是 60；`QUICK_ENTRY_AI_ENABLED` 也因此读不到。
+
+三层证据：
+① `cli cloud functions info` 显示 `timeout: 3`、`runtime: Nodejs16.13`；
+② `getCapabilities().aiText` 为 `false`（新代码已上线，说明不是代码没更新，而是环境变量没到）；
+③ 五条物品的输入报 `errCode: -504003 FUNCTIONS_TIME_LIMIT_EXCEEDED ... timed out after 3 seconds`。
+
+结论：**超时和 `envVariables` 必须去云开发控制台改**（或删函数重新部署，仅首建读 `config.json`）。
+详见 `docs/cloud-deployment.md` 第 3.3 节。
+
+### 未做（P1 / P2）
+
+证据回链（`evidence` 字段 + 幻觉单测）、`ai-quota.js`（按 openid 每日限次 + 结果缓存）、
+`EXCEED_CONCURRENT_REQUEST_LIMIT` 退避重试、`runtime.ts` 的 `aiParse` 开关与 capabilities 消费、
+识别中文案（"AI 识别中…"）+ 草稿卡片 `AI` 徽章、隐私政策补充、语音链路复用同一套抽取。
+
