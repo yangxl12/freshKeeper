@@ -16,7 +16,7 @@
 
   <block wx:if="{{activeTab === 'quick' && quickTab === 'recent'}}">
     <view class="recent-page__head">
-      <text class="recent-page__title">最近录入</text>
+      <text class="recent-page__title">从最近录入添加</text>
       <button class="recent-page__close" bindtap="closeRecentList" aria-label="关闭最近录入">×</button>
     </view>
       <view wx:if="{{loading}}" class="quick-entry__loading">正在准备快速录入…</view>
@@ -49,7 +49,8 @@
     <view wx:if="{{popup === 'recent'}}" class="entry-sheet__mask" bindtap="requestClosePopup" />
     <view class="{{popup === 'recent' ? 'entry-sheet__panel' : 'inline-entry__panel'}}">
       <view wx:if="{{popup === 'recent'}}" class="entry-sheet__head">
-        <text class="entry-sheet__title">添加物品</text>
+        <view class="entry-sheet__handle" aria-hidden="true"></view>
+        <text class="entry-sheet__title">确认录入</text>
       </view>
 
         <view wx:if="{{popup !== 'recent' && features.recent}}" class="quick-input-toolbar">
@@ -105,10 +106,7 @@
             <text class="draft-area__meta">{{drafts.length}} 条 · {{selectableCount}} 条可入库</text>
           </view>
           <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex" class="draft-card draft-card--{{draft.status}} draft-card--tone-{{statusTones[draftIndex]}}">
-            <view class="draft-card__glow" aria-hidden="true"></view>
-
             <view wx:if="{{popup !== 'recent'}}" class="draft-card__head">
-              <view class="draft-card__ordinal" aria-hidden="true">{{draftIndex + 1}}</view>
               <text class="draft-card__source">{{sourceLabels[draftIndex]}}</text>
               <text class="draft-card__status draft-card__status--{{statusTones[draftIndex]}}">{{statusLabels[draftIndex]}}</text>
               <button class="draft-card__remove" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿" hover-class="draft-card__remove--pressed"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>

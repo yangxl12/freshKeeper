@@ -8,143 +8,129 @@
 
   <block wx:elif="{{!loadFailed}}">
     <view class="form-sheet">
-      <view class="form-section">
-        <text class="form-section__eyebrow">01</text>
-        <text class="form-section__title">基础信息</text>
-        <view class="field">
-          <text class="field-label">物品名称 <text class="required-mark">*</text></text>
+      <view class="form-card">
+        <view class="form-row form-row--name">
+          <text class="form-row__label">物品名称 <text class="required-mark">*</text></text>
+          <view class="form-row__content form-row__content--stacked">
+            <input
+              class="form-row__input form-row__input--name"
+              value="{{name}}"
+              maxlength="40"
+              placeholder="请输入物品名称"
+              placeholder-class="field-placeholder"
+              data-field="name"
+              bindinput="handleTextInput"
+            />
+            <text class="field-count">{{name.length}}/40</text>
+          </view>
+        </view>
+
+        <view class="form-row">
+          <text class="form-row__label">数量 <text class="required-mark">*</text></text>
           <input
-            class="field-control"
-            value="{{name}}"
-            maxlength="40"
-            placeholder="例如：鲜牛奶"
+            class="form-row__input"
+            value="{{quantity}}"
+            type="number"
+            maxlength="4"
+            placeholder="请输入数量"
             placeholder-class="field-placeholder"
-            data-field="name"
+            data-field="quantity"
             bindinput="handleTextInput"
           />
         </view>
 
-        <view class="field-row">
-          <view class="field field--quantity">
-            <text class="field-label">数量 <text class="required-mark">*</text></text>
-            <input
-              class="field-control"
-              value="{{quantity}}"
-              type="number"
-              maxlength="4"
-              data-field="quantity"
-              bindinput="handleTextInput"
-            />
-          </view>
-          <view class="field field--unit">
-            <text class="field-label">单位 <text class="required-mark">*</text></text>
-            <input
-              class="field-control"
-              value="{{unit}}"
-              maxlength="8"
-              placeholder="件"
-              data-field="unit"
-              bindinput="handleTextInput"
-            />
-          </view>
-        </view>
-      </view>
-
-      <view class="form-section form-section--dated">
-        <text class="form-section__eyebrow">02</text>
-        <text class="form-section__title">到期信息 <text class="required-mark">*</text></text>
-        <view class="mode-switch" role="tablist">
-          <button
-            class="mode-switch__item {{mode === 'direct' ? 'mode-switch__item--active' : ''}}"
-            data-mode="direct"
-            bindtap="handleModeChange"
-            aria-selected="{{mode === 'direct'}}"
-          >直接选到期日</button>
-          <button
-            class="mode-switch__item {{mode === 'shelf_life' ? 'mode-switch__item--active' : ''}}"
-            data-mode="shelf_life"
-            bindtap="handleModeChange"
-            aria-selected="{{mode === 'shelf_life'}}"
-          >按保质期计算</button>
+        <view class="form-row">
+          <text class="form-row__label">单位 <text class="required-mark">*</text></text>
+          <input
+            class="form-row__input"
+            value="{{unit}}"
+            maxlength="8"
+            placeholder="例如：件、盒、瓶"
+            placeholder-class="field-placeholder"
+            data-field="unit"
+            bindinput="handleTextInput"
+          />
         </view>
 
-        <view wx:if="{{mode === 'direct'}}" class="field field--mode-content">
-          <text class="field-label">到期日期 <text class="required-mark">*</text></text>
-          <picker mode="date" value="{{expiryDate}}" end="2200-12-31" data-field="expiryDate" bindchange="handleDateChange">
-            <view class="field-control date-control {{!expiryDate ? 'field-placeholder' : ''}}">
-              <text>{{expiryDate || '选择日期'}}</text>
-              <view class="line-icon line-icon--calendar date-control__icon" aria-hidden="true"></view>
+        <view class="form-row form-row--picker">
+          <text class="form-row__label">分类 <text class="required-mark">*</text></text>
+          <picker class="form-row__picker" mode="selector" range="{{categoryOptions}}" range-key="label" value="{{categoryIndex}}" bindchange="handleCategoryChange">
+            <view class="form-row__picker-value">
+              <text>{{categoryOptions[categoryIndex].label}}</text>
+              <view class="line-icon line-icon--chevron-right form-row__arrow" aria-hidden="true"></view>
+            </view>
+          </picker>
+        </view>
+
+        <view class="form-row form-row--mode">
+          <text class="form-row__label">到期计算 <text class="required-mark">*</text></text>
+          <view class="mode-switch" role="tablist">
+            <button
+              class="mode-switch__item {{mode === 'direct' ? 'mode-switch__item--active' : ''}}"
+              data-mode="direct"
+              bindtap="handleModeChange"
+              aria-selected="{{mode === 'direct'}}"
+            >到期日期</button>
+            <button
+              class="mode-switch__item {{mode === 'shelf_life' ? 'mode-switch__item--active' : ''}}"
+              data-mode="shelf_life"
+              bindtap="handleModeChange"
+              aria-selected="{{mode === 'shelf_life'}}"
+            >保质期计算</button>
+          </view>
+        </view>
+
+        <view wx:if="{{mode === 'direct'}}" class="form-row form-row--picker">
+          <text class="form-row__label">到期日期 <text class="required-mark">*</text></text>
+          <picker class="form-row__picker" mode="date" value="{{expiryDate}}" end="2200-12-31" data-field="expiryDate" bindchange="handleDateChange">
+            <view class="form-row__picker-value {{!expiryDate ? 'field-placeholder' : ''}}">
+              <text>{{expiryDate || '请选择日期'}}</text>
+              <view class="line-icon line-icon--calendar form-row__calendar" aria-hidden="true"></view>
             </view>
           </picker>
         </view>
 
         <block wx:else>
-          <view class="field field--mode-content">
-            <text class="field-label">生产日期 <text class="required-mark">*</text></text>
-            <picker mode="date" value="{{productionDate}}" end="{{today}}" data-field="productionDate" bindchange="handleDateChange">
-              <view class="field-control date-control {{!productionDate ? 'field-placeholder' : ''}}">
-                <text>{{productionDate || '选择日期'}}</text>
-                <view class="line-icon line-icon--calendar date-control__icon" aria-hidden="true"></view>
+          <view class="form-row form-row--picker">
+            <text class="form-row__label">生产日期 <text class="required-mark">*</text></text>
+            <picker class="form-row__picker" mode="date" value="{{productionDate}}" end="{{today}}" data-field="productionDate" bindchange="handleDateChange">
+              <view class="form-row__picker-value {{!productionDate ? 'field-placeholder' : ''}}">
+                <text>{{productionDate || '请选择日期'}}</text>
+                <view class="line-icon line-icon--calendar form-row__calendar" aria-hidden="true"></view>
               </view>
             </picker>
           </view>
-          <view class="field-row">
-            <view class="field field--shelf-value">
-              <text class="field-label">保质期 <text class="required-mark">*</text></text>
+
+          <view class="form-row">
+            <text class="form-row__label">保质期 <text class="required-mark">*</text></text>
+            <view class="shelf-life-control">
               <input
-                class="field-control"
+                class="form-row__input shelf-life-control__input"
                 value="{{shelfLifeValue}}"
                 type="number"
-                placeholder="例如：7"
+                placeholder="请输入时长"
+                placeholder-class="field-placeholder"
                 maxlength="5"
                 data-field="shelfLifeValue"
                 bindinput="handleTextInput"
               />
-            </view>
-            <view class="field field--shelf-unit">
-              <text class="field-label">单位 <text class="required-mark">*</text></text>
-              <picker mode="selector" range="{{shelfLifeOptions}}" range-key="label" value="{{shelfLifeUnitIndex}}" bindchange="handleShelfLifeUnitChange">
-                <view class="field-control date-control">
+              <picker class="shelf-life-control__unit" mode="selector" range="{{shelfLifeOptions}}" range-key="label" value="{{shelfLifeUnitIndex}}" bindchange="handleShelfLifeUnitChange">
+                <view class="shelf-life-control__unit-value">
                   <text>{{shelfLifeOptions[shelfLifeUnitIndex].label}}</text>
-                  <view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view>
+                  <view class="line-icon line-icon--chevron form-row__unit-arrow" aria-hidden="true"></view>
                 </view>
               </picker>
             </view>
           </view>
-          <view class="expiry-preview {{expiryPreview ? 'expiry-preview--ready' : ''}}">
-            <text class="expiry-preview__label">预计到期</text>
-            <text class="expiry-preview__date">{{expiryPreview || '填写后自动计算'}}</text>
+
+          <view class="form-row form-row--preview">
+            <text class="form-row__label">预计到期</text>
+            <text class="expiry-preview__date {{expiryPreview ? 'expiry-preview__date--ready' : ''}}">{{expiryPreview || '填写后自动计算'}}</text>
           </view>
         </block>
-      </view>
 
-      <view class="form-section">
-        <text class="form-section__eyebrow">03</text>
-        <text class="form-section__title">分类与提醒</text>
-        <view class="field">
-          <text class="field-label">分类 <text class="required-mark">*</text></text>
-          <picker mode="selector" range="{{categoryOptions}}" range-key="label" value="{{categoryIndex}}" bindchange="handleCategoryChange">
-            <view class="field-control date-control">
-              <text>{{categoryOptions[categoryIndex].label}}</text>
-              <view class="line-icon line-icon--chevron date-control__arrow" aria-hidden="true"></view>
-            </view>
-          </picker>
-        </view>
-
-        <view class="field">
-          <text class="field-label">存放位置（选填）</text>
-          <input
-            class="field-control"
-            value="{{storageLocation}}"
-            placeholder="可任意输入，例如冰箱、床头柜"
-            placeholder-class="field-placeholder"
-            data-field="storageLocation"
-            bindinput="handleTextInput"
-          />
-        </view>
-
-        <view class="field">
-          <text class="field-label">提前提醒天数 <text class="required-mark">*</text></text>
+        <view class="form-row">
+          <text class="form-row__label">提前提醒 <text class="required-mark">*</text></text>
           <view class="number-suffix-control">
             <input
               class="number-suffix-control__input"
@@ -156,13 +142,28 @@
             />
             <text class="number-suffix-control__suffix">天</text>
           </view>
-          <text class="field-help">保存物品不需要开启微信提醒，可稍后在详情页单独开启。</text>
+        </view>
+
+        <view class="form-row form-row--location">
+          <text class="form-row__label">存放位置</text>
+          <input
+            class="form-row__input"
+            value="{{storageLocation}}"
+            placeholder="如：冰箱、床头柜（选填）"
+            placeholder-class="field-placeholder"
+            data-field="storageLocation"
+            bindinput="handleTextInput"
+          />
         </view>
       </view>
+
+      <text class="form-hint">保存后可在物品详情中单独开启微信提醒</text>
     </view>
 
-    <button class="primary-button save-button" disabled="{{saving}}" bindtap="save" hover-class="pressable--pressed">
-      {{saving ? '正在保存…' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存'))}}
-    </button>
+    <view class="save-bar">
+      <button class="primary-button save-button" disabled="{{saving}}" bindtap="save" hover-class="pressable--pressed">
+        {{saving ? '正在保存…' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存'))}}
+      </button>
+    </view>
   </block>
 </view>
