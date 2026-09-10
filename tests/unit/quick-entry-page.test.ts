@@ -378,12 +378,31 @@ describe('quick entry page compatibility', () => {
     page.openRecentList()
     page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
     page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    // 选完直接回到录入视图，草稿追加到预览列表，不丢当前文字会话
-    expect(page.data.quickTab).toBe('text')
+    // 点击列表项先弹编辑弹窗：草稿暂存，仍停留在最近列表视图，卡片尚未展示
+    expect(page.data.quickTab).toBe('recent')
+    expect(page.data.editingIndex).toBe(1)
+    expect(page.data.editingRecentNew).toBe(true)
     expect(page.data.drafts.map((item: any) => item.fields.name)).toEqual(['牛奶', '面包'])
+    page.confirmDraftEditor()
+    expect(page.data.quickTab).toBe('text')
+    expect(page.data.editingIndex).toBe(-1)
     page.closeRecentList()
     expect(page.data.quickTab).toBe('text')
     expect(page.data.inputText).toBe('牛奶明天到期')
+  })
+
+  it('discards a recent draft when the edit sheet is cancelled', () => {
+    const page = pageInstance()
+    page.openRecentList()
+    page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
+    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
+    expect(page.data.drafts).toHaveLength(1)
+    page.closeDraftEditor()
+    // 取消后不生成预览卡片，停留在最近列表继续选
+    expect(page.data.drafts).toHaveLength(0)
+    expect(page.data.editingIndex).toBe(-1)
+    expect(page.data.editingRecentNew).toBe(false)
+    expect(page.data.quickTab).toBe('recent')
   })
 
   it('generates through the tap handler and recovers from a cloud request that never completes', async () => {
@@ -503,6 +522,8 @@ describe('quick entry page compatibility', () => {
     expect(page.data.recentProfiles).toHaveLength(1)
 
     page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
+    expect(page.data.editingRecentNew).toBe(true)
+    page.confirmDraftEditor()
     expect(page.data.quickTab).toBe('text')
     expect(page.data.drafts).toHaveLength(1)
     expect(page.data.drafts[0].status).toBe('needs_input')
@@ -541,7 +562,9 @@ describe('quick entry page compatibility', () => {
     const yogurt = { ...milk, name: '酸奶', quantity: 1, unit: '瓶', storageLocation: '' }
     page.data.recentProfiles = [milk, yogurt]
     page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
+    page.confirmDraftEditor()
     page.selectRecent({ currentTarget: { dataset: { index: 1 } } })
+    page.confirmDraftEditor()
     expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['鲜牛奶', '酸奶'])
   })
 

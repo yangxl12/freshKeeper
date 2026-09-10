@@ -206,6 +206,7 @@ Page({
     pendingCount: 0,
     saveSummary: '',
     editingIndex: -1,
+    editingRecentNew: false,
   },
 
   onLoad() {
@@ -390,12 +391,27 @@ Page({
     const draft = this.data.drafts[index]
     if (this.data.saving || !draft || ['saving', 'saved', 'failed'].includes(draft.status)) return
     this.blurQuickInput()
-    this.setData({ editingIndex: index })
+    this.setData({ editingIndex: index, editingRecentNew: false })
   },
 
   closeDraftEditor() {
     if (this.data.saving) return
-    this.setData({ editingIndex: -1 })
+    const { editingIndex, editingRecentNew } = this.data
+    this.setData({ editingIndex: -1, editingRecentNew: false })
+    if (editingRecentNew && editingIndex >= 0 && this.data.drafts[editingIndex]) {
+      // 从最近录入暂存的草稿：取消即丢弃，不生成预览卡片。
+      this.commitDrafts(this.data.drafts.filter((_draft, index) => index !== editingIndex))
+    }
+  },
+
+  /** 编辑弹窗的「确定」：新选的最近物品此时才生成预览卡片；编辑已有卡片则仅关闭弹窗。 */
+  confirmDraftEditor() {
+    if (this.data.saving) return
+    const wasNewRecent = this.data.editingRecentNew
+    this.setData({ editingIndex: -1, editingRecentNew: false })
+    if (wasNewRecent) {
+      this.setData({ quickTab: 'text', quickInputFocused: false, photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
+    }
   },
 
   /** 底部「继续添加」：先复位再聚焦，已聚焦时也能可靠拉起键盘。 */
@@ -590,9 +606,14 @@ Page({
     }
     const draft = createDraftFromRecent(profile, this.data.defaultReminderLeadDays)
     track('recent_item_select')
-    // 选完直接回到录入视图，草稿追加到预览列表，不再走二次确认弹窗。
-    this.setData({ quickTab: 'text', saveSummary: '', inputError: '', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false }, () => {
-      this.commitDrafts([...pending, draft])
+    // 点击列表项先弹编辑弹窗，确认后才生成预览卡片：草稿先暂存进列表，停留在最近视图。
+    this.setData({
+      saveSummary: '',
+      inputError: '',
+      editingRecentNew: true,
+      editingIndex: this.data.drafts.length,
+    }, () => {
+      this.commitDrafts([...this.data.drafts, draft])
     })
   },
 
@@ -791,8 +812,9 @@ Page({
       this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
       return
     }
-    // 从编辑弹窗里发起拍日期时先收起弹窗，相机面板才可见。
-    this.setData({ editingIndex: -1, photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
+    // 从编辑弹窗里发起拍日期时先收起弹窗，相机面板才可见；新选的最近物品视为已确认，切回录入视图。
+    const fromRecentNew = this.data.editingRecentNew
+    this.setData({ editingIndex: -1, editingRecentNew: false, ...(fromRecentNew ? { quickTab: 'text' } : {}), photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
   },
 
   cameraFailed() {

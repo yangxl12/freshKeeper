@@ -159,7 +159,7 @@
     <view class="draft-editor__panel">
       <view class="draft-editor__head">
         <view class="draft-editor__handle" aria-hidden="true"></view>
-        <text class="draft-editor__title">编辑物品信息</text>
+        <text class="draft-editor__title">{{editingRecentNew ? '确认物品信息' : '编辑物品信息'}}</text>
         <button class="draft-editor__close" bindtap="closeDraftEditor" aria-label="关闭编辑">×</button>
       </view>
       <scroll-view class="draft-editor__body" scroll-y>
@@ -243,7 +243,7 @@
       </scroll-view>
       <view class="draft-editor__foot">
         <button class="draft-editor__cancel" hover-class="entry-sheet__button--pressed" bindtap="closeDraftEditor" disabled="{{saving}}">取消</button>
-        <button class="primary-button draft-editor__done" hover-class="entry-sheet__button--pressed" bindtap="closeDraftEditor" disabled="{{saving}}">完成</button>
+        <button class="primary-button draft-editor__done" hover-class="entry-sheet__button--pressed" bindtap="confirmDraftEditor" disabled="{{saving}}">{{editingRecentNew ? '确定' : '完成'}}</button>
       </view>
     </view>
   </view>
