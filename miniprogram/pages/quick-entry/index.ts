@@ -24,7 +24,7 @@ import {
 } from '../../services/quick-entry-service'
 import { getSettings } from '../../services/settings-service'
 import type { ShelfLifeUnit } from '../../types/inventory'
-import type { QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
+import type { QuickEntryCapabilities, QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
 import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
 import { todayKey } from '../../domain/quick-text'
@@ -135,6 +135,23 @@ function aiMissingHint(draft: QuickEntryDraft): string {
   return `AI 没在原文里找到${labels.join('和')}，已按默认值填上，请核对`
 }
 
+/**
+ * 云端没开语音/拍日期能力时按钮会置灰，用户点了没反应会以为坏了，所以给一行静态说明。
+ * 不能用 toast：微信标题超过 7 个汉字会被截断，出现过被吐槽的残缺提示。
+ */
+function unavailableHintsOf(capabilities: QuickEntryCapabilities, reachable: boolean): string[] {
+  const features = QUICK_ENTRY_FEATURES
+  if (!reachable) {
+    return features.voice || features.datePhoto
+      ? ['识别服务暂时不可用，可先手动输入或选择日期']
+      : []
+  }
+  const hints: string[] = []
+  if (features.voice && !capabilities.voice) hints.push('语音识别暂未接入，可先手动输入')
+  if (features.datePhoto && !capabilities.datePhoto) hints.push('拍照识别暂未接入，可先手动选择日期')
+  return hints
+}
+
 Page({
   data: {
     today: todayKey(),
@@ -171,6 +188,7 @@ Page({
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
     features: QUICK_ENTRY_FEATURES,
     capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
+    unavailableHints: [] as string[],
     defaultReminderLeadDays: 1,
     recognitionState: 'idle' as 'idle' | 'parsing' | 'transcribing' | 'recognizing_photo',
     recognitionTip: '正在识别…',
@@ -253,7 +271,8 @@ Page({
       getSettings(),
     ])
     const recentProfiles = (recentResult.status === 'fulfilled' ? recentResult.value.items : []).slice(0, MAX_RECENT_PROFILES)
-    const capabilities = capabilityResult.status === 'fulfilled'
+    const capabilityReady = capabilityResult.status === 'fulfilled'
+    const capabilities = capabilityReady
       ? capabilityResult.value
       : { text: false, voice: false, datePhoto: false, aiText: false }
     const features = QUICK_ENTRY_FEATURES
@@ -265,7 +284,16 @@ Page({
         ? '快速录入服务尚未更新，请先使用完整填写'
         : '最近物品暂时不可用，可重试或直接完整填写'
       : ''
-    this.setData({ loading: false, recentProfiles, features, capabilities: { ...capabilities, text: true, aiText: Boolean(capabilities.aiText) }, defaultReminderLeadDays, loadingError })
+    const normalizedCapabilities = { ...capabilities, text: true, aiText: Boolean(capabilities.aiText) }
+    this.setData({
+      loading: false,
+      recentProfiles,
+      features,
+      capabilities: normalizedCapabilities,
+      unavailableHints: unavailableHintsOf(normalizedCapabilities, capabilityReady),
+      defaultReminderLeadDays,
+      loadingError,
+    })
     if (!recentProfiles.length && !features.text && !features.voice && !features.datePhoto && !loadingError) {
       this.openFullTab()
     }

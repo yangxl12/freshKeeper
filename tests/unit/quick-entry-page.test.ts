@@ -382,6 +382,42 @@ describe('quick entry page compatibility', () => {
     }))
   })
 
+  it('explains why the voice and photo entries are unavailable instead of staying silent', async () => {
+    listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
+    getQuickEntryCapabilitiesMock.mockResolvedValueOnce({ text: true, voice: false, datePhoto: false, aiText: true })
+    getSettingsMock.mockResolvedValueOnce({ defaultReminderLeadDays: 1 })
+    const setData = vi.fn()
+
+    await (quickEntryPage.preparePage as () => Promise<void>).call({ setData })
+
+    expect(setData).toHaveBeenCalledWith(expect.objectContaining({
+      capabilities: { text: true, voice: false, datePhoto: false, aiText: true },
+      unavailableHints: ['语音识别暂未接入，可先手动输入', '拍照识别暂未接入，可先手动选择日期'],
+    }))
+  })
+
+  it('tells the user the recognisers are down when the capability probe itself fails', async () => {
+    listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
+    getQuickEntryCapabilitiesMock.mockRejectedValueOnce(new CloudServiceError('CLOUD_CALL_FAILED', '网络异常'))
+    getSettingsMock.mockResolvedValueOnce({ defaultReminderLeadDays: 1 })
+    const setData = vi.fn()
+
+    await (quickEntryPage.preparePage as () => Promise<void>).call({ setData })
+
+    expect(setData).toHaveBeenCalledWith(expect.objectContaining({
+      unavailableHints: ['识别服务暂时不可用，可先手动输入或选择日期'],
+    }))
+  })
+
+  it('keeps the voice and photo controls visibly disabled while the capability is missing', () => {
+    const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
+    // 按钮不能「看着能点、点了没反应」：置灰必须绑到云端能力，说明文字必须有一处渲染。
+    expect(template).toContain(`disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}"`)
+    expect(template).toContain(`disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}"`)
+    expect(template).toContain("features.datePhoto && capabilities.datePhoto && draft.status !== 'saving'")
+    expect(template).toContain('wx:for="{{unavailableHints}}"')
+  })
+
   it('keeps the voice entry mounted but silent when the service is not configured', async () => {
     const page = pageInstance()
     page.data.capabilities.voice = false
