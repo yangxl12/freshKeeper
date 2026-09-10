@@ -140,13 +140,21 @@ Page({
     }, millisecondsUntilShanghaiTomorrow()) as unknown as number
   },
 
-  syncTabBar() {
-    const tabBar = (
+  getTabBarInstance() {
+    return (
       this as unknown as {
         getTabBar?: () => { setData?: (data: Record<string, unknown>) => void } | undefined
       }
     ).getTabBar?.()
-    tabBar?.setData?.({ selected: 0 })
+  },
+
+  syncTabBar() {
+    this.getTabBarInstance()?.setData?.({ selected: 0, hidden: false })
+  },
+
+  /* 弹窗打开时收起自定义标签栏：遮罩可能与标签栏处于不同层级，收起可确保弹窗始终在最上层 */
+  setTabBarHidden(hidden: boolean) {
+    this.getTabBarInstance()?.setData?.({ hidden })
   },
 
   async refreshOverview() {
@@ -302,10 +310,12 @@ Page({
         value: String(stepQuantity(item.quantity, event.detail.delta === 1 ? 1 : event.detail.delta === -1 ? -1 : 0)),
       },
     })
+    this.setTabBarHidden(true)
   },
 
   closeQuantity() {
     this.setData({ quantitySheet: emptyQuantitySheet() })
+    this.setTabBarHidden(false)
   },
 
   handleQuantityInput(event: WechatMiniprogram.Input) {

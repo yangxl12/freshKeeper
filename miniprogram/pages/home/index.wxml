@@ -225,19 +225,19 @@
         <text class="action-sheet__title">{{moreSheet.name}}</text>
       </view>
       <button class="action-sheet__item" bindtap="editMoreItem" hover-class="action-sheet__item--pressed">
-        <view class="action-sheet__icon action-sheet__icon--edit" aria-hidden="true"></view>
+        <image class="action-sheet__icon" src="/assets/icons/action-edit.svg" mode="aspectFit" aria-hidden="true" />
         <text class="action-sheet__label">编辑物品</text>
       </button>
       <button class="action-sheet__item" data-action="complete" bindtap="handleMoreAction" hover-class="action-sheet__item--pressed">
-        <view class="action-sheet__icon action-sheet__icon--check" aria-hidden="true"></view>
+        <image class="action-sheet__icon" src="/assets/icons/action-done.svg" mode="aspectFit" aria-hidden="true" />
         <text class="action-sheet__label">标记为已用完</text>
       </button>
       <button class="action-sheet__item" data-action="delete" bindtap="handleMoreAction" hover-class="action-sheet__item--pressed">
-        <view class="action-sheet__icon action-sheet__icon--trash" aria-hidden="true"></view>
+        <image class="action-sheet__icon" src="/assets/icons/action-delete.svg" mode="aspectFit" aria-hidden="true" />
         <text class="action-sheet__label action-sheet__label--danger">删除</text>
       </button>
       <button class="action-sheet__item" data-action="remind" bindtap="handleMoreAction" hover-class="action-sheet__item--pressed">
-        <view class="action-sheet__icon action-sheet__icon--bell" aria-hidden="true"></view>
+        <image class="action-sheet__icon" src="/assets/icons/action-remind.svg" mode="aspectFit" aria-hidden="true" />
         <text class="action-sheet__label">提醒</text>
       </button>
       <button class="action-sheet__cancel" bindtap="closeMore" hover-class="action-sheet__item--pressed">取消</button>

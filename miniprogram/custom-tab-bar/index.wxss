@@ -21,6 +21,14 @@ button::after {
   border-radius: 28rpx 28rpx 0 0;
   background: #ffffff;
   box-shadow: 0 -6rpx 26rpx rgba(23, 59, 49, 0.07);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+/* 弹窗打开时下沉收起，保证遮罩与弹窗始终位于标签栏之上 */
+.tabbar--hidden {
+  opacity: 0;
+  transform: translateY(120%);
+  pointer-events: none;
 }
 
 .tabbar__bar {
@@ -104,6 +112,7 @@ button::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tabbar,
   .tabbar__add-circle {
     transition: none;
   }

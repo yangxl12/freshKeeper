@@ -6,10 +6,12 @@ interface TabBarDataset {
 Component({
   data: {
     selected: 0,
+    hidden: false,
   },
 
   methods: {
     switchTab(event: WechatMiniprogram.CustomEvent) {
+      if (this.data.hidden) return
       const dataset = event.currentTarget.dataset as TabBarDataset
       const index = Number(dataset.index)
       const url = dataset.url
@@ -19,6 +21,7 @@ Component({
     },
 
     handleAdd() {
+      if (this.data.hidden) return
       wx.navigateTo({ url: '/pages/quick-entry/index' })
     },
   },

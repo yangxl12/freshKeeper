@@ -1,4 +1,4 @@
-<view class="tabbar" aria-label="底部导航">
+<view class="tabbar {{hidden ? 'tabbar--hidden' : ''}}" aria-label="底部导航" aria-hidden="{{hidden}}">
   <view class="tabbar__bar">
     <button
       class="tabbar__item {{selected === 0 ? 'tabbar__item--active' : ''}}"
