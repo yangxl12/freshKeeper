@@ -1,6 +1,6 @@
 # 快速录入接入 AI 解析：实现计划
 
-> 制定时间：2026-09-10 ｜ 状态：仅计划，未改动任何代码
+> 制定时间：2026-09-10 ｜ 状态：P0/P1/P2 均已编码落地，实施记录见第 12、13 节
 > 前置调研见 `docs/ai-parse-research.md`（部分结论已被本文档纠正）
 
 ## 0. 一句话结论
@@ -325,9 +325,73 @@ system prompt 里写死：
 结论：**超时和 `envVariables` 必须去云开发控制台改**（或删函数重新部署，仅首建读 `config.json`）。
 详见 `docs/cloud-deployment.md` 第 3.3 节。
 
-### 未做（P1 / P2）
+## 13. P1 / P2 实施记录（2026-09-10 完成编码，待真机复核）
 
-证据回链（`evidence` 字段 + 幻觉单测）、`ai-quota.js`（按 openid 每日限次 + 结果缓存）、
-`EXCEED_CONCURRENT_REQUEST_LIMIT` 退避重试、`runtime.ts` 的 `aiParse` 开关与 capabilities 消费、
-识别中文案（"AI 识别中…"）+ 草稿卡片 `AI` 徽章、隐私政策补充、语音链路复用同一套抽取。
+### P1-7 证据回链（L3）
+
+`ai-parse.js` 落地上文第 4.3 节的方案：每个非推断字段（`name` / `quantity` / `unit` / `storageLocation` /
+`dateFacts[].rawText`）必须能在用户原文里追回，追不回就丢成 `null`，并记一条 `AI_EVIDENCE_REJECTED` 日志。
+
+- 归一化用 `NFKC + 去空白 + 转小写`，抹平模型抄原文时的全半角与空格差异（`鲜牛奶 ２盒` 能匹配 `鲜牛奶2盒`）。
+- 数字用 `(?<!\d)N(?!\d)` 边界匹配，避免「2」被「2026年9月12日」里的 2 蒙对。
+- 没有 `evidence` 时退化为拿字段值本身核对原文；中文数量靠 evidence 兜住（`买了三个苹果` → evidence「三个」→ quantity 3）。
+- `category` 是例外：它本来就从名称推断，只校验枚举白名单。
+- 一次性幻觉（原文`牛奶`、模型给 `quantity: 1`）再也进不了草稿；所有字段都追不回来时抛 `AI_UNAVAILABLE`，直接降级本地规则。
+
+### P1-8 相对时间 / 保质期
+
+P0 已通，本轮补齐 few-shot（`2周后过期`、`保质期21天`、`买了三个苹果`、闲聊兜底）与对应回归用例。
+
+### P1-9 限流 / 缓存 / 并发退避
+
+新增 `cloudfunctions/quickEntryApi/ai-quota.js`：
+
+| 机制 | 实现 |
+| --- | --- |
+| 结果缓存 | `sha256(NFKC去空白小写(text) \| serverToday)`，TTL 6 小时、上限 200 条，命中记 `AI_PARSE_CACHE_HIT` 并直接返回 |
+| 每日限次 | 按 `OPENID`，默认 50 次/天（`QUICK_ENTRY_AI_DAILY_LIMIT` 覆盖），超限记 `AI_QUOTA_EXCEEDED` 后静默降级 |
+| 近限告警 | 到 80% 记 `AI_QUOTA_NEAR_LIMIT`，日志里带 `used/limit` |
+| 并发超限 | `ai-parse.js` 捕获 `EXCEED_CONCURRENT_REQUEST_LIMIT`，退避 300ms 重试一次；仍在超时/超限就交给调用方降级 |
+| 用量记录 | 每次成功调用记 `AI_TOKEN_USAGE`（`result.usage`） |
+
+### 有意偏离计划的两处
+
+1. **限次与缓存放云函数实例内存，不落云数据库。** 集合不存在会让云函数直接报错，而本项目已经因为
+   「配置不随部署生效」踩过一次坑（见第 12 节与 `docs/cloud-deployment.md` 3.3）；
+   单次解析约 1 Token 点（0.001 元），内存限次足够挡误触与脚本刷量。真要精确计量再换集合，`ai-quota.js` 接口不变。
+2. **没有把 AI 追不回的字段塞进 `confirmationFields`**（第 5 节要求 `domain/quick-entry.ts` 零改动）。
+   改用 `aiMissingFields` + 卡片上一行「AI 没在原文里找到数量/单位，已按默认值填上，请核对」表达，
+   不动草稿的 `savable` 判定——否则 `香蕉，2026年9月14号过期` 这类本来就合法的草稿会被降级成「待确认」。
+
+### P2-11 / P2-12 前端
+
+- `QUICK_ENTRY_FEATURES.aiParse`（`config/runtime.ts`）+ `getCapabilities().aiText` 双开关；按钮始终显示，未接入时静默、不弹提示。
+- 识别中文案：AI 路径显示「AI 识别中…」，超过 3 秒改「正在仔细识别…」；确定性规则仍显示「正在识别…」。
+- 草稿卡在 `parserVersion` 以 `ai-` 开头时显示 `AI` 徽章。
+- 三级降级对用户完全静默：不弹 toast、不暴露错误码。
+
+### P2-13 隐私
+
+`runtime.ts` 的注释约束已落地为明确要求：在微信公众平台「用户隐私保护指引」声明
+**用户输入的物品文字会发送至大模型（云开发内置混元）用于结构化解析**，评审未过时把 `aiParse` 置 false。
+`docs/cloud-deployment.md` 3.3 与 `docs/quick-entry-acceptance.md` 同步补了这条。
+
+### P2-14 语音链路
+
+无需额外改动。语音转写后回填 `inputText` 并走 `generateDrafts('voice')`，与文字共用同一条
+`parseQuickText → 云函数 parseText → AI` 链路，`parserVersion`、`AI` 徽章、证据回链全部自动生效。
+
+### 测试
+
+- `tests/unit/ai-parse.test.ts`：39 条（含 8 条证据回链、5 条验收用例、3 条并发退避）。
+- `tests/unit/ai-quota.test.ts`：9 条（缓存键归一化、TTL/隔离、限次、近限水位、跨天重置）。
+- `tests/unit/quick-entry-page.test.ts`：新增 5 条 AI 表现用例。
+- `npm run check` 全绿（14 个测试文件 / 175 项测试）。
+
+### 仍需真机复核
+
+1. `EXCEED_CONCURRENT_REQUEST_LIMIT` 退避重试在真实并发下的触发与成功率。
+2. `AI_PARSE_CACHE_HIT` 的实际命中率（重复录入同一句话是否真的 0 成本）。
+3. `AI_QUOTA_NEAR_LIMIT` / `AI_TOKEN_USAGE` 日志在云开发控制台是否方便观察，日限量 50 是否合适。
+
 

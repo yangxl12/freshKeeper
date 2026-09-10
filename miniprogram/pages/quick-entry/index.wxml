@@ -76,7 +76,7 @@
           </view>
           <view wx:if="{{voiceState === 'recording'}}" class="quick-entry__notice">{{voiceSeconds}} / 30 秒 · {{voiceCancelling ? '松开取消录音' : '松开识别，移出按钮取消'}}</view>
           <text wx:if="{{features.voice && capabilities.voice}}" class="camera-help">麦克风仅用于识别本次录入内容，转写后可修改文字。</text>
-          <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionState === 'transcribing' ? '正在转写语音…' : '正在识别…'}}<button bindtap="cancelRecognition">取消本次识别</button></view>
+          <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionState === 'transcribing' ? '正在转写语音…' : recognitionTip}}<button bindtap="cancelRecognition">取消本次识别</button></view>
         </form>
 
       <scroll-view class="{{popup === 'recent' ? 'entry-sheet__body' : 'inline-entry__body'}}" scroll-y>
@@ -108,9 +108,12 @@
           <view wx:for="{{drafts}}" wx:key="draftId" wx:for-item="draft" wx:for-index="draftIndex" class="draft-card draft-card--{{draft.status}} draft-card--tone-{{statusTones[draftIndex]}}">
             <view wx:if="{{popup !== 'recent'}}" class="draft-card__head">
               <text class="draft-card__source">{{sourceLabels[draftIndex]}}</text>
+              <text wx:if="{{aiFlags[draftIndex]}}" class="draft-card__ai">AI</text>
               <text class="draft-card__status draft-card__status--{{statusTones[draftIndex]}}">{{statusLabels[draftIndex]}}</text>
               <button class="draft-card__remove" data-index="{{draftIndex}}" bindtap="removeDraft" aria-label="删除草稿" hover-class="draft-card__remove--pressed"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
             </view>
+
+            <view wx:if="{{aiMissingHints[draftIndex] && draft.status !== 'saved'}}" class="draft-card__hint">{{aiMissingHints[draftIndex]}}</view>
 
             <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
             <button wx:if="{{draft.status === 'failed'}}" class="draft-card__retry" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="retryDraft">重试这条草稿</button>

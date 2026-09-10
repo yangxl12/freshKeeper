@@ -376,8 +376,8 @@ describe('quick entry page compatibility', () => {
     expect(openManual).not.toHaveBeenCalled()
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
       loading: false,
-      features: { recent: true, text: true, voice: true, datePhoto: true },
-      capabilities: { text: true, voice: false, datePhoto: false },
+      features: { recent: true, text: true, voice: true, datePhoto: true, aiParse: true },
+      capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
       defaultReminderLeadDays: 2,
     }))
   })
@@ -473,5 +473,66 @@ describe('quick entry page compatibility', () => {
       loading: false,
       loadingError: '快速录入服务尚未更新，请先使用完整填写',
     })
+  })
+})
+
+describe('quick entry AI presentation', () => {
+  it('does not arm the patient wording when the cloud reports no aiText', () => {
+    const page = pageInstance()
+    page.data.capabilities = { ...page.data.capabilities, aiText: false }
+    page.startRecognitionTip()
+    expect(page.recognitionTipTimer).toBeNull()
+  })
+
+  it('switches to a patient wording after three seconds of waiting', () => {
+    vi.useFakeTimers()
+    try {
+      const page = pageInstance()
+      page.data.capabilities = { ...page.data.capabilities, aiText: true }
+      page.data.recognitionState = 'parsing'
+      page.startRecognitionTip()
+      expect(page.recognitionTipTimer).not.toBeNull()
+      vi.advanceTimersByTime(3000)
+      expect(page.data.recognitionTip).toBe('正在仔细识别…')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks drafts parsed by the model and leaves the local parser unmarked', () => {
+    const page = pageInstance()
+    const ai = createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1')
+    const local = createDraftFromParsed(parseQuickTextLocally('牛奶明天到期', '2026-09-08').items[0], 'text', 1, undefined, undefined, 'rules-v3')
+    page.commitDrafts([ai, local])
+    expect(page.data.aiFlags).toEqual([true, false])
+  })
+
+  it('hints about the fields the model could not trace back to the source text', () => {
+    const page = pageInstance()
+    page.commitDrafts([
+      createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1'),
+      createDraftFromParsed({ name: '牛奶', quantity: 2, unit: '盒', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1'),
+      createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'rules-v3'),
+    ])
+    expect(page.data.aiMissingHints).toEqual([
+      'AI 没在原文里找到数量和单位，已按默认值填上，请核对',
+      '',
+      '',
+    ])
+  })
+
+  it('clears the hint once the user edits the field', () => {
+    const page = pageInstance()
+    const patches: Record<string, unknown>[] = []
+    page.setData = (patch: Record<string, unknown>, callback?: () => void) => { patches.push(patch); callback?.() }
+    page.data.drafts = [createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1')]
+    page.data.aiMissingHints = ['AI 没在原文里找到数量和单位，已按默认值填上，请核对']
+
+    page.handleTextInput({ currentTarget: { dataset: { index: 0, field: 'quantity' } }, detail: { value: '2' } })
+
+    expect(patches).toContainEqual(expect.objectContaining({
+      'drafts[0]': expect.objectContaining({ aiMissingFields: ['unit'] }),
+      'aiMissingHints[0]': 'AI 没在原文里找到单位，已按默认值填上，请核对',
+    }))
   })
 })

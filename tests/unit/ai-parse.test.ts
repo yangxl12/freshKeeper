@@ -8,6 +8,7 @@ const { aiParseText, extractJson } = require('../../cloudfunctions/quickEntryApi
     serverToday?: string
     generate?: Generate
     timeoutMs?: number
+    retryDelayMs?: number
   }): Promise<{
     items: Array<Record<string, unknown>>
     serverToday: string
@@ -176,9 +177,11 @@ describe('ai parse happy path', () => {
         items: [item({
           name: '瓜子', quantity: 1, unit: '包', storageLocation: null,
           dateFacts: [{ kind: 'relative', offsetDays: 14, label: 'expiry', rawText: '2周后过期' }],
+          evidence: { name: '瓜子', quantity: '一包', unit: '一包' },
         })],
       }),
     })
+    expect(result.items[0].quantity).toBe(1)
     expect(result.items[0].dateCandidates?.[0]).toMatchObject({ date: '2026-09-24', role: 'expiry' })
   })
 
@@ -198,11 +201,11 @@ describe('ai parse happy path', () => {
 
   it('coerces numeric strings but drops unusable dates', async () => {
     const result = await aiParseText({
-      text: '酸奶还有3天到期，面包2026年2月30日到期',
+      text: '酸奶1盒还有3天到期，面包2026年2月30日到期',
       serverToday: today,
       generate: reply({
         items: [
-          item({ name: '酸奶', quantity: '1', unit: null, storageLocation: null, dateFacts: [{ kind: 'relative', offsetDays: '3', label: 'expiry', rawText: '还有3天到期' }] }),
+          item({ name: '酸奶', quantity: '1', unit: '盒', storageLocation: null, dateFacts: [{ kind: 'relative', offsetDays: '3', label: 'expiry', rawText: '还有3天到期' }], evidence: { name: '酸奶', quantity: '1盒', unit: '1盒' } }),
           item({ name: '面包', quantity: null, unit: null, storageLocation: null, dateFacts: [{ kind: 'absolute', year: 2026, month: 2, day: 30, label: 'expiry', rawText: '2026年2月30日到期' }] }),
         ],
       }),
@@ -257,6 +260,190 @@ describe('ai parse tolerant sanitizing', () => {
       }),
     })
     expect(result.items).toHaveLength(1)
+  })
+})
+
+describe('ai parse evidence back-link', () => {
+  it('drops a quantity the source text never mentions', async () => {
+    const result = await aiParseText({
+      text: '买了牛奶',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '牛奶', quantity: 1, unit: null, storageLocation: null, evidence: { name: '牛奶' } })] }),
+    })
+    expect(result.items[0].name).toBe('牛奶')
+    expect(result.items[0].quantity).toBeUndefined()
+  })
+
+  it('keeps a Chinese-numeral quantity whose evidence traces back', async () => {
+    const result = await aiParseText({
+      text: '买了三个苹果',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '苹果', quantity: 3, unit: null, storageLocation: null, evidence: { name: '苹果', quantity: '三个' } })] }),
+    })
+    expect(result.items[0].quantity).toBe(3)
+    expect(result.items[0].unit).toBeUndefined()
+  })
+
+  it('does not let a digit hide inside a longer number', async () => {
+    const result = await aiParseText({
+      text: '牛奶2026年9月12日到期',
+      serverToday: today,
+      generate: reply({
+        items: [item({
+          name: '牛奶', quantity: 2, unit: null, storageLocation: null,
+          dateFacts: [{ kind: 'absolute', year: 2026, month: 9, day: 12, label: 'expiry', rawText: '2026年9月12日到期' }],
+        })],
+      }),
+    })
+    expect(result.items[0].quantity).toBeUndefined()
+    expect(result.items[0].dateCandidates?.[0].date).toBe('2026-09-12')
+  })
+
+  it('drops a date fact whose rawText is not in the source text', async () => {
+    const result = await aiParseText({
+      text: '牛奶',
+      serverToday: today,
+      generate: reply({
+        items: [item({ name: '牛奶', quantity: null, unit: null, storageLocation: null, dateFacts: [{ kind: 'absolute', month: 9, day: 12, label: 'expiry', rawText: '9月12日过期' }] })],
+      }),
+    })
+    expect(result.items[0].dateCandidates).toEqual([])
+  })
+
+  it('drops an invented unit and keeps the storage location traced through its phrase', async () => {
+    const result = await aiParseText({
+      text: '牛奶放冰箱',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '牛奶', quantity: null, unit: '盒', storageLocation: '冰箱', evidence: { name: '牛奶', storageLocation: '放冰箱' } })] }),
+    })
+    expect(result.items[0].unit).toBeUndefined()
+    expect(result.items[0].storageLocation).toBe('冰箱')
+  })
+
+  it('tolerates whitespace and full-width digits when tracing evidence', async () => {
+    const result = await aiParseText({
+      text: '鲜牛奶 ２ 盒',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '鲜牛奶', quantity: 2, unit: '盒', storageLocation: null, evidence: { name: '鲜牛奶', quantity: '２ 盒', unit: '２ 盒' } })] }),
+    })
+    expect(result.items[0]).toMatchObject({ name: '鲜牛奶', quantity: 2, unit: '盒' })
+  })
+
+  it('exempts category from the evidence requirement but keeps the whitelist', async () => {
+    const result = await aiParseText({
+      text: '牛奶',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '牛奶', quantity: null, unit: null, storageLocation: null, category: 'medicine' })] }),
+    })
+    expect(result.items[0].category).toBe('medicine')
+  })
+
+  it('degrades when every field is hallucinated away', async () => {
+    await expect(aiParseText({
+      text: '牛奶',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '酸奶', quantity: 5, unit: '杯', storageLocation: '冰箱' })] }),
+    })).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' })
+  })
+})
+
+describe('ai parse acceptance cases', () => {
+  it('parses a fully specified sentence without confirmation', async () => {
+    const result = await aiParseText({
+      text: '牛奶2盒9月12日过期放冰箱',
+      serverToday: today,
+      generate: reply({
+        items: [item({
+          name: '牛奶', quantity: 2, unit: '盒', storageLocation: '冰箱',
+          dateFacts: [{ kind: 'absolute', month: 9, day: 12, label: 'expiry', rawText: '9月12日过期' }],
+          evidence: { name: '牛奶', quantity: '2盒', unit: '2盒', storageLocation: '放冰箱' },
+        })],
+      }),
+    })
+    expect(result.items[0]).toMatchObject({ name: '牛奶', quantity: 2, unit: '盒', storageLocation: '冰箱' })
+    expect(result.items[0].dateCandidates?.[0]).toMatchObject({ date: '2026-09-12', role: 'expiry' })
+  })
+
+  it('computes a relative expiry for 瓜子一包2周后过期', async () => {
+    const result = await aiParseText({
+      text: '瓜子一包2周后过期',
+      serverToday: today,
+      generate: reply({
+        items: [item({
+          name: '瓜子', quantity: 1, unit: '包', storageLocation: null,
+          dateFacts: [{ kind: 'relative', offsetDays: 14, label: 'expiry', rawText: '2周后过期' }],
+          evidence: { name: '瓜子', quantity: '一包', unit: '一包' },
+        })],
+      }),
+    })
+    expect(result.items[0]).toMatchObject({ name: '瓜子', quantity: 1, unit: '包' })
+    expect(result.items[0].dateCandidates?.[0].date).toBe('2026-09-24')
+  })
+
+  it('keeps a unit-less quantity and leaves the unit null', async () => {
+    const result = await aiParseText({
+      text: '买了三个苹果',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '苹果', quantity: 3, unit: null, storageLocation: null, evidence: { name: '苹果', quantity: '三个' } })] }),
+    })
+    expect(result.items[0]).toMatchObject({ name: '苹果', quantity: 3 })
+    expect(result.items[0].unit).toBeUndefined()
+  })
+
+  it('never fills in a default quantity for a bare name', async () => {
+    const result = await aiParseText({
+      text: '牛奶',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '牛奶', quantity: null, unit: null, storageLocation: null, evidence: { name: '牛奶' } })] }),
+    })
+    expect(result.items[0]).toMatchObject({ name: '牛奶' })
+    expect(result.items[0].quantity).toBeUndefined()
+    expect(result.items[0].unit).toBeUndefined()
+    expect(result.items[0].dateCandidates).toEqual([])
+  })
+
+  it('maps a shelf-life sentence onto shelf_life mode', async () => {
+    const result = await aiParseText({
+      text: '今天买的酸奶，保质期21天',
+      serverToday: today,
+      generate: reply({ items: [item({ name: '酸奶', quantity: null, unit: null, storageLocation: null, dateFacts: [{ kind: 'shelf_life', value: 21, unit: 'day', rawText: '保质期21天' }], evidence: { name: '酸奶' } })] }),
+    })
+    expect(result.items[0]).toMatchObject({ name: '酸奶', expiryInputMode: 'shelf_life', shelfLifeValue: 21, shelfLifeUnit: 'day' })
+  })
+})
+
+describe('ai parse concurrency backoff', () => {
+  function concurrencyError() {
+    const error = new Error('EXCEED_CONCURRENT_REQUEST_LIMIT') as Error & { code?: string }
+    error.code = 'EXCEED_CONCURRENT_REQUEST_LIMIT'
+    return error
+  }
+
+  it('retries once when the model hits the concurrency ceiling', async () => {
+    let calls = 0
+    const generate: Generate = async () => {
+      calls += 1
+      if (calls === 1) throw concurrencyError()
+      return { text: JSON.stringify({ items: [{ name: '牛奶', quantity: null, unit: null, storageLocation: null, dateFacts: [], evidence: { name: '牛奶' } }] }) }
+    }
+    const result = await aiParseText({ text: '牛奶', serverToday: today, generate, retryDelayMs: 1 })
+    expect(result.items[0].name).toBe('牛奶')
+    expect(calls).toBe(2)
+  })
+
+  it('gives up after one retry so the caller can degrade', async () => {
+    let calls = 0
+    const generate: Generate = async () => { calls += 1; throw concurrencyError() }
+    await expect(aiParseText({ text: '牛奶', serverToday: today, generate, retryDelayMs: 1 }))
+      .rejects.toMatchObject({ code: 'EXCEED_CONCURRENT_REQUEST_LIMIT' })
+    expect(calls).toBe(2)
+  })
+
+  it('does not retry ordinary failures', async () => {
+    let calls = 0
+    const generate: Generate = async () => { calls += 1; throw new Error('boom') }
+    await expect(aiParseText({ text: '牛奶', serverToday: today, generate, retryDelayMs: 1 })).rejects.toThrow('boom')
+    expect(calls).toBe(1)
   })
 })
 

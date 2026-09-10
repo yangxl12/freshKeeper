@@ -88,7 +88,7 @@ function createTextGenerator(options = {}) {
     try {
       return await generateViaSdk(deps, messages)
     } catch (error) {
-      // 保留 SDK 自带错误码（如 EXCEED_CONCURRENT_REQUEST_LIMIT，P1 要按它退避重试）。
+      // 保留 SDK 自带错误码（如 EXCEED_CONCURRENT_REQUEST_LIMIT，由 ai-parse.js 按它退避重试）。
       if (error && error.code) throw error
       fail('AI_UNAVAILABLE', '识别服务暂时不可用，请稍后重试')
     }

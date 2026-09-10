@@ -103,10 +103,20 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
   控制台里那个 `hy3` 模型开关属于 `cloudbase` 通道，本项目不要动它、也不要切套餐。
 - 免费额度耗尽时 `hunyuan-v3` 会**直接报错**（不会静默转套餐扣费），此时解析自动降级本地规则。
   要整体停用只改云端环境变量 `QUICK_ENTRY_AI_ENABLED=false`（`false`/`0`/`off` 均识别），不需要重新部署。
-- 体验模型**单环境 5 并发**，超出会报 `EXCEED_CONCURRENT_REQUEST_LIMIT`（P1 才会加退避重试）。
+- **并发与限流**：体验模型单环境 5 并发，撞上 `EXCEED_CONCURRENT_REQUEST_LIMIT` 时云端退避 300ms 重试一次，
+  仍失败就降级本地规则（用户无感知）。按 `OPENID` 每日限 50 次（`QUICK_ENTRY_AI_DAILY_LIMIT` 可覆盖），
+  结果按 `文字 + serverToday` 缓存 6 小时，重复输入不再消耗额度。缓存与限次都在**云函数实例内存**里，
+  冷启动即清空——单次约 0.001 元，够用；要精确计量再换云数据库集合。
+- **证据回链**：模型对每个字段给出原文片段（`evidence`），服务端核对不上就丢弃该字段（记 `AI_EVIDENCE_REJECTED`），
+  `category` 例外。所以「原文没说数量，模型却给了 1」这类幻觉进不了草稿。
+- 观测日志：`AI_PARSE_OK` / `AI_PARSE_CACHE_HIT` / `AI_PARSE_DEGRADED` / `AI_EVIDENCE_REJECTED` /
+  `AI_QUOTA_EXCEEDED` / `AI_QUOTA_NEAR_LIMIT`（80% 水位）/ `AI_TOKEN_USAGE` / `AI_CONCURRENCY_RETRY`。
 - 变量都在**云开发控制台**配置。代码默认值已经可用，下列变量只用于覆盖：
   `QUICK_ENTRY_AI_PROVIDER`（默认 `hunyuan-v3`）、`QUICK_ENTRY_AI_MODEL`（默认 `hy3`）、
-  `QUICK_ENTRY_AI_TIMEOUT_MS`（默认 6000，且不会超过 `QUICK_ENTRY_TIMEOUT_MS`）。
+  `QUICK_ENTRY_AI_TIMEOUT_MS`（默认 6000，且不会超过 `QUICK_ENTRY_TIMEOUT_MS`）、
+  `QUICK_ENTRY_AI_DAILY_LIMIT`（默认 50）。
+- **隐私**：文字/语音解析会把用户输入发送至大模型。必须在微信公众平台「用户隐私保护指引」里声明这一用途，
+  通过审核后再保持 `QUICK_ENTRY_FEATURES.aiParse = true`；评审未过时置 false，页面会退回确定性规则（不弹提示）。
 
 **上线前必须做的一步：把 `quickEntryApi` 的超时改成 60 秒。**
 

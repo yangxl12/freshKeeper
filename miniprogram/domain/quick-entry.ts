@@ -250,6 +250,7 @@ export function createDraftFromParsed(
   reminderLeadDays = 1,
   recentProfile?: RecentItemProfile,
   evidence?: QuickEntryDraft['evidence'],
+  parserVersion?: string,
 ): QuickEntryDraft {
   const recentDraft = recentProfile ? createDraftFromRecent(recentProfile, reminderLeadDays) : undefined
   const recent = recentDraft?.fields
@@ -265,6 +266,15 @@ export function createDraftFromParsed(
   fields.expiryInputMode = item.expiryInputMode === 'shelf_life' || item.shelfLifeValue ? 'shelf_life' : 'direct'
   fields.shelfLifeValue = Number.isInteger(item.shelfLifeValue) ? item.shelfLifeValue as number : null
   fields.shelfLifeUnit = item.shelfLifeUnit || (fields.expiryInputMode === 'shelf_life' ? 'day' : null)
+
+  // AI 只在原文里找得到证据时才返回字段，没找到就是 null。这里把「它没说」和「它说错了」区分开：
+  // 不写进 confirmationFields（那会挡住本来就合法的草稿），只提示用户核对默认填充值。
+  const aiMissingFields = source !== 'date_photo' && parserVersion?.startsWith('ai-') && !recent
+    ? [
+      ...(item.quantity == null ? ['quantity'] : []),
+      ...(!item.unit ? ['unit'] : []),
+    ]
+    : []
 
   const candidates = Array.isArray(item.dateCandidates) ? item.dateCandidates : []
   const completeCandidates = candidates.filter((candidate) => candidate.complete && parseDateKey(candidate.date || ''))
@@ -325,6 +335,8 @@ export function createDraftFromParsed(
     dateConflict,
     dateInvalid,
     evidence,
+    parserVersion,
+    aiMissingFields,
   })
 }
 

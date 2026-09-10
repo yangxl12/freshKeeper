@@ -34,6 +34,8 @@ const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
 const MAX_DRAFTS = 5
 /** 最近录入最多展示条目数，超过后不再继续拉取。 */
 const MAX_RECENT_PROFILES = 100
+/** AI 识别超过这个时长就换一句更耐等的文案，别让「AI 识别中…」僵在那儿。 */
+const AI_PATIENCE_MS = 3000
 let recorderManager: WechatMiniprogram.RecorderManager | null = null
 let recorderBound = false
 let activePage: any = null
@@ -125,6 +127,14 @@ function statusMeta(draft: QuickEntryDraft): { label: string; tone: string } {
   return { label: '可入库', tone: 'ok' }
 }
 
+/** AI 只在原文里找得到证据时才返回字段；缺失的字段已被默认值填上，这里提示用户核对。 */
+function aiMissingHint(draft: QuickEntryDraft): string {
+  const missing = draft.aiMissingFields || []
+  if (!missing.length) return ''
+  const labels = [missing.includes('quantity') ? '数量' : '', missing.includes('unit') ? '单位' : ''].filter(Boolean)
+  return `AI 没在原文里找到${labels.join('和')}，已按默认值填上，请核对`
+}
+
 Page({
   data: {
     today: todayKey(),
@@ -153,14 +163,17 @@ Page({
     statusLabels: [] as string[],
     statusTones: [] as string[],
     sourceLabels: [] as string[],
+    aiFlags: [] as boolean[],
+    aiMissingHints: [] as string[],
     nameMissingFlags: [] as boolean[],
     expiredFlags: [] as boolean[],
     categoryOptions: FORM_CATEGORY_OPTIONS,
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
     features: QUICK_ENTRY_FEATURES,
-    capabilities: { text: true, voice: false, datePhoto: false },
+    capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
     defaultReminderLeadDays: 1,
     recognitionState: 'idle' as 'idle' | 'parsing' | 'transcribing' | 'recognizing_photo',
+    recognitionTip: '正在识别…',
     voiceState: 'idle' as 'idle' | 'authorizing' | 'recording' | 'uploading',
     voicePressing: false,
     photoPreview: '',
@@ -193,6 +206,7 @@ Page({
   pendingRecognition: false,
   textSession: null as { drafts: QuickEntryDraft[]; inputError: string; saveSummary: string } | null,
   voiceTimer: null as ReturnType<typeof setInterval> | null,
+  recognitionTipTimer: null as ReturnType<typeof setTimeout> | null,
   voiceBounds: null as { left: number; right: number; top: number; bottom: number } | null,
 
   onShow() {
@@ -213,7 +227,23 @@ Page({
     if (this.data.recognitionState !== 'idle') wx.hideLoading?.()
     this.recognitionId += 1
     this.pendingRecognition = false
+    this.clearRecognitionTip()
     this.setData({ recognitionState: 'idle', voiceState: 'idle' })
+  },
+
+  clearRecognitionTip() {
+    if (this.recognitionTipTimer) clearTimeout(this.recognitionTipTimer)
+    this.recognitionTipTimer = null
+  },
+
+  /** AI 走大模型要等 1~3 秒；真等久了就换文案，用户不会以为卡死。 */
+  startRecognitionTip() {
+    this.clearRecognitionTip()
+    if (!(this.data.features.aiParse && this.data.capabilities.aiText)) return
+    this.recognitionTipTimer = setTimeout(() => {
+      this.recognitionTipTimer = null
+      if (this.data.recognitionState === 'parsing') this.setData({ recognitionTip: '正在仔细识别…' })
+    }, AI_PATIENCE_MS)
   },
 
   async preparePage() {
@@ -225,7 +255,7 @@ Page({
     const recentProfiles = (recentResult.status === 'fulfilled' ? recentResult.value.items : []).slice(0, MAX_RECENT_PROFILES)
     const capabilities = capabilityResult.status === 'fulfilled'
       ? capabilityResult.value
-      : { text: false, voice: false, datePhoto: false }
+      : { text: false, voice: false, datePhoto: false, aiText: false }
     const features = QUICK_ENTRY_FEATURES
     const defaultReminderLeadDays = settingsResult.status === 'fulfilled'
       ? settingsResult.value.defaultReminderLeadDays
@@ -235,7 +265,7 @@ Page({
         ? '快速录入服务尚未更新，请先使用完整填写'
         : '最近物品暂时不可用，可重试或直接完整填写'
       : ''
-    this.setData({ loading: false, recentProfiles, features, capabilities: { ...capabilities, text: true }, defaultReminderLeadDays, loadingError })
+    this.setData({ loading: false, recentProfiles, features, capabilities: { ...capabilities, text: true, aiText: Boolean(capabilities.aiText) }, defaultReminderLeadDays, loadingError })
     if (!recentProfiles.length && !features.text && !features.voice && !features.datePhoto && !loadingError) {
       this.openFullTab()
     }
@@ -340,6 +370,8 @@ Page({
       statusLabels: drafts.map(draft => statusMeta(draft).label),
       statusTones: drafts.map(draft => statusMeta(draft).tone),
       sourceLabels: drafts.map(draft => SOURCE_LABELS[draft.source] || '录入'),
+      aiFlags: drafts.map(draft => Boolean(draft.parserVersion?.startsWith('ai-'))),
+      aiMissingHints: drafts.map(aiMissingHint),
       nameMissingFlags: drafts.map(draft => draft.issues.some(issue => issue.field === 'name')),
     }
   },
@@ -421,7 +453,9 @@ Page({
     this.blurQuickInput()
     const recognitionId = ++this.recognitionId
     this.pendingRecognition = true
-    this.setData({ recognitionState: 'parsing', inputError: '' })
+    const aiParsing = Boolean(this.data.features.aiParse && this.data.capabilities.aiText)
+    this.setData({ recognitionState: 'parsing', inputError: '', recognitionTip: aiParsing ? 'AI 识别中…' : '正在识别…' })
+    this.startRecognitionTip()
     const startedAt = Date.now()
     wx.showLoading?.({ title: '正在生成…', mask: true })
     try {
@@ -445,6 +479,7 @@ Page({
       if (recognitionId === this.recognitionId) {
         wx.hideLoading?.()
         this.pendingRecognition = false
+        this.clearRecognitionTip()
         this.setData({ recognitionState: 'idle', voiceState: 'idle' })
       }
     }
@@ -452,7 +487,7 @@ Page({
 
   /** 云端优先，失败或结果为空时退到本地解析；仍识别不出时产出一条可手填的草稿。 */
   async buildDraftsFromText(text: string, source: Extract<QuickEntrySource, 'text' | 'voice'>): Promise<{ drafts: QuickEntryDraft[]; notice: string }> {
-    const items = await this.recognizeTextItems(text)
+    const { items, parserVersion } = await this.recognizeTextItems(text)
     if (!items.length) {
       const draft = createDraftFromParsed(
         { name: fallbackDraftName(text), dateCandidates: [] },
@@ -460,18 +495,19 @@ Page({
         this.data.defaultReminderLeadDays,
         undefined,
         { kind: 'text', sourceText: text },
+        parserVersion,
       )
       return { drafts: [draft], notice: '没识别出明确信息，已生成一条草稿，补全名称和日期即可保存' }
     }
     const drafts = items.map((item) => {
       const itemName = typeof item.name === 'string' ? normalizeRecentName(item.name) : ''
       const recent = itemName ? this.data.recentProfiles.find((profile) => normalizeRecentName(profile.name) === itemName) : undefined
-      return createDraftFromParsed(item, source, this.data.defaultReminderLeadDays, recent, { kind: 'text', sourceText: text })
+      return createDraftFromParsed(item, source, this.data.defaultReminderLeadDays, recent, { kind: 'text', sourceText: text }, parserVersion)
     })
     return { drafts, notice: '' }
   },
 
-  async recognizeTextItems(text: string) {
+  async recognizeTextItems(text: string): Promise<{ items: QuickEntryParseResult['items']; parserVersion: string }> {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       // 云函数未回调也必须结束等待，让本地解析接管；迟到结果不会覆盖草稿。
@@ -482,17 +518,17 @@ Page({
         }),
       ])
       const items = Array.isArray(result?.items) ? result.items : []
-      if (items.length) return items
+      if (items.length) return { items, parserVersion: result.parserVersion || 'unknown' }
     } catch (error) {
       if (!(error instanceof CloudServiceError)) {
         const local = parseLocallySafely(text)
-        if (local.length) return local
+        if (local.length) return { items: local, parserVersion: 'rules-v3' }
         throw error
       }
     } finally {
       if (timer) clearTimeout(timer)
     }
-    return parseLocallySafely(text)
+    return { items: parseLocallySafely(text), parserVersion: 'rules-v3' }
   },
 
   selectRecent(event: WechatMiniprogram.CustomEvent) {
@@ -532,6 +568,7 @@ Page({
     const nextDraft = refreshDraftValidation({
       ...draft,
       confirmationFields: (draft.confirmationFields || []).filter((item) => item !== field),
+      aiMissingFields: (draft.aiMissingFields || []).filter((item) => item !== field),
       fields: { ...draft.fields, [field]: value },
     })
     const drafts = [...this.data.drafts]
@@ -547,6 +584,7 @@ Page({
       [`expiredFlags[${index}]`]: expiryToneOf(summary, this.data.today) === 'expired',
       [`statusLabels[${index}]`]: status.label,
       [`statusTones[${index}]`]: status.tone,
+      [`aiMissingHints[${index}]`]: aiMissingHint(nextDraft),
       [`nameMissingFlags[${index}]`]: nextDraft.issues.some(issue => issue.field === 'name'),
       selectableCount: countSelectable(drafts),
     }, () => this.syncUnloadPrompt())

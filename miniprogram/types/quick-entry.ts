@@ -67,6 +67,10 @@ export interface QuickEntryDraft {
   confirmationFields?: string[]
   expanded?: boolean
   evidence?: { kind: 'text' | 'photo'; localPath?: string; sourceText?: string }
+  /** 云端解析器版本；以 `ai-` 开头表示这条草稿来自大模型。 */
+  parserVersion?: string
+  /** AI 在原文里没找到、已按默认值填充的字段，仅用于提示用户确认。 */
+  aiMissingFields?: string[]
   errorMessage?: string
   submittedInput?: InventorySaveInput
   dateConflict?: string
@@ -106,6 +110,8 @@ export interface QuickEntryCapabilities {
   text: boolean
   voice: boolean
   datePhoto: boolean
+  /** 云端文字解析走大模型；false 或缺失时页面按确定性规则识别展示。 */
+  aiText?: boolean
 }
 
 export interface DatePhotoResult {
