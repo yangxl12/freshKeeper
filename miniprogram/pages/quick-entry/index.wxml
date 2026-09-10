@@ -168,44 +168,59 @@
             <view wx:if="{{aiMissingHints[draftIndex] && draft.status !== 'saved'}}" class="draft-card__hint">{{aiMissingHints[draftIndex]}}</view>
             <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
 
-            <view class="name-field">
-              <text class="name-field__label">物品名称 <text class="required-mark">*</text></text>
-              <input class="name-field__input {{nameMissingFlags[draftIndex] ? 'name-field__input--missing' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.name}}" maxlength="40" placeholder="给它起个名字，例如 鲜牛奶" placeholder-class="name-field__placeholder" data-index="{{draftIndex}}" data-field="name" bindinput="handleTextInput" />
-            </view>
-
-            <view class="expiry-hero expiry-hero--{{expiryTones[draftIndex]}}">
-              <view class="expiry-hero__top">
-                <text class="expiry-hero__label">到期日期</text>
-                <text class="expiry-hero__badge">{{expiryBadges[draftIndex]}}</text>
-              </view>
-              <text class="expiry-hero__value">{{expirySummaries[draftIndex]}}</text>
-            </view>
-
-            <view wx:if="{{expiredFlags[draftIndex]}}" class="draft-card__error">该物品已过期，请确认日期</view>
-
-            <view class="date-block">
-              <view class="field-label-row">
-                <text class="field-label">调整到期信息 <text class="required-mark">*</text></text>
-                <button wx:if="{{features.datePhoto && capabilities.datePhoto && draft.status !== 'saving' && draft.status !== 'saved' && draft.status !== 'failed'}}" class="inline-photo-button" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="chooseDatePhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
-              </view>
-              <view class="mode-switch">
-                <button class="mode-switch__item {{draft.fields.expiryInputMode === 'direct' ? 'mode-switch__item--active' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" data-index="{{draftIndex}}" data-mode="direct" bindtap="handleModeChange">直接选到期日</button>
-                <button class="mode-switch__item {{draft.fields.expiryInputMode === 'shelf_life' ? 'mode-switch__item--active' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" data-index="{{draftIndex}}" data-mode="shelf_life" bindtap="handleModeChange">按保质期计算</button>
-              </view>
-              <view wx:if="{{draft.fields.expiryInputMode === 'direct'}}" class="field field--compact">
-                <picker disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="date" value="{{draft.fields.expiryDate || today}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="expiryDate" bindchange="handleDateChange">
-                  <view class="field-control date-control {{!draft.fields.expiryDate ? 'field-placeholder' : ''}}"><text>{{draft.fields.expiryDate || '选择本批次到期日期'}}</text><view class="line-icon line-icon--calendar date-control__icon"></view></view>
-                </picker>
-              </view>
-              <block wx:else>
-                <view class="field field--compact">
-                  <picker disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="date" value="{{draft.fields.productionDate || today}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="productionDate" bindchange="handleDateChange">
-                    <view class="field-control date-control {{!draft.fields.productionDate ? 'field-placeholder' : ''}}"><text>{{draft.fields.productionDate || '选择本批次生产日期'}}</text><view class="line-icon line-icon--calendar date-control__icon"></view></view>
-                  </picker>
+            <view class="qe-card">
+              <view class="qe-row qe-row--name">
+                <text class="qe-row__label">物品名称 <text class="required-mark">*</text></text>
+                <view class="qe-row__content qe-row__content--stacked">
+                  <input class="qe-input qe-input--name {{nameMissingFlags[draftIndex] ? 'qe-input--missing' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.name}}" maxlength="40" placeholder="给它起个名字，例如 鲜牛奶" placeholder-class="field-placeholder" data-index="{{draftIndex}}" data-field="name" bindinput="handleTextInput" />
+                  <text class="qe-count">{{(draft.fields.name || '').length}}/40</text>
                 </view>
-                <view class="field-row">
-                  <input class="field-control field-row__item" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.shelfLifeValue || ''}}" type="number" placeholder="保质期" data-index="{{draftIndex}}" data-field="shelfLifeValue" bindinput="handleTextInput" />
-                  <picker class="field-row__item" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="selector" range="{{shelfLifeOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleShelfLifeUnitChange"><view class="field-control date-control"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron date-control__arrow"></view></view></picker>
+              </view>
+
+              <view class="qe-row qe-row--expiry qe-row--expiry-{{expiryTones[draftIndex]}}">
+                <text class="qe-row__label">到期状态</text>
+                <view class="qe-row__content qe-expiry">
+                  <text class="qe-expiry__value">{{expirySummaries[draftIndex]}}</text>
+                  <text class="qe-expiry__badge">{{expiryBadges[draftIndex]}}</text>
+                </view>
+              </view>
+
+              <view class="qe-row qe-row--mode">
+                <text class="qe-row__label">到期计算 <text class="required-mark">*</text></text>
+                <view class="mode-switch" role="tablist">
+                  <button class="mode-switch__item {{draft.fields.expiryInputMode === 'direct' ? 'mode-switch__item--active' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" data-index="{{draftIndex}}" data-mode="direct" bindtap="handleModeChange" aria-selected="{{draft.fields.expiryInputMode === 'direct'}}">到期日期</button>
+                  <button class="mode-switch__item {{draft.fields.expiryInputMode === 'shelf_life' ? 'mode-switch__item--active' : ''}}" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" data-index="{{draftIndex}}" data-mode="shelf_life" bindtap="handleModeChange" aria-selected="{{draft.fields.expiryInputMode === 'shelf_life'}}">保质期计算</button>
+                </view>
+              </view>
+
+              <view wx:if="{{draft.fields.expiryInputMode === 'direct'}}" class="qe-row">
+                <text class="qe-row__label">到期日期 <text class="required-mark">*</text></text>
+                <picker class="qe-picker" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="date" value="{{draft.fields.expiryDate || today}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="expiryDate" bindchange="handleDateChange">
+                  <view class="qe-picker-value {{!draft.fields.expiryDate ? 'field-placeholder' : ''}}">
+                    <text>{{draft.fields.expiryDate || '选择本批次到期日期'}}</text>
+                    <view class="line-icon line-icon--calendar qe-calendar" aria-hidden="true"></view>
+                  </view>
+                </picker>
+                <button wx:if="{{features.datePhoto && capabilities.datePhoto && draft.status !== 'saving' && draft.status !== 'saved' && draft.status !== 'failed'}}" class="qe-camera" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="chooseDatePhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
+              </view>
+
+              <block wx:else>
+                <view class="qe-row">
+                  <text class="qe-row__label">生产日期 <text class="required-mark">*</text></text>
+                  <picker class="qe-picker" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="date" value="{{draft.fields.productionDate || today}}" end="2200-12-31" data-index="{{draftIndex}}" data-field="productionDate" bindchange="handleDateChange">
+                    <view class="qe-picker-value {{!draft.fields.productionDate ? 'field-placeholder' : ''}}">
+                      <text>{{draft.fields.productionDate || '选择本批次生产日期'}}</text>
+                      <view class="line-icon line-icon--calendar qe-calendar" aria-hidden="true"></view>
+                    </view>
+                  </picker>
+                  <button wx:if="{{features.datePhoto && capabilities.datePhoto && draft.status !== 'saving' && draft.status !== 'saved' && draft.status !== 'failed'}}" class="qe-camera" disabled="{{saving}}" data-index="{{draftIndex}}" bindtap="chooseDatePhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
+                </view>
+                <view class="qe-row">
+                  <text class="qe-row__label">保质期 <text class="required-mark">*</text></text>
+                  <input class="qe-input qe-input--shelf" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.shelfLifeValue || ''}}" type="number" maxlength="5" placeholder="请输入时长" placeholder-class="field-placeholder" data-index="{{draftIndex}}" data-field="shelfLifeValue" bindinput="handleTextInput" />
+                  <picker class="qe-unit" disabled="{{saving || draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed'}}" mode="selector" range="{{shelfLifeOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleShelfLifeUnitChange">
+                    <view class="qe-unit__value"><text>{{draft.fields.shelfLifeUnit === 'month' ? '个月' : (draft.fields.shelfLifeUnit === 'year' ? '年' : '天')}}</text><view class="line-icon line-icon--chevron qe-arrow" aria-hidden="true"></view></view>
+                  </picker>
                 </view>
               </block>
             </view>
@@ -229,14 +244,29 @@
 
             <button wx:if="{{draft.confirmationFields.length && draft.status !== 'saved'}}" class="manual-button" data-index="{{draftIndex}}" bindtap="confirmFallback">确认已修正的非日期字段</button>
 
-            <view class="draft-editor__details">
-              <view class="field-row">
-                <view class="field field-row__item"><text class="field-label">数量</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.quantity || ''}}" type="number" data-index="{{draftIndex}}" data-field="quantity" bindinput="handleTextInput" /></view>
-                <view class="field field-row__item"><text class="field-label">单位</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.unit}}" data-index="{{draftIndex}}" data-field="unit" maxlength="8" bindinput="handleTextInput" /></view>
+            <view class="qe-card qe-card--details">
+              <view class="qe-row">
+                <text class="qe-row__label">数量</text>
+                <input class="qe-input" disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.quantity || ''}}" type="number" maxlength="4" placeholder="请输入数量" placeholder-class="field-placeholder" data-index="{{draftIndex}}" data-field="quantity" bindinput="handleTextInput" />
               </view>
-              <view class="field"><text class="field-label">分类</text><picker disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" mode="selector" range="{{categoryOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleCategoryChange"><view class="field-control date-control"><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text><view class="line-icon line-icon--chevron date-control__arrow"></view></view></picker></view>
-              <view class="field"><text class="field-label">存放位置</text><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="field-control" value="{{draft.fields.storageLocation}}" placeholder="例如：冰箱" data-index="{{draftIndex}}" data-field="storageLocation" bindinput="handleTextInput" /></view>
-              <view class="field"><text class="field-label">提前提醒天数</text><view class="number-suffix-control"><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="number-suffix-control__input" value="{{draft.fields.reminderLeadDays || 0}}" type="number" maxlength="2" data-index="{{draftIndex}}" data-field="reminderLeadDays" bindinput="handleTextInput" /><text>天</text></view></view>
+              <view class="qe-row">
+                <text class="qe-row__label">单位</text>
+                <input class="qe-input" disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.unit}}" maxlength="8" placeholder="例如：件、盒、瓶" placeholder-class="field-placeholder" data-index="{{draftIndex}}" data-field="unit" bindinput="handleTextInput" />
+              </view>
+              <view class="qe-row">
+                <text class="qe-row__label">分类</text>
+                <picker class="qe-picker" disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" mode="selector" range="{{categoryOptions}}" range-key="label" data-index="{{draftIndex}}" bindchange="handleCategoryChange">
+                  <view class="qe-picker-value"><text>{{draft.fields.category === 'medicine' ? '药品' : (draft.fields.category === 'household' ? '日化' : (draft.fields.category === 'other' ? '其他' : '食品'))}}</text><view class="line-icon line-icon--chevron qe-arrow" aria-hidden="true"></view></view>
+                </picker>
+              </view>
+              <view class="qe-row">
+                <text class="qe-row__label">存放位置</text>
+                <input class="qe-input" disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" value="{{draft.fields.storageLocation}}" placeholder="如：冰箱、床头柜（选填）" placeholder-class="field-placeholder" data-index="{{draftIndex}}" data-field="storageLocation" bindinput="handleTextInput" />
+              </view>
+              <view class="qe-row">
+                <text class="qe-row__label">提前提醒</text>
+                <view class="qe-number"><input disabled="{{saving || draft.status === 'saved' || draft.status === 'failed'}}" class="qe-number__input" value="{{draft.fields.reminderLeadDays || 0}}" type="number" maxlength="2" data-index="{{draftIndex}}" data-field="reminderLeadDays" bindinput="handleTextInput" /><text class="qe-number__suffix">天</text></view>
+              </view>
             </view>
           </view>
         </block>

@@ -839,14 +839,6 @@
 
 .draft-editor__form {
   padding: 24rpx 28rpx 32rpx;
-  border-radius: 0 0 26rpx 26rpx;
-  background: #ffffff;
-}
-
-.draft-editor__details {
-  margin-top: 24rpx;
-  padding-top: 22rpx;
-  border-top: 2rpx solid #edf0ee;
 }
 
 .draft-editor__foot {
@@ -897,231 +889,267 @@
   opacity: 0.78;
 }
 
-.name-field {
+/* 弹窗表单：与 item-form-sheet 的 form-card / form-row 视觉语言对齐 */
+.qe-card {
+  overflow: hidden;
+  padding: 0 26rpx;
+  border: 2rpx solid #e8ece9;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 8rpx 30rpx rgba(40, 66, 56, 0.045);
+}
+
+.qe-card--details {
+  margin-top: 24rpx;
+}
+
+.qe-row {
+  position: relative;
   display: flex;
-  min-height: 108rpx;
+  box-sizing: border-box;
+  min-height: 104rpx;
   align-items: center;
-  gap: 16rpx;
-  margin: 0;
+  gap: 18rpx;
   border-bottom: 2rpx solid #edf0ee;
 }
 
-.name-field__label,
-.expiry-hero__top {
-  width: 164rpx;
-  flex: 0 0 164rpx;
+.qe-row:last-child {
+  border-bottom: 0;
 }
 
-.name-field__label {
-  margin: 0;
-  color: #354b42;
-  font-size: 25rpx;
+.qe-row--name {
+  min-height: 136rpx;
+  align-items: flex-start;
+  padding-top: 29rpx;
+}
+
+.qe-row--mode {
+  min-height: 122rpx;
+}
+
+.qe-row__label {
+  width: 178rpx;
+  flex: 0 0 178rpx;
+  color: #344a42;
+  font-size: 27rpx;
   font-weight: 500;
+  line-height: 1.45;
 }
 
-.name-field__input {
+.required-mark {
+  color: #c45b50;
+  font-size: 22rpx;
+}
+
+.qe-row__content {
   min-width: 0;
+  flex: 1;
+}
+
+.qe-row__content--stacked {
+  position: relative;
+  padding-bottom: 34rpx;
+}
+
+.qe-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100rpx;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #213b32;
+  font-size: 27rpx;
+}
+
+.qe-input--name {
+  height: 58rpx;
+  font-weight: 600;
+}
+
+.qe-input--missing {
+  color: #9b6b2c;
+}
+
+.qe-input--shelf {
+  width: auto;
+  flex: 1;
+}
+
+.qe-count {
+  position: absolute;
+  right: 0;
+  bottom: 12rpx;
+  color: #b0b7b4;
+  font-size: 20rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.qe-expiry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.qe-expiry__value {
+  min-width: 0;
+  color: #244138;
+  font-size: 29rpx;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.qe-expiry__badge {
+  flex: 0 0 auto;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(50, 115, 91, 0.1);
+  color: #32735b;
+  font-size: 21rpx;
+  font-weight: 600;
+}
+
+.qe-row--expiry-soon .qe-expiry__badge {
+  background: rgba(160, 110, 45, 0.12);
+  color: #a06e2d;
+}
+
+.qe-row--expiry-expired .qe-expiry__value {
+  color: #a4473c;
+}
+
+.qe-row--expiry-expired .qe-expiry__badge {
+  background: rgba(164, 71, 60, 0.1);
+  color: #a4473c;
+}
+
+.qe-row--expiry-empty .qe-expiry__value,
+.qe-row--expiry-empty .qe-expiry__badge {
+  background: transparent;
+  color: #a1aaa5;
+}
+
+.qe-picker {
+  min-width: 0;
+  flex: 1;
+}
+
+.qe-picker-value {
+  display: flex;
   min-height: 100rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  color: #213b32;
+  font-size: 27rpx;
+}
+
+.qe-calendar {
+  width: 27rpx;
+  height: 27rpx;
+  color: #668078;
+}
+
+.qe-arrow {
+  width: 22rpx;
+  height: 22rpx;
+  color: #9aa39f;
+}
+
+.qe-arrow::before {
+  top: 5rpx;
+  left: 6rpx;
+  width: 8rpx;
+  height: 8rpx;
+}
+
+.qe-camera {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: #eef4f0;
+  color: #32735b;
+}
+
+.qe-camera .line-icon {
+  width: 30rpx;
+  height: 30rpx;
+}
+
+.qe-camera[disabled] {
+  background: #f0f3f1;
+  color: #aab6b1;
+}
+
+.qe-unit {
+  flex: 0 0 112rpx;
+}
+
+.qe-unit__value {
+  display: flex;
+  height: 100rpx;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8rpx;
+  color: #53665e;
+  font-size: 26rpx;
+}
+
+.qe-number {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+}
+
+.qe-number__input {
+  height: 100rpx;
+  min-width: 0;
   flex: 1;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: #173b31;
-  font-size: 28rpx;
-  font-weight: 600;
-}
-
-.name-field__input--missing {
-  color: #9b6b2c;
-}
-
-.name-field__placeholder {
-  color: #abb4af;
-  font-weight: 400;
-}
-
-.expiry-hero {
-  display: flex;
-  min-height: 108rpx;
-  align-items: center;
-  gap: 16rpx;
-  margin: 0;
-  padding: 0;
-  border-bottom: 2rpx solid #edf0ee;
-}
-
-.expiry-hero__top {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 5rpx;
-}
-
-.expiry-hero__label {
-  color: #354b42;
-  font-size: 25rpx;
-}
-
-.expiry-hero__badge {
-  color: #32735b;
-  font-size: 20rpx;
-  font-weight: 600;
-}
-
-.expiry-hero__value {
-  min-width: 0;
-  flex: 1;
-  color: #244138;
-  font-family: "DIN Alternate", "Arial Narrow", sans-serif;
-  font-size: 30rpx;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.expiry-hero--soon .expiry-hero__badge {
-  color: #a06e2d;
-}
-
-.expiry-hero--expired .expiry-hero__value,
-.expiry-hero--expired .expiry-hero__badge {
-  color: #a4473c;
-}
-
-.expiry-hero--empty .expiry-hero__value,
-.expiry-hero--empty .expiry-hero__badge {
-  color: #a1aaa5;
-}
-
-.required-mark {
-  color: #c0574a;
-}
-
-.date-block {
-  margin: 0;
-  padding: 24rpx 0 6rpx;
-  border-bottom: 2rpx solid #edf0ee;
-}
-
-.field-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.field-label {
-  display: block;
-  margin-bottom: 12rpx;
-  color: #354b42;
-  font-size: 24rpx;
-  font-weight: 500;
-}
-
-.field {
-  min-width: 0;
-  flex: 1;
-  margin-bottom: 18rpx;
-}
-
-.field--compact {
-  margin-bottom: 18rpx;
-}
-
-.field-control,
-.number-suffix-control {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 82rpx;
-  padding: 0 20rpx;
-  border: 2rpx solid #e5eae7;
-  border-radius: 14rpx;
-  background: #f7f8f6;
   color: #213b32;
+  font-size: 27rpx;
 }
 
-.field-placeholder {
-  color: #a8afac;
-}
-
-.field-row {
-  display: flex;
-  gap: 16rpx;
-}
-
-.field-row__item {
-  min-width: 0;
-  flex: 1;
+.qe-number__suffix {
+  color: #7b8782;
+  font-size: 25rpx;
 }
 
 .mode-switch {
   display: flex;
-  margin: 14rpx 0 18rpx;
-  padding: 5rpx;
-  border-radius: 14rpx;
-  background: #f1f3f1;
+  min-width: 0;
+  flex: 1;
+  padding: 6rpx;
+  border-radius: 15rpx;
+  background: #f2f4f2;
 }
 
 .mode-switch__item {
-  min-height: 68rpx;
+  min-width: 0;
+  min-height: 72rpx;
   flex: 1;
-  padding: 0 8rpx;
-  border-radius: 10rpx;
-  background: transparent;
-  color: #7e8984;
-  font-size: 23rpx;
-  line-height: 68rpx;
-}
-
-.mode-switch__item--active {
-  background: #ffffff;
-  box-shadow: 0 3rpx 10rpx rgba(36, 65, 54, 0.07);
-  color: #32735b;
-  font-weight: 650;
-}
-
-.date-control {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.date-control__icon {
-  color: #668078;
-}
-
-.date-control__arrow {
-  width: 26rpx;
-  height: 26rpx;
-  color: #929d98;
-}
-
-.date-control__arrow::before {
-  top: 6rpx;
-  left: 8rpx;
-  width: 9rpx;
-  height: 9rpx;
-}
-
-.inline-photo-button {
-  display: inline-flex;
-  align-items: center;
   margin: 0;
-  padding: 0 14rpx;
-  border-radius: 10rpx;
-  background: #eff4f1;
-  color: #32735b;
-  line-height: 50rpx;
-}
-
-.inline-photo-button .line-icon {
-  width: 28rpx;
-  height: 28rpx;
-}
-
-.inline-photo-button[disabled] {
-  background: #f0f3f1;
-  color: #aab6b1;
+  padding: 0 8rpx;
+  border-radius: 11rpx;
+  background: transparent;
+  color: #7c8984;
+  font-size: 24rpx;
+  font-weight: 500;
+  line-height: 72rpx;
+  white-space: nowrap;
 }
 
 .candidate-list {
@@ -1162,17 +1190,6 @@
   color: #286d53;
   font-size: 22rpx;
   line-height: 56rpx;
-}
-
-.number-suffix-control {
-  display: flex;
-  align-items: center;
-}
-
-.number-suffix-control__input {
-  height: 78rpx;
-  min-width: 0;
-  flex: 1;
 }
 
 .manual-button {
@@ -1476,10 +1493,13 @@
 }
 
 @media (max-width: 340px) {
-  .name-field__label,
-  .expiry-hero__top {
-    width: 148rpx;
-    flex-basis: 148rpx;
+  .qe-row__label {
+    width: 164rpx;
+    flex-basis: 164rpx;
+  }
+
+  .qe-row {
+    gap: 12rpx;
   }
 
   .mode-switch__item {
