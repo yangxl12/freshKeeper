@@ -99,6 +99,7 @@ describe('quick entry page compatibility', () => {
     expect(template).toContain('bindtap="openRecentList"')
     expect(template).toContain('class="recent-page__close"')
     expect(template).toContain('bindtap="closeRecentList"')
+    expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('<form'))
     expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('class="quick-input"'))
   })
 

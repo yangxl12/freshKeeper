@@ -52,10 +52,11 @@
         <text class="entry-sheet__title">添加物品</text>
       </view>
 
+        <view wx:if="{{popup !== 'recent' && features.recent}}" class="quick-input-toolbar">
+          <button class="recent-entry-button" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
+        </view>
+
         <form wx:if="{{popup !== 'recent' && (features.text || features.voice || features.datePhoto)}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
-          <view class="quick-input-card__head">
-            <button wx:if="{{features.recent}}" class="recent-entry-button" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
-          </view>
           <view class="quick-input-row">
             <view class="quick-input-wrap">
               <textarea wx:if="{{features.text || features.voice}}" class="quick-input" name="quickText" value="{{inputText}}" focus="{{quickInputFocused}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" bindfocus="handleQuickInputFocus" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="handleQuickInputBlur" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="field-placeholder" bindinput="handleQuickTextInput" />

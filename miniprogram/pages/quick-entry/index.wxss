@@ -95,7 +95,7 @@
   box-sizing: border-box;
   flex-shrink: 0;
   order: 3;
-  margin: 20rpx 0 0;
+  margin: 0;
   padding: 20rpx;
   border: 2rpx solid #dfe7e1;
   border-radius: 28rpx;
@@ -103,13 +103,16 @@
   box-shadow: 0 6rpx 24rpx rgba(23, 59, 49, 0.05);
 }
 
-.quick-input-card__head {
+.quick-input-toolbar {
   display: flex;
+  flex-shrink: 0;
+  order: 3;
   justify-content: flex-end;
-  margin-bottom: 8rpx;
+  margin: 20rpx 0 8rpx;
 }
 
 .recent-entry-button {
+  position: relative;
   margin: 0;
   padding: 0 18rpx;
   border: 2rpx solid #cbd8d2;
