@@ -287,11 +287,19 @@ describe('userApi updateProfile 校验', () => {
     expect(syncCodeOf(() => validation.validateProfileUpdate({}, OWNER))).toBe('INVALID_ARGUMENT')
   })
 
-  it('昵称去空格，超出 20 字直接拒绝', () => {
+  it('昵称去空格，超出 20 个码点按码点截断而不是拒掉', () => {
     expect(validation.validateProfileUpdate({ nickname: ' 龙哥 ' }, OWNER)).toEqual({ nickname: '龙哥' })
-    expect(syncCodeOf(() => validation.validateProfileUpdate({ nickname: '长'.repeat(21) }, OWNER))).toBe(
-      'INVALID_ARGUMENT',
-    )
+    // 按码点截断，绝不能把 emoji 切成半个（UTF-16 slice 会切出乱码方块）。
+    const truncated = validation.validateProfileUpdate({ nickname: '长'.repeat(21) }, OWNER)
+    expect(truncated.nickname).toBe('长'.repeat(20))
+    const emojis = validation.validateProfileUpdate({ nickname: '😀'.repeat(30) }, OWNER)
+    expect(Array.from(String(emojis.nickname))).toHaveLength(20)
+    expect(String(emojis.nickname)).not.toContain('�')
+  })
+
+  it('纯空白昵称回落到 null（默认态）', () => {
+    expect(validation.validateProfileUpdate({ nickname: '   ' }, OWNER)).toEqual({ nickname: null })
+    expect(validation.validateProfileUpdate({ nickname: null }, OWNER)).toEqual({ nickname: null })
   })
 
   it('头像必须是本人前缀下的 cloud:// 文件', () => {

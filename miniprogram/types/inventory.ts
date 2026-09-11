@@ -114,6 +114,21 @@ export interface UserProfile {
   lastSeenAt: string | null
 }
 
+/** 局部更新：传 null 表示清空该字段回默认态。 */
+export interface UserProfileUpdateInput {
+  nickname?: string | null
+  avatarFileId?: string | null
+}
+
+export interface AvatarUploadTicket {
+  cloudPath: string
+}
+
+export interface ExportDataResult {
+  fileID: string
+  fileName: string
+}
+
 export interface UserTouchResult {
   created: boolean
   lastSeenAt: string

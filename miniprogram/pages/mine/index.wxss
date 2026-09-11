@@ -332,6 +332,9 @@
 
 .modal__button { flex: 1; margin: 0; min-height: 88rpx; line-height: 88rpx; }
 
+/* 不在 .modal__actions 里的按钮（导出 + 注销）自己撑满并留出间距。 */
+.modal__button--stacked { flex: none; width: 100%; margin-top: 16rpx; }
+
 /* 资料编辑 */
 .profile-editor {
   display: flex;

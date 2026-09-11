@@ -1,149 +1,112 @@
 # freshKeeper 项目长期记忆
 
-## 约定与本机踩坑
-- 微信小程序原生 TS + WXSS + 云开发 cloudfunctions；vitest **必须 3.2.7**（4/5.x 报
-  `Cannot read properties of undefined (reading 'config')`）；package.json 不单独锁 vite。
-- 改完跑 `npm run check`（typecheck + test + check:project）→ commit → push
-  `git@github.com:yangxl12/freshKeeper.git`；SSH 常被代理拦（127.0.0.1:7888 未监听），第一次 push 失败就只提交让用户代推。
-- **本机 bash 几乎不可用**：`sed`/`head`/`wc`/`cat`/`ls`/`tail`/`rm` 全 `command not found`
-  （PortableGit 的 safe-bin 包装脚本自己就报 `dirname: command not found`）；
-  **`npm run check` 在 bash 里直接报 `/usr/bin/env: 'bash': No such file or directory`**。
-  → npm 脚本一律走 PowerShell（`$env:Path = "C:\Program Files\Volta;" + $env:Path` 后再 `npm`），
-  git 命令 bash / PowerShell 都能跑；PowerShell 的 stdout 会被吞，命令输出要 `Out-File` 落盘再 Read。
-- **删文件要 PowerShell + `dangerouslyDisableSandbox`**：平台有 safe-delete 机制（走回收站），
-  沙箱内 `Remove-Item` 静默失效（exit 0 但文件还在），沙箱外若 `genie-trash failed` 会
-  `SAFE_DELETE_FAIL_CLOSED` 拒绝删除。`git` 侧看不清删除是否真生效，**必须 `Test-Path` 复核**。
-- 项目**已有 `.gitignore`**（`node_modules/`、`*.log`、`coverage/`、`project.private.config.json` 等），
-  别以为没有——`check-output.log`/`test-new.log` 是被跟踪的历史文件，不受 `*.log` 影响。
-- **同一文件不要在一次消息里并行发多个 Edit**，会互相覆盖丢改动；顺序改。
-  写整个文件前要先 Read（Read 记录跨轮次会失效，Write 会报 `File has not been read yet`）。
+## 本机环境踩坑
+- 小程序原生 TS + WXSS + 云开发 cloudfunctions；vitest **必须 3.2.7**（4/5.x 报 `Cannot read properties of undefined (reading 'config')`）。
+- **bash 基本不可用**：`ls`/`cat`/`sed`/`head` 全 `command not found`；`npm run check` 在 bash 报
+  `/usr/bin/env: 'bash': No such file or directory`。→ npm 脚本走 PowerShell
+  （`$env:Path = "C:\Program Files\Volta;" + $env:Path`）；git 两边都行；PowerShell stdout 会被吞，
+  输出要 `Out-File` 落盘再 Read。用户要求 PowerShell 用完整路径
+  `C:\Users\BYS\AppData\Local\Programs\PowerShell\7\pwsh.exe -NoProfile -Command`，**禁止 powershell.exe**。
+- **删文件要 PowerShell + `dangerouslyDisableSandbox`**：沙箱内 `Remove-Item` 静默失效，沙箱外
+  `genie-trash failed` 会 `SAFE_DELETE_FAIL_CLOSED`。删完**必须 `Test-Path` 复核**。
+- 已有 `.gitignore`（`node_modules/`、`*.log`、`coverage/`、`project.private.config.json`）；
+  `check-output.log`/`test-new.log` 是被跟踪历史文件。
+- 同文件不要并行发多个 Edit（互相覆盖）；Write 整个文件前必须先 Read。
+- 流程：改完 `npm run check`（typecheck + test + check:project）→ commit → push
+  `git@github.com:yangxl12/freshKeeper.git`（SSH 常被代理拦，第一次失败就只提交让用户代推）。
 
 ## Git 踩坑
-- **绝不 `git stash push -- <path>`**：曾删空 `.git/refs`（git 报 not a repository、文件全变 A）。
-  恢复：`mkdir -p .git/refs/{heads,tags,remotes}` → `git ls-remote origin` 取 sha → `git fetch origin` → `git update-ref`。
-  对比基线用 `git show HEAD:<path>`。
-- `fatal: bad object HEAD`：先 `git ls-remote origin`，远端有就 `git fetch origin` 拉回。
+- **绝不 `git stash push -- <path>`**：曾删空 `.git/refs`。恢复：`mkdir -p .git/refs/{heads,tags,remotes}`
+  → `git ls-remote origin` → `git fetch origin` → `git update-ref`。基线对比用 `git show HEAD:<path>`。
+- `fatal: bad object HEAD`：先 `git ls-remote origin`，远端有就 `git fetch origin`。
 
-## 用户体系（A 档已落地，见 docs/user-account-plan.md）
-- 第 4 个业务集合 `users`（`_id`=OPENID + 冗余 `ownerId`，权限「无权限」）+ 第 7 个云函数 `userApi`
-  （`index.js`/`error.js`/`validation.js`/`date.js`/`account.js`，`timeout: 60`）。
-- **核心逻辑在注入式 `account.js` 的 `createAccountService({ db, deleteFile })`**，
-  `index.js` 才 require `wx-server-sdk` —— 单测注入假 db，不加载真 SDK（同 `image-cover.js`）。
-- action：`touch`（同日不写库，客户端 + 服务端双层节流）/ `get` / `updateProfile` / `deleteAccount`。
-  注销**顺序不能错**：收集 coverFileId → `deleteFile`（50/批）→ remove 四个集合；
-  20 轮上限，超限抛 `DELETE_INCOMPLETE`，重试天然幂等，不留墓碑。
-- 业务错误码**只在 `error.code`，不在 message**：测试别用 `toThrow('CODE')`，取 `error.code` 断言。
-- 客户端 `services/user-service.ts`：同日节流放在 `touchUserOnceToday()` 里（app.ts 一行调用，
-  测试不用 stub `App()`）；`utils/shanghai-time.ts:shanghaiTodayKey()` 提供上海日期串。
-- 注销入口：我的页第 6 个 entry `data-entry="account"`「账号与数据」→ 两步 `wx.showModal`
-  → `showLoading` → `clearStorageSync()` → 结果 modal → `reLaunch` 首页；
-  结果提示一律用 modal（toast 超 7 汉字截断）。
-- 部署前必须：控制台先建 `users` 集合，再首建部署 `userApi`（timeout 只在首建时读 config）。
-  「用户隐私保护指引」补注销入口说明是审核项，代码代替不了。
-
-## 云函数部署（CLI 可用，路径 D:\微信web开发者工具\cli.bat）
-- **CLI 部署实测不会应用 `config.json` 的 timeout**：2026-09-11 首建 `userApi` 后
-  `cli cloud functions info` 显示 `timeout: 3`、`runtime: Nodejs16.13`（同 settingsApi；
-  inventoryApi / quickEntryApi 的 60 是当初在控制台手动改的）。**建完一定去控制台改超时**。
-- 首建偶发 `FailedOperation.UpdateFunctionCode 当前函数处于 Creating 状态` → 等 45 秒重跑同一条 deploy
-  即可（第二次会走 "exists in the cloud, will update it"）。
-- 常用命令：`cli.bat cloud functions list|info|deploy --env cloud1-d0gkh66ce94b1be08
-  --names <fn> --project D:/myProject/freshKeeper [--remote-npm-install]`。
-  PowerShell 里调用 `& 'D:\微信web开发者工具\cli.bat' ...`，输出 `*>&1 | Out-File` 落盘再 Read。
-- `config.json` 的 `timeout`/`envVariables`/`triggers` **只在函数首次创建时写入云端**，之后 deploy 只更新代码；
-  改超时/环境变量只能去云开发控制台（CLI 无该命令）。默认超时 3s，调 LLM 的函数上线先改 60s。
-- 「云函数本地调试」没有网关注入，`cloud.ai()` 必 404（`AI_PARSE_DEGRADED` + `reason:"404"`）；
-  `ai-client.js` 用 `TENCENTCLOUD_RUNENV === 'WX_LOCAL_SCF'` 识别并跳过 AI（逃生门 `QUICK_ENTRY_AI_LOCAL_DEBUG=true`）。
-  验证 AI 只能走云端。
+## 云函数部署（CLI：D:\微信web开发者工具\cli.bat）
+- `config.json` 的 `timeout`/`envVariables`/`triggers` **只在函数首次创建时写入云端**，deploy 只更新代码；
+  CLI 实测也不应用 timeout。**建完一定去控制台改超时**（默认 3s，重函数改 60s）。
+- 首建偶发 `UpdateFunctionCode 当前函数处于 Creating 状态` → 等 45 秒重跑同一条 deploy。
+- 命令：`cli.bat cloud functions list|info|deploy --env cloud1-d0gkh66ce94b1be08 --names <fn>
+  --project D:/myProject/freshKeeper [--remote-npm-install]`，PowerShell 里 `& 'D:\微信web开发者工具\cli.bat' ...`。
+- 「云函数本地调试」无网关注入，`cloud.ai()` 必 404；`ai-client.js` 用
+  `TENCENTCLOUD_RUNENV === 'WX_LOCAL_SCF'` 跳过 AI（逃生门 `QUICK_ENTRY_AI_LOCAL_DEBUG=true`）。
 
 ## 模拟器验收（真调云函数）
 1. `cli.bat auto --project "D:/myProject/freshKeeper" --auto-port 9420 --trust-project`。
-2. 起 `~/AppData/Local/uv/cache/archive-v0/<hash>/wechat_devtools_mcp/scripts/dist/daemon.bundle.js`（cwd 为同目录 scripts/），
-   `{"ready":true}` 后发 NDJSON `{"id":1,"script":"run_test_script","args":["--port","9420","--script","<探针>","--timeout","90"]}`。
-3. 探针 `module.exports = async (mp) => mp.evaluate(...)`；模板见 `C:/Users/BYS/AppData/Local/Temp/wx-probe/`。
-4. 云函数回 `{ok, data, requestId}`，探针取值必须 `res.result.data.xxx`；`save` 的 `idempotencyKey` 必须是标准 UUID v4。
-5. automator 的 page node 会失效（截图全白），但 `miniProgram.evaluate` 仍可用；该形态 `getCurrentPages()[i].data`
-   只有 `__webviewId__`，读不到业务字段，别用它断言页面数据。
-6. **怀疑平台 API 行为先探针实测**（`evaluate` 里包 Promise 调 `wx.xxx`），别推理。
+2. 起 `wechat_devtools_mcp/scripts/dist/daemon.bundle.js`（cwd 为 scripts/），`{"ready":true}` 后发 NDJSON
+   `{"id":1,"script":"run_test_script","args":["--port","9420","--script","<探针>","--timeout","90"]}`。
+3. 探针 `module.exports = async (mp) => mp.evaluate(...)`；模板 `C:/Users/BYS/AppData/Local/Temp/wx-probe/`。
+4. 云函数回 `{ok, data, requestId}`，探针取值 `res.result.data.xxx`；`save` 的 `idempotencyKey` 须标准 UUID v4。
+5. automator 的 page node 会失效（截图全白），`miniProgram.evaluate` 仍可用，但
+   `getCurrentPages()[i].data` 只有 `__webviewId__`，别用它断言页面数据。
+6. **怀疑平台 API 行为先探针实测**，别推理。
+
+## 用户体系（A 档已落地 docs/user-account-plan.md；B 档 docs/user-profile-plan.md）
+- 集合 `users`（`_id`=OPENID + 冗余 `ownerId`，权限「无权限」）+ 云函数 `userApi`
+  （`index.js`/`error.js`/`validation.js`/`date.js`/`account.js`）。
+- 核心逻辑在注入式 `account.js:createAccountService({ db, deleteFile, uploadFile })`，`index.js` 才 require
+  `wx-server-sdk` —— 单测注入假 db，不加载真 SDK。
+- action：`touch`（同日双层节流）/ `get` / `updateProfile` / `createAvatarUpload` / `exportData` / `deleteAccount`。
+- 注销顺序：收集 coverFileId + 头像 fileID → `deleteFile`（50/批）→ remove 四个集合；20 轮上限抛
+  `DELETE_INCOMPLETE`；重试幂等，不留墓碑。注销后重进 = 新用户。
+- 业务错误码**只在 `error.code`**，测试取 `error.code` 断言，别 `toThrow('CODE')`。
+- 客户端 `services/user-service.ts`；`utils/shanghai-time.ts:shanghaiTodayKey()` 给上海日期串；
+  同日节流放 `touchUserOnceToday()`（app.ts 一行调用，测试不用 stub `App()`）。
+- 结果提示一律 modal（toast 超 7 汉字截断）。
 
 ## 快速录入
-- 能力三档：① `QUICK_ENTRY_FEATURES`（`config/runtime.ts`）决定按钮显不显示；② 云端 `getCapabilities()` 回
-  `voice`/`datePhoto`/`aiText` 决定能不能用；③ `QUICK_ENTRY_AI_ENABLED` 是云函数急停。
-- 不可用的按钮**必须置灰 + 静态说明**（`unavailableHints`，`preparePage` 生成），别弹 toast
-  （微信 toast 超 7 个汉字被截断，被用户吐槽过）；`startVoice`/`chooseDatePhoto` 开头的
+- 能力三档：`QUICK_ENTRY_FEATURES`（`config/runtime.ts` 控制显隐）→ 云端 `getCapabilities()`
+  （`voice`/`datePhoto`/`aiText`）→ 云函数急停 `QUICK_ENTRY_AI_ENABLED`。
+- 不可用按钮**必须置灰 + 静态说明**（`unavailableHints`），别 toast；入口函数开头
   `if (!capabilities.x) return` 是第二道保险，静默。
-- 语音/拍日期不可用的根因：云端没配 `QUICK_ENTRY_TENCENT_SECRET_ID`/`_SECRET_KEY`（ASR 一句话识别 + OCR 高精度版），
-  密钥只能进控制台。语音是**点击开始/点击结束**，`moveVoice`/`voiceBounds` 是死代码。
-- 「从最近录入添加」是**独立页面** `pages/recent-entry/index`（原生导航栏返回 + 搜索 + 多选），
-  quick-entry 只 `navigateTo`，回传走 eventChannel `pickedDrafts` → `appendRecentDrafts()` 整批前插。
-  弹窗开关判独立的 `editorOpen`，别判 `editingIndex >= 0`（新选草稿还没进 picked，下标是 -1）。
-  quick-entry 保留 `recentProfiles` 仅为识别结果匹配分类/位置；`listRecentProfiles` 的
-  `INVALID_ACTION` 降级（`listInventory(sort:'created_desc')` + `recentProfilesFromItems()`）在 service 层。
-- `MAX_DRAFTS = 20` 是草稿条数上限（达到后「从最近录入添加」置灰）；云端「一次最多 5 条」是单次解析的输出上限，两码事。
-- 草稿编辑是**底部弹窗**（遮罩 + 82vh 面板），里面只复用 `item-form-sheet`（`purpose="draft"` 时组件不渲染自己的
-  save-bar）；按钮由弹窗持有，点「完成」才经 `applyFormValuesToDraft` 回写草稿，带改动退出二次确认。
-  新草稿整批插到列表最前。
-- `item-form-sheet` 的「到期日期 ↔ 保质期计算」切换（`handleModeChange`）**只切 mode，不清另一侧字段**。
-  下游三处都按 mode 归一化（组件 `save()` / `collectDraftFields()`、云端 `inventoryApi/validation.js`），
-  清空纯属多余，只会让用户切回来发现白填。组件测试见 `tests/unit/item-form-sheet.test.ts`。
-- 「已过期」用 `expiredFlags`（`getExpirySummary()` 先过滤 `/^\d{4}-\d{2}-\d{2}$/` 再比），别拿中文占位「待补到期日」比大小。
-- `.quick-input` 开了 `hold-keyboard`，任何"输入完就干活"的分支都要 `blurQuickInput()`
-  （`wx.hideKeyboard` + `quickInputFocused:false`）；**别给原生 textarea 设大 `line-height`**
-  （Android 光标与 placeholder 错位的根因），居中靠对称内边距。
-- 页面测试的假 setData 是 `Object.assign`，不认 `drafts[0]` 路径 key，验证路径 setData 要自己捕获 patch。
+- 语音/拍日期不可用根因：云端没配 `QUICK_ENTRY_TENCENT_SECRET_ID`/`_SECRET_KEY`（密钥只能进控制台）。
+  语音是点击开始/点击结束，`moveVoice`/`voiceBounds` 是死代码。
+- 「从最近录入添加」是独立页面 `pages/recent-entry/index`，回传走 eventChannel `pickedDrafts` →
+  `appendRecentDrafts()` 整批前插。弹窗开关判 `editorOpen`，别判 `editingIndex >= 0`。
+  `listRecentProfiles` 的 `INVALID_ACTION` 降级在 service 层。
+- `MAX_DRAFTS = 20`（草稿条数）≠ 云端「一次最多 5 条」（单次解析输出）。
+- 草稿编辑是底部弹窗（82vh），复用 `item-form-sheet`（`purpose="draft"` 时不渲染自己的 save-bar），
+  点「完成」才 `applyFormValuesToDraft` 回写，带改动退出二次确认。
+- `item-form-sheet` 的「到期日期 ↔ 保质期计算」切换**只切 mode，不清另一侧字段**（下游三处按 mode 归一化）。
+- 「已过期」用 `expiredFlags`（先过滤 `/^\d{4}-\d{2}-\d{2}$/` 再比），别拿中文占位比大小。
+- `.quick-input` 开 `hold-keyboard`，"输入完就干活"的分支要 `blurQuickInput()`；别给原生 textarea
+  设大 `line-height`（Android 光标错位根因）。
+- 页面测试假 setData 是 `Object.assign`，不认 `drafts[0]` 路径 key，验证路径 setData 要自己捕获 patch。
 
 ## 快速录入：AI 解析
-- 云函数端 `wx-server-sdk`(4.0.2) 的 `cloud.ai()`，**provider 必须 `hunyuan-v3`**（不是 `cloudbase`），模型用 `hy3`；
-  provider/模型名只准出现在 `ai-client.js`。
-- 两条核心设计别丢：① 不让模型算日期（只出 `dateFacts`，换算交 `date-facts.js:normalizeFacts()`）；
-  ② 证据回链防幻觉（每字段带 `evidence`，服务端校验不在原文就置 null 走 `confirmationFields`，绝不静默入库）。
-- 降级链 AI → 自定义 provider → 本地 `rules-v3`；免费额度耗尽直接报错；单环境 5 并发
-  （`EXCEED_CONCURRENT_REQUEST_LIMIT` 退避 300ms 重试一次）。AI 超时 `QUICK_ENTRY_AI_TIMEOUT_MS`
-  （默认 6000，必须 < 前端 `recognizeTextItems` 的 8s `Promise.race`）。
-- `createModel('hunyuan-v3')` 不在 `@cloudbase/ai` MODELS 表 → 走 DefaultSimpleModel，
-  URL `…/v1/ai/hunyuan-v3/chat/completions`，正常路径。
-- `createDraftFromParsed` 第 6 参是 `parserVersion`；AI 缺失字段**故意不写进 `confirmationFields`**；
-  `recognizeTextItems` 回 `{ items, parserVersion }`。
-- `applyPrefill` 之后 `attached` 时发出的 `loadDefaults(null)` 会迟到覆盖 `reminderLeadDays`：
-  组件用 `data.prefilled` 挡（2026-09-11 修）。
-- 文档 `docs/ai-parse-plan.md`；`docs/ai-parse-research.md` 已过时。
-- 待办：`quickEntryApi` 超时 60s、隐私指引补「输入发送至大模型」、`quick-entry/` 存储生命周期清理、ASR/OCR 计费。
+- `cloud.ai()` **provider 必须 `hunyuan-v3`**（不是 `cloudbase`），模型 `hy3`；名字只准出现在 `ai-client.js`。
+- 两条核心设计：① 不让模型算日期（只出 `dateFacts`，换算在 `date-facts.js:normalizeFacts()`）；
+  ② 证据回链防幻觉（字段带 `evidence`，不在原文就置 null 走 `confirmationFields`，绝不静默入库）。
+- 降级链 AI → 自定义 provider → 本地 `rules-v3`；单环境 5 并发（`EXCEED_CONCURRENT_REQUEST_LIMIT`
+  退避 300ms 重试一次）。AI 超时默认 6000ms，必须 < 前端 8s `Promise.race`。
+- `createDraftFromParsed` 第 6 参是 `parserVersion`；AI 缺失字段**故意不写进 `confirmationFields`**。
+- `applyPrefill` 后迟到的 `loadDefaults(null)` 会覆盖 `reminderLeadDays` → 组件用 `data.prefilled` 挡。
+- 文档 `docs/ai-parse-plan.md`（`ai-parse-research.md` 已过时）。待办：`quickEntryApi` 超时 60s、
+  隐私指引补「输入发送至大模型」、快录存储清理、ASR/OCR 计费。
 
 ## 封面生图（inventoryApi generateCover）
-- `cloud.ai().createImageModel('hunyuan-image').generateImage(...)` → `data[0].url`（临时 URL，必须下载转存云存储）；
-  provider/模型名只在 `cloudfunctions/inventoryApi/image-cover.js`。
-- **model 必须 `HY-Image-3.0-Plus-4090-Tob-v1.0`**（`hunyuan-image` 作为 model 已 2026-07-15 下线，provider 名不变）；
-  **必须显式 `revise:{value:false}`/`enable_thinking:{value:false}`**，否则 +10~60s 必撞超时。
-- prompt 别写「贴纸风格」（会出灰底方块），写「背景是纯白色，主体周围不要阴影」；出图约 5.8s。
-- 扩展名按**文件头魔数**嗅探：字节实测是 JPEG，但 URL 无后缀、Content-Type 谎报 `image/png`。
-- `cloud.init({ timeout: 45000 })` 是 SDK 单次 HTTP 超时（默认约 15s），不是云函数超时。
-- 落 `coverFileId`（cloud://）、**不 bump version**（展示数据，避免并发编辑 CONFLICT）；同名复用；
-  急停 `COVER_IMAGE_ENABLED`；生图 30s/下载 10s（函数需 60s）。保存成功后 fire-and-forget，失败静默用占位图。
-- 封面回填：`inventory-service.ts:onItemCoverReady(listener)` 广播 `{itemId,coverFileId}`，
-  首页 onShow 订阅 / onHide 退订后 `patchItem`，别用轮询或延迟二次刷新。
+- `cloud.ai().createImageModel('hunyuan-image').generateImage(...)` → `data[0].url`（临时 URL，要转存云存储）。
+- **model 必须 `HY-Image-3.0-Plus-4090-Tob-v1.0`**；**必须显式 `revise:{value:false}` /
+  `enable_thinking:{value:false}`**，否则 +10~60s 必撞超时。出图约 5.8s。
+- prompt 别写「贴纸风格」（出灰底方块），写「背景纯白，主体周围不要阴影」。
+- 扩展名按**文件头魔数**嗅探（实测 JPEG，但 URL 无后缀、Content-Type 谎报 image/png）。
+- `cloud.init({ timeout: 45000 })` 是 SDK 单次 HTTP 超时，不是云函数超时。
+- 落 `coverFileId`（cloud://）**不 bump version**（避免并发 CONFLICT）；急停 `COVER_IMAGE_ENABLED`；
+  函数需 60s。保存成功后 fire-and-forget，失败静默用占位图。
+- 回填走 `inventory-service.ts:onItemCoverReady(listener)` 广播，首页 onShow 订阅 / onHide 退订。
 
 ## 提醒授权开关
-- 订阅消息授权是**系统级状态**：来源固定 `wx.getSetting({withSubscriptions:true})`，
-  改状态只能 `wx.openSetting({withSubscriptions:true})`，小程序写不进也关不掉。
-- **不能只看 `mainSwitch`**：用户单独关掉「临期提醒」模板时 mainSwitch 仍是 `true`，只有 `itemSettings[模板ID]`
-  变 `reject`。判据：`mainSwitch===false` → 未授权；`itemSettings[模板ID]` 为 `reject`/`ban` → 未授权；
-  `mainSwitch===true` → 已授权；其余（不下发）→ 未授权。官方限制：`itemSettings` 只含用户勾过
-  「总是保持以上选择」的模板，本项目走逐件授权属常态。
-- 实现收在 `services/reminder-service.ts:resolveReminderAuthorization`（纯函数，有单测），
-  「完整录入」与「我的—提醒设置」共用，别再各写一份。
-- 开关**不落任何本地状态**：`bindchange` 不读 `event.detail.value`，只弹窗 + 引导去系统页；
-  回弹用 `authSwitchRebuilding` + `wx:if` 卸载重建（放在遮罩盖住表单之后）。
+- 订阅消息授权是**系统级状态**：读 `wx.getSetting({withSubscriptions:true})`，改只能
+  `wx.openSetting({withSubscriptions:true})`。
+- **不能只看 `mainSwitch`**：判据 `mainSwitch===false` → 未授权；`itemSettings[模板ID]` 为
+  `reject`/`ban` → 未授权；`mainSwitch===true` → 已授权；其余 → 未授权。
+- 实现收在 `services/reminder-service.ts:resolveReminderAuthorization`（纯函数 + 单测），共用别各写一份。
+- 开关**不落本地状态**：`bindchange` 不读 `event.detail.value`，只弹窗引导；回弹用
+  `authSwitchRebuilding` + `wx:if` 卸载重建。
 
 ## UI / 工程约定
-- 自定义 tabBar（`app.json` `tabBar.custom:true`，z-index 900）遮罩盖不住时别硬提 z-index，加 `hidden` 态：
+- 自定义 tabBar（`tabBar.custom:true`，z-index 900）遮不住时加 `hidden` 态：
   `getTabBar()?.setData({hidden:true})` + `opacity` + `translateY(120%)` + `pointer-events:none`。
-- **WXSS 不支持通用选择器 `*`**（如 `.field-row > *`），会导致编译中断、整页渲染不出来；用显式 BEM 类名。
-- `item-form-sheet` 被完整录入/快录的完整录入 tab/草稿编辑/重新入库共用；`index.json` 只有 `{"component": true}`
-  → isolated，app.wxss class 进不来，样式必须自带。
-- 图标 `miniprogram/assets/icons/*.svg`（32×32 圆角底 + 24 栅格线稿）；
-  状态色：在库/编辑=绿、临期/提醒=琥珀、过期/删除=红、已用完=蓝。
-- 数量输入框（`inventory-row`）编辑态：**± 按钮收起让位**（`item-card__stepper--editing`），
-  输入框宽度由 `quantityInputWidth()` 按字数分档（56/76/96/116rpx）经 inline style 下发——
-  固定 flex 宽度在 4 位数下只剩一条缝。数量变化反馈 = 数字动效 + `wx.vibrateShort(light)`
-  + 隐藏 live 文本（`aria-live` 在微信端能否播报**未实测**，不确定时按"不播报"预期）。
-  **改这两处行为要同步 `tests/unit/inventory-row.test.ts`。**
+- **WXSS 不支持通用选择器 `*`**（`.field-row > *` 会中断编译、整页白屏），用显式 BEM 类名。
+- `item-form-sheet` 是 isolated（`index.json` 只有 `{"component": true}`），app.wxss 进不来，样式自带。
+- 图标 `miniprogram/assets/icons/*.svg`；状态色：在库/编辑=绿、临期/提醒=琥珀、过期/删除=红、已用完=蓝。
+- 数量编辑态 ± 按钮收起让位，宽度按字数分档（56/76/96/116rpx）inline 下发；反馈 =
+  数字动效 + `wx.vibrateShort(light)`。**改这两处要同步 `tests/unit/inventory-row.test.ts`。**

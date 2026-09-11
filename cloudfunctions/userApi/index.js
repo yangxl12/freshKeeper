@@ -12,12 +12,15 @@ const db = cloud.database()
 const service = createAccountService({
   db,
   deleteFile: (input) => cloud.deleteFile(input),
+  uploadFile: (input) => cloud.uploadFile(input),
 })
 
 const handlers = {
   touch: (ownerId) => service.touch(ownerId),
   get: (ownerId) => service.getProfile(ownerId),
+  createAvatarUpload: (ownerId, event) => service.createAvatarUpload(ownerId, event.data),
   updateProfile: (ownerId, event) => service.updateProfile(ownerId, event.data),
+  exportData: (ownerId) => service.exportData(ownerId),
   deleteAccount: (ownerId, event) => service.deleteAccount(ownerId, event.data),
 }
 
