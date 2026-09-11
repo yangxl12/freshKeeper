@@ -23,7 +23,11 @@ const FILE_BATCH_SIZE = 50
 const ITEM_PAGE_SIZE = 100
 /** 分批删除的最大轮次；超限直接报错让用户重试（重试天然幂等）。 */
 const MAX_ROUNDS = 20
-/** 导出是重操作，按上海日期限次，计数落库（实例内存会被冷启动清空，不能用）。 */
+/**
+ * 导出是重操作，按上海日期限次，计数落库（实例内存会被冷启动清空，不能用）。
+ * **计的是「交付成功」而不是「生成」**：生成完没转发出去不该占额度，
+ * 否则一次转发失败就白扣一次，三次下来当天彻底用不了（转发本来就要用户再点一次）。
+ */
 const DAILY_EXPORT_LIMIT = 3
 
 function chunk(list, size) {
@@ -154,12 +158,54 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     return { cloudPath: avatarCloudPath(avatarOwnerHash(ownerId), ext) }
   }
 
+  /** 今天已经交付成功的次数；跨天归零。旧字段 exportCount 语义不同，一律不读。 */
+  function deliveredToday(user, today) {
+    if (!user || user.exportDeliveredDate !== today) return 0
+    return Number(user.exportDeliveredCount) || 0
+  }
+
+  /**
+   * 挂着的待交付导出文件（不分日期）。
+   * **故意用扁平字段**：云数据库的 update 会把对象值当成嵌套路径去写，
+   * 字段当前是 null 时会直接报 `Cannot create field 'x' in element {y: null}` 写不进去。
+   */
+  function pendingFileOf(user) {
+    const fileID = user && user.exportPendingFileId
+    if (typeof fileID !== 'string' || !fileID) return null
+    return { fileID, fileName: user.exportPendingFileName || '' }
+  }
+
+  /** 今天生成过但还没交付的文件：原样复用，不重新生成也不占额度。 */
+  function pendingExportOf(user, today) {
+    const pending = pendingFileOf(user)
+    if (!pending) return null
+    return user.exportPendingDate === today ? pending : null
+  }
+
+  /** 删导出文件失败只记日志：孤儿文件不影响用户，更不该把交付算成失败。 */
+  async function removeExportFile(fileID) {
+    if (typeof deleteFile !== 'function') return
+    try {
+      await deleteFile({ fileList: [fileID] })
+    } catch (error) {
+      console.warn(JSON.stringify({ action: 'exportFileCleanup', resultCode: 'FAILED' }))
+    }
+  }
+
   async function exportData(ownerId, now = new Date()) {
     assert(typeof uploadFile === 'function', 'INTERNAL_ERROR', '云存储未初始化')
     const user = await findUser(ownerId)
     const today = currentDateKey(now)
-    const used = user && user.exportCountDate === today ? Number(user.exportCount) || 0 : 0
-    assert(used < DAILY_EXPORT_LIMIT, 'EXPORT_LIMIT_EXCEEDED', '今天导出次数已用完，明天再试')
+
+    // 还没交付的文件直接给回去。客户端重试因此不再扣额度，云存储里也不会堆副本。
+    const pending = pendingExportOf(user, today)
+    if (pending) return { fileID: pending.fileID, fileName: pending.fileName }
+
+    assert(
+      deliveredToday(user, today) < DAILY_EXPORT_LIMIT,
+      'EXPORT_LIMIT_EXCEEDED',
+      '今天导出次数已用完，明天再试',
+    )
 
     const items = await readAll(ITEMS, { ownerId })
     const reminders = await readAll(REMINDERS, { ownerId })
@@ -181,14 +227,42 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     const fileID = uploaded?.fileID
     assert(typeof fileID === 'string' && fileID, 'EXPORT_FAILED', '导出文件生成失败')
 
+    // 先落库再删旧文件：反过来一旦写库失败，用户会拿到一个已经被删掉的 fileID。
+    const stale = pendingFileOf(user)
     await db.collection(USERS).where({ _id: ownerId, ownerId }).update({
       data: {
         lastExportedAt: db.serverDate(),
-        exportCountDate: today,
-        exportCount: used + 1,
+        exportPendingFileId: fileID,
+        exportPendingFileName: fileName,
+        exportPendingDate: today,
       },
     })
+    // 上一次生成、既没交付又已经过期的那份顺手清掉，别在云存储里留孤儿。
+    if (stale && stale.fileID !== fileID) await removeExportFile(stale.fileID)
     return { fileID, fileName }
+  }
+
+  /**
+   * 客户端转发成功后回报一次：清掉待交付文件 + 记一次额度。
+   * 幂等——没有待交付文件时（重复回报、已被清理）直接返回，不重复计数。
+   */
+  async function confirmExport(ownerId, now = new Date()) {
+    const user = await findUser(ownerId)
+    const pending = pendingFileOf(user)
+    if (!pending) return { delivered: false }
+    const today = currentDateKey(now)
+    // 先落库再删文件。反过来的话，删完文件却写库失败，用户下次会拿到一个已经不存在的 fileID。
+    await db.collection(USERS).where({ _id: ownerId, ownerId }).update({
+      data: {
+        exportDeliveredDate: today,
+        exportDeliveredCount: deliveredToday(user, today) + 1,
+        exportPendingFileId: null,
+        exportPendingFileName: null,
+        exportPendingDate: null,
+      },
+    })
+    await removeExportFile(pending.fileID)
+    return { delivered: true }
   }
 
   /** 先把封面 fileID 收集完，删了库就再也读不到了。 */
@@ -245,9 +319,13 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     validateDeleteConfirm(input)
     const user = await findUser(ownerId)
     const fileIds = await collectCoverFileIds(ownerId)
-    // 头像不在物品里，得单独带上；exports/ 下的临时文件下载完即删，不在此列。
+    // 头像不在物品里，得单独带上；还没交付的导出文件也在这清，别给注销用户留云端副本。
     if (user && typeof user.avatarFileId === 'string' && user.avatarFileId) {
       fileIds.push(user.avatarFileId)
+    }
+    const pendingFileId = pendingFileOf(user)?.fileID
+    if (pendingFileId) {
+      fileIds.push(pendingFileId)
     }
     const files = await deleteCoverFiles(fileIds)
     const items = await removeAll(ITEMS, { ownerId })
@@ -258,7 +336,7 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     return { deleted: { items, reminders, settings, files } }
   }
 
-  return { createAvatarUpload, deleteAccount, exportData, getProfile, touch, updateProfile }
+  return { confirmExport, createAvatarUpload, deleteAccount, exportData, getProfile, touch, updateProfile }
 }
 
 module.exports = { chunk, createAccountService }

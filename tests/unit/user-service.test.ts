@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  confirmExport,
   createAvatarUpload,
   deleteAccount,
+  discardLocalExport,
   exportData,
   getUserProfile,
-  shareExportedFile,
+  prepareExport,
+  sharePreparedExport,
   touchUser,
   touchUserOnceToday,
   updateProfile,
@@ -182,8 +185,9 @@ function stubMediaWx(options: {
     }),
     shareFileMessage: vi.fn((request: any) => {
       calls.push('shareFileMessage')
-      // 必须把 promise 返回出去：不返回的话 await 到 undefined，取消也会当成成功。
-      return options.shareFileMessage ? options.shareFileMessage(request) : Promise.resolve({})
+      // 真实 API 是回调式：成功/失败都靠 request.success / request.fail 回来。
+      if (options.shareFileMessage) options.shareFileMessage(request)
+      else request.success({})
     }),
     getFileSystemManager: () => ({ unlink }),
     getStorageSync: vi.fn(() => ''),
@@ -277,30 +281,86 @@ describe('头像上传链路', () => {
   })
 })
 
-describe('导出文件转发', () => {
-  it('下载 → 转发 → 清掉云端与本地副本', async () => {
-    const { calls, unlink, deleteFile } = stubMediaWx({ callFunction: replyCloud({}) })
+describe('导出文件准备与转发', () => {
+  it('prepareExport 下载到本地并给出转发所需的信息', async () => {
+    const { calls } = stubMediaWx({
+      callFunction: replyCloud({ fileID: 'cloud://env.1/exports/x.txt', fileName: 'a.txt' }),
+      downloadFile: (request) => request.success({ tempFilePath: '/tmp/export.txt' }),
+    })
 
-    await expect(shareExportedFile('cloud://env.1/exports/x.txt', 'a.txt')).resolves.toBe(true)
-    expect(calls).toEqual(['downloadFile', 'shareFileMessage'])
-    expect(unlink).toHaveBeenCalled()
-    expect(deleteFile).toHaveBeenCalledWith({ fileList: ['cloud://env.1/exports/x.txt'] })
+    await expect(prepareExport()).resolves.toEqual({
+      fileID: 'cloud://env.1/exports/x.txt',
+      fileName: 'a.txt',
+      tempFilePath: '/tmp/export.txt',
+    })
+    expect(calls).toEqual(['callFunction', 'downloadFile'])
   })
 
-  it('用户取消转发不算错误', async () => {
-    stubMediaWx({
+  it('sharePreparedExport 只碰本地文件，不再调云端', async () => {
+    const { calls } = stubMediaWx({ callFunction: replyCloud({}) })
+
+    await expect(sharePreparedExport('/tmp/export.txt', 'a.txt')).resolves.toBe(true)
+    // 只能有 shareFileMessage：它要求调用栈里没有 await 过，多一步异步就报
+    // "can only be invoked by user TAP gesture"。
+    expect(calls).toEqual(['shareFileMessage'])
+  })
+
+  it('用户取消转发不算错误，本地文件留着可以再点', async () => {
+    const { calls, unlink } = stubMediaWx({
       callFunction: replyCloud({}),
-      shareFileMessage: () => Promise.reject({ errMsg: 'shareFileMessage:fail cancel' }),
+      shareFileMessage: (request) => request.fail({ errMsg: 'shareFileMessage:fail cancel' }),
     })
-    await expect(shareExportedFile('cloud://x/a.txt', 'a.txt')).resolves.toBe(false)
+
+    await expect(sharePreparedExport('/tmp/export.txt', 'a.txt')).resolves.toBe(false)
+    expect(calls).toEqual(['shareFileMessage'])
+    expect(unlink).not.toHaveBeenCalled()
   })
 
   it('转发真失败时抛出可重试的提示', async () => {
     stubMediaWx({
       callFunction: replyCloud({}),
-      shareFileMessage: () => Promise.reject({ errMsg: 'shareFileMessage:fail unknown' }),
+      shareFileMessage: (request) => request.fail({ errMsg: 'shareFileMessage:fail unknown' }),
     })
-    await expect(shareExportedFile('cloud://x/a.txt', 'a.txt')).rejects.toThrow('重新导出')
+
+    await expect(sharePreparedExport('/tmp/export.txt', 'a.txt')).rejects.toThrow('再点一次')
+  })
+
+  it('开发者工具的环境限制单独给提示，别说成「重试」', async () => {
+    stubMediaWx({
+      callFunction: replyCloud({}),
+      shareFileMessage: (request) =>
+        request.fail({ errMsg: 'shareFileMessage:fail 开发者工具暂时不支持此 API 调试，请使用真机进行开发' }),
+    })
+
+    await expect(sharePreparedExport('/tmp/export.txt', 'a.txt')).rejects.toThrow('真机')
+  })
+
+  it('confirmExport 只在转发成功后回报云端', async () => {
+    const requested: Array<Record<string, unknown>> = []
+    stubMediaWx({
+      callFunction: (request) => {
+        requested.push(request.data)
+        replyCloud({ delivered: true })(request)
+      },
+    })
+
+    confirmExport()
+    await flush()
+    expect(requested).toEqual([{ action: 'confirmExport' }])
+  })
+
+  it('回报失败静默：文件已经在用户手里了', async () => {
+    stubMediaWx({ callFunction: (request) => request.fail({ errMsg: 'request:fail network' }) })
+
+    expect(() => confirmExport()).not.toThrow()
+    await flush()
+  })
+
+  it('discardLocalExport 删掉本地临时文件', () => {
+    const { unlink } = stubMediaWx({ callFunction: replyCloud({}) })
+
+    discardLocalExport('/tmp/export.txt')
+    expect(unlink).toHaveBeenCalledWith({ filePath: '/tmp/export.txt', fail: expect.any(Function) })
   })
 })
 

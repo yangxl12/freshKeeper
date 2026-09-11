@@ -21,6 +21,7 @@ const handlers = {
   createAvatarUpload: (ownerId, event) => service.createAvatarUpload(ownerId, event.data),
   updateProfile: (ownerId, event) => service.updateProfile(ownerId, event.data),
   exportData: (ownerId) => service.exportData(ownerId),
+  confirmExport: (ownerId) => service.confirmExport(ownerId),
   deleteAccount: (ownerId, event) => service.deleteAccount(ownerId, event.data),
 }
 

@@ -164,20 +164,43 @@ Promise.all([ getSettings(), getUserProfile() ])
 
 ```
 userApi action exportData
+  → 当天已有「生成但没交付」的文件 → 直接原样返回（不重复生成、不占额度）
   → 分批读 items（每次 100 条，循环拼装）
   → buildExportPayload()          纯函数，可单测
   → JSON.stringify(payload, null, 2)
-  → cloud.uploadFile → exports/<sha256(openid)[:32]>/<YYYYMMDD-HHmmss>.txt
-  → users.lastExportedAt = serverDate
+  → cloud.uploadFile → exports/<sha256(openid)[:32]>/<YYYYMMDD-HHmm.txt>.txt
+  → users.lastExportedAt = serverDate + exportPending* 三个扁平字段
   → 返回 { fileID, fileName }
 
-客户端
-  → wx.cloud.downloadFile({ fileID }) → tempFilePath
-  → wx.shareFileMessage({ filePath, fileName })    转发到文件传输助手
-  → 收尾：云端 deleteFile(导出文件) + 本地 unlink(tempFilePath)
+客户端（**必须两步，见 7.6**）
+  → 第一次点：wx.cloud.downloadFile({ fileID }) → tempFilePath，按钮切成「转发到微信」
+  → 第二次点：wx.shareFileMessage({ filePath, fileName })  同步调用，转发到文件传输助手
+  → 成功：本地 unlink(tempFilePath) + userApi action confirmExport
+         （云端 deleteFile + exportDeliveredCount+1，顺手把 exportPending* 清空）
 ```
 
-### 7.4 格式选择：`.txt` 里装 JSON，不用 `.json`
+### 7.6 `shareFileMessage` 只认 TAP 手势 → 必须拆成两次点击（2026-09-11 实测踩坑）
+
+微信的硬约束：`wx.shareFileMessage` 的调用栈里**不能出现任何 await**，否则 fail 回调是
+
+```
+shareFileMessage:fail can only be invoked by user TAP gesture.
+```
+
+而"生成 + 下载"必然是异步的（云函数往返 + `downloadFile`）。原来的写法
+`await exportData() → await downloadFile() → shareFileMessage()` 100% 失败，
+**模拟器和真机都一样**，用户看到的现象就是"一直导不出来"。
+
+落地形态：一个按钮两种状态（`data.exportReady`）
+- `exportReady` 为空 → 「导出我的数据」→ `prepareExport()`（异步，带 loading）→ 生成并下载
+- `exportReady` 有值 → 「转发到微信」→ **在 bindtap 的同步栈里直接调** `sharePreparedExport()`
+
+配套约定：
+- 用户取消转发（errMsg 含 `cancel`）保留 `exportReady`，可以再点；其它失败才丢掉重新准备。
+- 开发者工具不支持这个 API（`开发者工具暂时不支持此 API 调试`），单独给提示，别让人以为代码坏了。
+- 云端只删自己的副本；客户端删不了（云存储权限里客户端不是创建者）。
+
+### 7.7 格式选择：`.txt` 里装 JSON，不用 `.json`
 
 三个平台事实叠在一起，只有 `.txt` 能走通：
 
@@ -188,12 +211,21 @@ userApi action exportData
 
 文件名建议 `保质记-数据导出-20260911-1314.txt`（用户看得懂、按时间可区分）。
 
-### 7.5 配额与记录
+### 7.8 配额与记录
 
 - `users` 加 `lastExportedAt: serverDate`。合规上"已提供过导出"需要留痕，排障也用得上。
 - 加每日限次。**计数落库，不要用实例内存**（复用 `quickEntryApi/ai-quota.js` 的实例内存思路在这里是错的
-  —— 导出频率低，实例内存会被冷启动清空，计数不准）。在 `users` 上加
-  `exportCountDate` + `exportCount` 两个字段，按上海日期滚动即可。
+  —— 导出频率低，实例内存会被冷启动清空，计数不准）。
+- **计的是「交付成功」而不是「生成」**：字段是 `exportDeliveredDate` + `exportDeliveredCount`（3/天），
+  只在客户端转发成功后调 `confirmExport` 才 +1。生成但没转发出去不占额度，
+  否则一次转发失败就白扣一次，三次下来当天彻底用不了——这正是 2026-09-11 那次故障的放大器。
+- 同时生成但没交付的文件用 `exportPendingFileId` / `exportPendingFileName` / `exportPendingDate`
+  记在 `users` 上：当天重复请求直接复用，不重新上传也不占额度；跨天生成时顺手删掉旧的。
+  **必须用扁平字段**：云数据库的 `update` 把对象值当嵌套路径写，字段当前是 `null` 时会报
+  `Cannot create field 'x' in element {y: null}` 直接写失败（踩过，见 `.workbuddy/memory`）。
+- 注销时 `exportPendingFileId` 要一起删，别给注销用户留云端副本。
+- 旧字段 `exportCountDate` / `exportCount` 已废弃且**不再参与判断**——它们记录的是失败也算的旧语义，
+  留着读会把用户锁死一整天；文档字段留着，等自然淘汰。
 
 ---
 
@@ -227,7 +259,10 @@ userApi action exportData
 - [ ] 手工构造别人的 `avatarFileId` 提交 → `INVALID_ARGUMENT`。
 - [ ] 存量用户首次打开资料弹窗 → 非默认昵称被迁到云端；默认昵称「保质记用户」不被迁。
 - [ ] 导出：20 条 / 300 条物品各跑一次都在云函数超时内；转发到文件传输助手能打开，JSON 完整且不含标识字段。
-- [ ] 导出后 `users.lastExportedAt` 有值；超每日限次返回明确错误码。
+  （**两步**：点「导出我的数据」生成并下载，再点「转发到微信」；云存储与下载已在模拟器实测通过。）
+- [ ] 导出后 `users.lastExportedAt` 有值；`confirmExport` 之后 `exportDeliveredCount` +1 且 `exportPending*` 清空；
+  交付满 3 次返回 `EXPORT_LIMIT_EXCEEDED`；同一天重复点导出复用同一文件、不扣额度。
+- [ ] 转发失败/取消后再点一次不扣额度（额度只在交付成功时计）。
 - [ ] 注销（A2）后 `covers/` 与 `avatars/` 下该用户目录都清空。
 - [ ] `npm run check` 全绿。
 
@@ -235,7 +270,7 @@ userApi action exportData
 
 ## 10. 部署与回滚
 
-1. `userApi` 增加 `createAvatarUpload` / `updateProfile` / `exportData` 三个 action，重新部署。
+1. `userApi` 增加 `createAvatarUpload` / `updateProfile` / `exportData` / **`confirmExport`** 四个 action，重新部署。
    这次是**更新部署**，A 档首建时写好的 `timeout: 60` 沿用即可，不用再动控制台。
 2. 前端发版。
 3. 《用户隐私保护指引》补一条：**收集昵称与头像用于个人资料展示**。这是审核项，别漏。
@@ -249,5 +284,6 @@ userApi action exportData
 1. `type="nickname"` 输入框 + 微信键盘的"使用微信昵称"自动填充，
    **`bindinput` 是否触发**（部分 Android 版本不触发，导致保存的昵称是旧值）。
    若不触发，补 `bindblur` 兜底读取。
-2. `wx.shareFileMessage` 对 `.txt` 的实际行为（是否能选中"文件传输助手"、
-   电脑端打开后 JSON 是否完整）。这是导出链路上唯一没在项目里验证过的 API。
+2. `wx.shareFileMessage` 转发 `.txt` 到「文件传输助手」、电脑端打开 JSON 是否完整。
+   调用位置已经修好（见 7.6，模拟器里的 `can only be invoked by user TAP gesture` 已消失，
+   现在只剩开发者工具的 `开发者工具暂时不支持此 API 调试`），**真机一测即可**。

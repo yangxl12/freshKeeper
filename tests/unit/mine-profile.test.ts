@@ -1,30 +1,36 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  confirmExportMock,
   deleteAccountMock,
-  exportDataMock,
+  discardLocalExportMock,
   getUserProfileMock,
   getSettingsMock,
+  prepareExportMock,
   readReminderAuthorizationMock,
-  shareExportedFileMock,
+  sharePreparedExportMock,
   updateProfileMock,
   uploadAvatarFileMock,
 } = vi.hoisted(() => ({
+  confirmExportMock: vi.fn(),
   deleteAccountMock: vi.fn(),
-  exportDataMock: vi.fn(),
+  discardLocalExportMock: vi.fn(),
   getUserProfileMock: vi.fn(),
   getSettingsMock: vi.fn(),
+  prepareExportMock: vi.fn(),
   readReminderAuthorizationMock: vi.fn(),
-  shareExportedFileMock: vi.fn(),
+  sharePreparedExportMock: vi.fn(),
   updateProfileMock: vi.fn(),
   uploadAvatarFileMock: vi.fn(),
 }))
 
 vi.mock('../../miniprogram/services/user-service', () => ({
+  confirmExport: confirmExportMock,
   deleteAccount: deleteAccountMock,
-  exportData: exportDataMock,
+  discardLocalExport: discardLocalExportMock,
   getUserProfile: getUserProfileMock,
-  shareExportedFile: shareExportedFileMock,
+  prepareExport: prepareExportMock,
+  sharePreparedExport: sharePreparedExportMock,
   updateProfile: updateProfileMock,
   uploadAvatarFile: uploadAvatarFileMock,
 }))
@@ -113,8 +119,12 @@ beforeEach(() => {
   getUserProfileMock.mockResolvedValue(REMOTE)
   updateProfileMock.mockResolvedValue(REMOTE)
   uploadAvatarFileMock.mockResolvedValue('cloud://env.1/avatars/new.png')
-  exportDataMock.mockResolvedValue({ fileID: 'cloud://env.1/exports/x.txt', fileName: 'a.txt' })
-  shareExportedFileMock.mockResolvedValue(true)
+  prepareExportMock.mockResolvedValue({
+    fileID: 'cloud://env.1/exports/x.txt',
+    fileName: 'a.txt',
+    tempFilePath: '/tmp/export.txt',
+  })
+  sharePreparedExportMock.mockResolvedValue(true)
 })
 
 describe('我的 → 资料读取', () => {
@@ -334,46 +344,94 @@ describe('我的 → 存量迁移', () => {
 })
 
 describe('我的 → 数据导出', () => {
-  it('导出后转发，全程有 loading', async () => {
-    const page = instance()
-    await page.startExport()
+  const READY = { tempFilePath: '/tmp/export.txt', fileName: 'a.txt' }
 
-    expect(exportDataMock).toHaveBeenCalled()
-    expect(shareExportedFileMock).toHaveBeenCalledWith('cloud://env.1/exports/x.txt', 'a.txt')
+  it('第一次点只生成并下载，按钮切成「转发到微信」', async () => {
+    const page = instance()
+    await page.prepareExport()
+
+    expect(prepareExportMock).toHaveBeenCalled()
     expect(loadingCalls).toContain('正在导出…')
     expect(page.data.exporting).toBe(false)
+    expect(page.data.exportReady).toEqual(READY)
+    expect(sharePreparedExportMock).not.toHaveBeenCalled()
+  })
+
+  it('ready 后点击转发是同步调用：任何 await 都会让微信判定不是 TAP 手势', () => {
+    const page = instance()
+    page.setData({ exportReady: { ...READY } })
+
+    page.startExport()
+
+    // 同步断言：startExport() 返回前就必须已经调用出去（中间 await 过就只能是 0 次）。
+    expect(sharePreparedExportMock).toHaveBeenCalledTimes(1)
+    expect(sharePreparedExportMock).toHaveBeenCalledWith('/tmp/export.txt', 'a.txt')
+    expect(prepareExportMock).not.toHaveBeenCalled()
+  })
+
+  it('转发成功后清本地副本、回报云端并提示', async () => {
+    const page = instance()
+    page.setData({ exportReady: { ...READY } })
+    page.startExport()
+    await flush()
+
+    expect(page.data.exportReady).toBeNull()
+    expect(discardLocalExportMock).toHaveBeenCalledWith('/tmp/export.txt')
+    expect(confirmExportMock).toHaveBeenCalled()
     expect(toastCalls[0]).toMatchObject({ title: '已转发' })
   })
 
-  it('导出中重复点击不会跑两次', async () => {
+  it('用户取消转发：保留已生成的文件，可以再点一次', async () => {
+    sharePreparedExportMock.mockResolvedValue(false)
+    const page = instance()
+    page.setData({ exportReady: { ...READY } })
+    page.startExport()
+    await flush()
+
+    expect(page.data.exportReady).toEqual(READY)
+    expect(confirmExportMock).not.toHaveBeenCalled()
+    expect(modalCalls).toEqual([])
+    expect(toastCalls).toEqual([])
+  })
+
+  it('转发真失败：丢掉这次的文件并提示', async () => {
+    sharePreparedExportMock.mockRejectedValue(new Error('转发没有完成，可以再点一次重试'))
+    const page = instance()
+    page.setData({ exportReady: { ...READY } })
+    page.startExport()
+    await flush()
+
+    expect(page.data.exportReady).toBeNull()
+    expect(modalCalls[0].title).toBe('转发没有完成')
+  })
+
+  it('生成失败用 modal 提示', async () => {
+    prepareExportMock.mockRejectedValue(new Error('今天导出次数已用完，明天再试'))
+    const page = instance()
+    await page.prepareExport()
+
+    expect(modalCalls[0]).toMatchObject({
+      title: '导出没有完成',
+      content: '今天导出次数已用完，明天再试',
+    })
+    expect(page.data.exporting).toBe(false)
+  })
+
+  it('生成中重复点击不会跑两次', async () => {
     let release = () => undefined
-    exportDataMock.mockImplementation(
-      () => new Promise((resolve) => {
-        release = () => resolve({ fileID: 'cloud://x', fileName: 'a.txt' })
-      }),
+    prepareExportMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ fileID: 'cloud://x', fileName: 'a.txt', tempFilePath: '/tmp/x.txt' })
+        }),
     )
 
     const page = instance()
-    const first = page.startExport()
-    await page.startExport()
-    expect(exportDataMock).toHaveBeenCalledTimes(1)
+    const first = page.prepareExport()
+    await page.prepareExport()
+    expect(prepareExportMock).toHaveBeenCalledTimes(1)
 
     release()
     await first
-  })
-
-  it('失败用 modal 提示，用户取消转发不报错', async () => {
-    exportDataMock.mockRejectedValue(new Error('今天导出次数已用完，明天再试'))
-    const page = instance()
-    await page.startExport()
-    expect(modalCalls[0].title).toBe('导出没有完成')
-
-    modalCalls = []
-    toastCalls = []
-    exportDataMock.mockResolvedValue({ fileID: 'cloud://env.1/exports/x.txt', fileName: 'a.txt' })
-    shareExportedFileMock.mockResolvedValue(false)
-    await page.startExport()
-    expect(modalCalls).toEqual([])
-    expect(toastCalls).toEqual([])
   })
 })

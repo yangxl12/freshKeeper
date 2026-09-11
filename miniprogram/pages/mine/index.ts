@@ -4,10 +4,12 @@ import { listTrash, permanentlyDeleteItem } from '../../services/inventory-servi
 import { readReminderAuthorization } from '../../services/reminder-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
 import {
+  confirmExport,
   deleteAccount,
-  exportData,
+  discardLocalExport,
   getUserProfile,
-  shareExportedFile,
+  prepareExport,
+  sharePreparedExport,
   updateProfile,
   uploadAvatarFile,
 } from '../../services/user-service'
@@ -88,6 +90,8 @@ Page({
     profileSaving: false,
     avatarUploading: false,
     exporting: false,
+    /** 已生成并下载到本地的导出文件，等着用户再点一次转发。 */
+    exportReady: null as { tempFilePath: string; fileName: string } | null,
     activeModal: '' as EntryKey | '',
     settingsLoading: true,
     settingsSaving: false,
@@ -451,21 +455,56 @@ Page({
   },
 
   /* 数据导出（B2） */
-  async startExport() {
+  /**
+   * 导出按钮的唯一入口，故意做成两步：
+   * `wx.shareFileMessage` 只认 TAP 手势，而生成 + 下载必然是异步的，
+   * 所以第一次点只负责把文件拿到本地（异步），第二次点才有资格转发（同步调用）。
+   */
+  startExport() {
+    if (this.data.exportReady) {
+      this.shareReadyExport()
+      return
+    }
+    void this.prepareExport()
+  },
+
+  async prepareExport() {
     if (this.data.exporting) return
     this.setData({ exporting: true })
     wx.showLoading({ title: '正在导出…', mask: true })
     try {
-      const result = await exportData()
+      const prepared = await prepareExport()
       wx.hideLoading()
-      const shared = await shareExportedFile(result.fileID, result.fileName)
-      this.setData({ exporting: false })
-      if (shared) wx.showToast({ title: '已转发', icon: 'success' })
+      this.setData({
+        exporting: false,
+        exportReady: { tempFilePath: prepared.tempFilePath, fileName: prepared.fileName },
+      })
     } catch (error) {
       wx.hideLoading()
       this.setData({ exporting: false })
       await this.showError('导出没有完成', error)
     }
+  },
+
+  /** 转发：调用链里**不能出现 await**，否则微信会判定不是用户点击触发的。 */
+  shareReadyExport() {
+    const ready = this.data.exportReady
+    if (!ready) return
+    void sharePreparedExport(ready.tempFilePath, ready.fileName)
+      .then((shared) => {
+        // 用户取消：本地文件还在，按钮保持「转发到微信」，可以再点。
+        if (!shared) return
+        this.setData({ exportReady: null })
+        discardLocalExport(ready.tempFilePath)
+        confirmExport()
+        wx.showToast({ title: '已转发', icon: 'success' })
+      })
+      .catch(async (error: unknown) => {
+        // 其它失败（比如临时文件被系统回收）丢掉这次准备好的文件，让用户重新点一次生成。
+        this.setData({ exportReady: null })
+        discardLocalExport(ready.tempFilePath)
+        await this.showError('转发没有完成', error)
+      })
   },
 
   /* 账号注销（A2） */

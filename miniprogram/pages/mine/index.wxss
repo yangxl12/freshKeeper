@@ -306,6 +306,17 @@
   font-size: 23rpx;
 }
 
+.modal__hint {
+  display: block;
+  margin-bottom: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  background: #eef6f1;
+  color: #2f6b57;
+  font-size: 24rpx;
+  line-height: 34rpx;
+}
+
 .modal__close {
   width: 64rpx;
   height: 64rpx;

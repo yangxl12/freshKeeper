@@ -20,6 +20,7 @@ const account = require('../../cloudfunctions/userApi/account') as {
     createAvatarUpload(ownerId: string, input?: unknown): { cloudPath: string }
     deleteAccount(ownerId: string, input: unknown): Promise<{ deleted: Record<string, number> }>
     exportData(ownerId: string, now?: Date): Promise<{ fileID: string; fileName: string }>
+    confirmExport(ownerId: string, now?: Date): Promise<{ delivered: boolean }>
     updateProfile(ownerId: string, input: unknown): Promise<Record<string, unknown>>
   }
 }
@@ -287,7 +288,11 @@ describe('buildExportPayload', () => {
 })
 
 describe('exportData', () => {
-  function build(options: { users?: Doc[]; items?: Doc[] } = {}, uploadImpl?: any) {
+  function build(
+    options: { users?: Doc[]; items?: Doc[] } = {},
+    uploadImpl?: any,
+    deleteCalls: string[] = [],
+  ) {
     const fake = createFakeDb({
       users: options.users ?? [{ _id: OWNER, ownerId: OWNER, nickname: '龙哥', schemaVersion: 1 }],
       items: options.items ?? [{ _id: 'i1', ownerId: OWNER, name: '牛奶' }],
@@ -303,13 +308,13 @@ describe('exportData', () => {
       })
     const service = account.createAccountService({
       db: fake.db,
-      deleteFile: noopDeleteFile(),
+      deleteFile: noopDeleteFile(deleteCalls),
       uploadFile,
     })
     return { fake, uploads, service }
   }
 
-  it('上传导出文件并记录导出痕迹', async () => {
+  it('上传导出文件并记下待交付文件，但先不计交付额度', async () => {
     const { fake, uploads, service } = build()
     const result = await service.exportData(OWNER, new Date('2026-09-11T10:00:00+08:00'))
 
@@ -321,11 +326,64 @@ describe('exportData', () => {
     const payload = JSON.parse(uploads[0].content)
     expect(payload.items).toHaveLength(1)
     expect(payload.profile.nickname).toBe('龙哥')
-    expect(fake.store.users[0]).toMatchObject({ exportCountDate: '2026-09-11', exportCount: 1 })
+    expect(fake.store.users[0]).toMatchObject({
+      exportPendingFileId: result.fileID,
+      exportPendingFileName: result.fileName,
+      exportPendingDate: '2026-09-11',
+    })
     expect(fake.store.users[0].lastExportedAt).toBeInstanceOf(Date)
+    // 生成不等于交付：转发失败不该扣额度。
+    expect(fake.store.users[0].exportDeliveredCount).toBeUndefined()
   })
 
-  it('每日限次，计数按上海日期滚动', async () => {
+  it('同一天重复导出复用待交付文件：不重新上传、不扣额度', async () => {
+    const { fake, uploads, service } = build()
+    const first = await service.exportData(OWNER, new Date('2026-09-11T10:00:00+08:00'))
+    const second = await service.exportData(OWNER, new Date('2026-09-11T18:00:00+08:00'))
+
+    expect(second).toEqual(first)
+    expect(uploads).toHaveLength(1)
+    expect(fake.store.users[0].exportDeliveredCount).toBeUndefined()
+  })
+
+  it('交付满 3 次后当天不再生成', async () => {
+    const { service } = build({
+      users: [
+        {
+          _id: OWNER,
+          ownerId: OWNER,
+          exportDeliveredDate: '2026-09-11',
+          exportDeliveredCount: 3,
+          schemaVersion: 1,
+        },
+      ],
+    })
+    expect(await codeOf(service.exportData(OWNER, new Date('2026-09-11T20:00:00+08:00')))).toBe(
+      'EXPORT_LIMIT_EXCEEDED',
+    )
+  })
+
+  it('跨天后额度重新开始', async () => {
+    const { fake, service } = build({
+      users: [
+        {
+          _id: OWNER,
+          ownerId: OWNER,
+          exportDeliveredDate: '2026-09-10',
+          exportDeliveredCount: 3,
+          schemaVersion: 1,
+        },
+      ],
+    })
+    await service.exportData(OWNER, new Date('2026-09-11T10:00:00+08:00'))
+    expect(fake.store.users[0]).toMatchObject({
+      exportDeliveredDate: '2026-09-10',
+      exportDeliveredCount: 3,
+      exportPendingDate: '2026-09-11',
+    })
+  })
+
+  it('旧版本的 exportCount 一律不读，避免历史失败把用户锁死一整天', async () => {
     const { service } = build({
       users: [
         {
@@ -337,17 +395,31 @@ describe('exportData', () => {
         },
       ],
     })
-    expect(await codeOf(service.exportData(OWNER, new Date('2026-09-11T20:00:00+08:00')))).toBe(
-      'EXPORT_LIMIT_EXCEEDED',
-    )
+    await expect(
+      service.exportData(OWNER, new Date('2026-09-11T20:00:00+08:00')),
+    ).resolves.toMatchObject({ fileName: expect.any(String) })
   })
 
-  it('跨天后计数重新开始', async () => {
-    const { fake, service } = build({
-      users: [{ _id: OWNER, ownerId: OWNER, exportCountDate: '2026-09-10', exportCount: 3, schemaVersion: 1 }],
-    })
+  it('过期的待交付文件在下次生成时清掉，不在云存储里留孤儿', async () => {
+    const deleteCalls: string[] = []
+    const { service } = build(
+      {
+        users: [
+          {
+            _id: OWNER,
+            ownerId: OWNER,
+            exportPendingFileId: 'cloud://old.txt',
+            exportPendingFileName: 'old.txt',
+            exportPendingDate: '2026-09-10',
+            schemaVersion: 1,
+          },
+        ],
+      },
+      undefined,
+      deleteCalls,
+    )
     await service.exportData(OWNER, new Date('2026-09-11T10:00:00+08:00'))
-    expect(fake.store.users[0]).toMatchObject({ exportCountDate: '2026-09-11', exportCount: 1 })
+    expect(deleteCalls.some((call) => call.includes('cloud://old.txt'))).toBe(true)
   })
 
   it('上传失败时抛错，不写导出记录', async () => {
@@ -388,7 +460,76 @@ describe('exportData', () => {
   })
 })
 
-describe('deleteAccount 连带清头像', () => {
+describe('confirmExport（交付回报）', () => {
+  function build(users: Doc[], deleteFile?: any) {
+    const fake = createFakeDb({ users })
+    const service = account.createAccountService({
+      db: fake.db,
+      deleteFile: deleteFile ?? noopDeleteFile(),
+      uploadFile: async () => ({ fileID: 'cloud://env.1/exports/x.txt' }),
+    })
+    return { fake, service }
+  }
+
+  const PENDING = {
+    exportPendingFileId: 'cloud://env.1/exports/a.txt',
+    exportPendingFileName: 'a.txt',
+    exportPendingDate: '2026-09-11',
+  }
+
+  it('交付成功才计数，并清掉待交付文件与云端副本', async () => {
+    const deleteCalls: string[] = []
+    const { fake, service } = build(
+      [{ _id: OWNER, ownerId: OWNER, ...PENDING, schemaVersion: 1 }],
+      noopDeleteFile(deleteCalls),
+    )
+
+    await expect(
+      service.confirmExport(OWNER, new Date('2026-09-11T10:00:00+08:00')),
+    ).resolves.toEqual({ delivered: true })
+    expect(fake.store.users[0]).toMatchObject({
+      exportDeliveredDate: '2026-09-11',
+      exportDeliveredCount: 1,
+      exportPendingFileId: null,
+      exportPendingFileName: null,
+      exportPendingDate: null,
+    })
+    expect(deleteCalls[0]).toContain(PENDING.exportPendingFileId)
+  })
+
+  it('同一天多次交付累加计数', async () => {
+    const { fake, service } = build([{ _id: OWNER, ownerId: OWNER, ...PENDING, schemaVersion: 1 }])
+    await service.confirmExport(OWNER, new Date('2026-09-11T10:00:00+08:00'))
+    Object.assign(fake.store.users[0], PENDING)
+    await service.confirmExport(OWNER, new Date('2026-09-11T11:00:00+08:00'))
+    expect(fake.store.users[0].exportDeliveredCount).toBe(2)
+  })
+
+  it('重复回报是幂等的：没有待交付文件就不再计数', async () => {
+    const { fake, service } = build([{ _id: OWNER, ownerId: OWNER, ...PENDING, schemaVersion: 1 }])
+    await service.confirmExport(OWNER, new Date('2026-09-11T10:00:00+08:00'))
+    await expect(service.confirmExport(OWNER, new Date('2026-09-11T10:01:00+08:00'))).resolves.toEqual(
+      { delivered: false },
+    )
+    expect(fake.store.users[0].exportDeliveredCount).toBe(1)
+  })
+
+  it('删云端副本失败不影响交付计数', async () => {
+    const { fake, service } = build(
+      [{ _id: OWNER, ownerId: OWNER, ...PENDING, schemaVersion: 1 }],
+      async () => {
+        throw new Error('storage down')
+      },
+    )
+
+    await expect(service.confirmExport(OWNER, new Date('2026-09-11T10:00:00+08:00'))).resolves.toEqual(
+      { delivered: true },
+    )
+    expect(fake.store.users[0].exportDeliveredCount).toBe(1)
+  })
+})
+
+describe('deleteAccount 连带清头像与未交付的导出文件', () => {
   it('头像 fileID 也被收集进删除列表', async () => {
     const avatar = `cloud://env.1/avatars/${validation.avatarOwnerHash(OWNER)}/me.png`
     const fake = createFakeDb({
@@ -400,5 +541,25 @@ describe('deleteAccount 连带清头像', () => {
     const result = await service.deleteAccount(OWNER, { confirm: 'DELETE' })
     expect(result.deleted.files).toBe(2)
     expect(calls[0]).toContain(avatar)
+  })
+
+  it('还没交付的导出文件一并删除', async () => {
+    const fake = createFakeDb({
+      users: [
+        {
+          _id: OWNER,
+          ownerId: OWNER,
+          exportPendingFileId: 'cloud://env.1/exports/a.txt',
+          exportPendingFileName: 'a.txt',
+          exportPendingDate: '2026-09-11',
+          schemaVersion: 1,
+        },
+      ],
+    })
+    const calls: string[] = []
+    const service = account.createAccountService({ db: fake.db, deleteFile: noopDeleteFile(calls) })
+    const result = await service.deleteAccount(OWNER, { confirm: 'DELETE' })
+    expect(result.deleted.files).toBe(1)
+    expect(calls[0]).toContain('cloud://env.1/exports/a.txt')
   })
 })

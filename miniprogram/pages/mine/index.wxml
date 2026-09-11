@@ -250,15 +250,16 @@
         </view>
         <view class="help-item">
           <text class="help-item__q">能导出自己的数据吗</text>
-          <text class="help-item__a">可以。导出会生成一个文件转发到微信，建议在「文件传输助手」里打开，电脑上也能看。</text>
+          <text class="help-item__a">可以。点「导出我的数据」生成文件，再点一次「转发到微信」，建议选「文件传输助手」，电脑上也能打开。</text>
         </view>
       </view>
+      <text wx:if="{{exportReady}}" class="modal__hint">文件已生成，再点一次按钮即可转发到微信</text>
       <button
         class="secondary-button modal__button"
         disabled="{{exporting || deletingAccount}}"
         bindtap="startExport"
         hover-class="pressable--pressed"
-      >{{exporting ? '正在导出…' : '导出我的数据'}}</button>
+      >{{exporting ? '正在导出…' : exportReady ? '转发到微信' : '导出我的数据'}}</button>
       <button
         class="danger-button modal__button modal__button--stacked"
         disabled="{{exporting || deletingAccount}}"
