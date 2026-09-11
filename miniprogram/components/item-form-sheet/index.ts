@@ -1,7 +1,7 @@
 import { CATEGORY_OPTIONS, SHELF_LIFE_OPTIONS } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { getItem, generateItemCover, restoreItem, saveItem } from '../../services/inventory-service'
-import { getSettings } from '../../services/settings-service'
+import { getSettings, updateSettings } from '../../services/settings-service'
 import type {
   Category,
   ExpiryInputMode,
@@ -12,6 +12,10 @@ import { track } from '../../utils/analytics'
 import { calculateExpiryDate, localTodayKey, parseDateKey } from '../../utils/date-key'
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
+const REMINDER_DAY_OPTIONS = Array.from({ length: 31 }, (_, value) => ({
+  value,
+  label: value === 0 ? '到期当天' : `提前 ${value} 天`,
+}))
 const LEGACY_STORAGE_LABELS: Record<string, string> = {
   refrigerated: '冷藏',
   frozen: '冷冻',
@@ -63,6 +67,11 @@ Component({
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
     shelfLifeUnitIndex: 0,
     reminderLeadDays: '1',
+    reminderEnabled: true,
+    reminderSettingsVisible: false,
+    reminderSaving: false,
+    reminderDayOptions: REMINDER_DAY_OPTIONS,
+    reminderDayIndex: 1,
     expiryPreview: '',
   },
 
@@ -192,6 +201,50 @@ Component({
     handleCategoryChange(event: WechatMiniprogram.PickerChange) {
       this.setData({ categoryIndex: Number(event.detail.value) })
     },
+
+    /* 提醒开关 + 提醒设置弹窗（与「我的—提醒设置」同一套数据源） */
+    handleReminderSwitch(event: WechatMiniprogram.SwitchChange) {
+      const reminderEnabled = Boolean(event.detail.value)
+      // 无论开还是关，都顺带打开提醒设置弹窗，让用户直接改默认提前提醒天数。
+      this.setData({
+        reminderEnabled,
+        reminderSettingsVisible: true,
+        reminderDayIndex: Number(this.data.reminderLeadDays) || 0,
+      })
+    },
+
+    handleReminderDaysChange(event: WechatMiniprogram.PickerChange) {
+      this.setData({ reminderDayIndex: Number(event.detail.value) })
+    },
+
+    async saveReminderSettings() {
+      if (this.data.reminderSaving) return
+      this.setData({ reminderSaving: true })
+      try {
+        const settings = await updateSettings({
+          defaultReminderLeadDays: REMINDER_DAY_OPTIONS[this.data.reminderDayIndex].value,
+        })
+        this.setData({
+          reminderSaving: false,
+          reminderSettingsVisible: false,
+          reminderLeadDays: String(settings.defaultReminderLeadDays),
+        })
+        wx.showToast({ title: '设置已保存', icon: 'success' })
+      } catch (error) {
+        this.setData({ reminderSaving: false })
+        wx.showToast({ title: getErrorMessage(error), icon: 'none' })
+      }
+    },
+
+    closeReminderSettings() {
+      if (this.data.reminderSaving) return
+      // 关闭开关的同时点「取消」时，开关状态保持用户的选择，只收起弹窗。
+      this.setData({ reminderSettingsVisible: false })
+    },
+
+    stopPropagation() {},
+
+    noop() {},
 
     handleShelfLifeUnitChange(event: WechatMiniprogram.PickerChange) {
       this.setData({ shelfLifeUnitIndex: Number(event.detail.value) }, () => {

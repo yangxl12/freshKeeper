@@ -25,43 +25,6 @@
           </view>
         </view>
 
-        <view class="form-row">
-          <text class="form-row__label">数量 <text class="required-mark">*</text></text>
-          <input
-            class="form-row__input"
-            value="{{quantity}}"
-            type="number"
-            maxlength="4"
-            placeholder="请输入数量"
-            placeholder-class="field-placeholder"
-            data-field="quantity"
-            bindinput="handleTextInput"
-          />
-        </view>
-
-        <view class="form-row">
-          <text class="form-row__label">单位 <text class="required-mark">*</text></text>
-          <input
-            class="form-row__input"
-            value="{{unit}}"
-            maxlength="8"
-            placeholder="例如：件、盒、瓶"
-            placeholder-class="field-placeholder"
-            data-field="unit"
-            bindinput="handleTextInput"
-          />
-        </view>
-
-        <view class="form-row form-row--picker">
-          <text class="form-row__label">分类 <text class="required-mark">*</text></text>
-          <picker class="form-row__picker" mode="selector" range="{{categoryOptions}}" range-key="label" value="{{categoryIndex}}" bindchange="handleCategoryChange">
-            <view class="form-row__picker-value">
-              <text>{{categoryOptions[categoryIndex].label}}</text>
-              <view class="line-icon line-icon--chevron-right form-row__arrow" aria-hidden="true"></view>
-            </view>
-          </picker>
-        </view>
-
         <view class="form-row form-row--mode">
           <text class="form-row__label">到期计算 <text class="required-mark">*</text></text>
           <view class="mode-switch" role="tablist">
@@ -131,17 +94,58 @@
 
         <view class="form-row">
           <text class="form-row__label">提前提醒 <text class="required-mark">*</text></text>
-          <view class="number-suffix-control">
+          <view class="number-suffix-control {{reminderEnabled ? '' : 'number-suffix-control--disabled'}}">
             <input
               class="number-suffix-control__input"
               value="{{reminderLeadDays}}"
               type="number"
               maxlength="2"
+              disabled="{{!reminderEnabled}}"
               data-field="reminderLeadDays"
               bindinput="handleTextInput"
             />
             <text class="number-suffix-control__suffix">天</text>
           </view>
+          <switch
+            class="reminder-switch"
+            checked="{{reminderEnabled}}"
+            color="#24684f"
+            aria-label="开启或关闭提醒"
+            bindchange="handleReminderSwitch"
+          />
+        </view>
+
+        <view class="form-row">
+          <text class="form-row__label">数量 <text class="required-mark">*</text></text>
+          <input
+            class="form-row__input form-row__input--quantity"
+            value="{{quantity}}"
+            type="number"
+            maxlength="4"
+            placeholder="请输入数量"
+            placeholder-class="field-placeholder"
+            data-field="quantity"
+            bindinput="handleTextInput"
+          />
+          <input
+            class="quantity-unit-input"
+            value="{{unit}}"
+            maxlength="8"
+            placeholder="件"
+            placeholder-class="field-placeholder"
+            data-field="unit"
+            bindinput="handleTextInput"
+          />
+        </view>
+
+        <view class="form-row form-row--picker">
+          <text class="form-row__label">分类 <text class="required-mark">*</text></text>
+          <picker class="form-row__picker" mode="selector" range="{{categoryOptions}}" range-key="label" value="{{categoryIndex}}" bindchange="handleCategoryChange">
+            <view class="form-row__picker-value">
+              <text>{{categoryOptions[categoryIndex].label}}</text>
+              <view class="line-icon line-icon--chevron-right form-row__arrow" aria-hidden="true"></view>
+            </view>
+          </picker>
         </view>
 
         <view class="form-row form-row--location">
@@ -166,4 +170,37 @@
       </button>
     </view>
   </block>
+
+  <!-- 提醒设置弹窗（与「我的—提醒设置」同款） -->
+  <view wx:if="{{reminderSettingsVisible}}" class="modal-mask" bindtap="closeReminderSettings" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
+      <text class="modal__title">提醒设置</text>
+      <text class="modal__subtitle">用于新增物品和微信通知</text>
+
+      <picker
+        disabled="{{reminderSaving}}"
+        mode="selector"
+        range="{{reminderDayOptions}}"
+        range-key="label"
+        value="{{reminderDayIndex}}"
+        bindchange="handleReminderDaysChange"
+      >
+        <view class="modal-setting-row">
+          <view>
+            <text class="modal-setting-row__label">默认提前提醒</text>
+            <text class="modal-setting-row__description">新增物品时自动带入</text>
+          </view>
+          <view class="modal-setting-row__value">
+            <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
+            <view class="line-icon line-icon--chevron-right modal-setting-row__chevron" aria-hidden="true"></view>
+          </view>
+        </view>
+      </picker>
+
+      <view class="modal__actions">
+        <button class="secondary-button modal__button" disabled="{{reminderSaving}}" bindtap="closeReminderSettings" hover-class="pressable--pressed">取消</button>
+        <button class="primary-button modal__button" disabled="{{reminderSaving}}" bindtap="saveReminderSettings" hover-class="pressable--pressed">{{reminderSaving ? '保存中…' : '保存'}}</button>
+      </view>
+    </view>
+  </view>
 </view>
