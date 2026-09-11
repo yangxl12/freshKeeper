@@ -288,24 +288,90 @@ button {
   font-size: 25rpx;
 }
 
-.number-suffix-control--disabled {
-  opacity: 0.45;
+/* 「保存后开启到期提醒」勾选：纯本地意向，不是微信授权状态的镜像。 */
+.remind-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  margin-top: 22rpx;
+  padding: 26rpx 26rpx;
+  border: 2rpx solid #e3e9e5;
+  border-radius: 20rpx;
+  background: #ffffff;
+  transition: border-color 180ms ease, background-color 180ms ease;
 }
 
-/* 提醒授权行：开关贴右；授权状态来自微信系统，开关本身不接收写入。 */
-.reminder-auth {
-  display: flex;
+.remind-option--on {
+  border-color: #bcd8cb;
+  background: #f2f8f4;
+}
+
+.remind-option__box {
+  position: relative;
+  box-sizing: border-box;
+  width: 40rpx;
+  height: 40rpx;
+  flex: 0 0 40rpx;
+  margin-top: 4rpx;
+  border: 2rpx solid #c3ccc7;
+  border-radius: 10rpx;
+  background: #ffffff;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.remind-option--on .remind-option__box {
+  border-color: #24684f;
+  background: #24684f;
+}
+
+.remind-option__tick {
+  position: absolute;
+  top: 9rpx;
+  left: 10rpx;
+  box-sizing: border-box;
+  width: 18rpx;
+  height: 10rpx;
+  border-bottom: 3rpx solid #ffffff;
+  border-left: 3rpx solid #ffffff;
+  transform: rotate(-45deg);
+}
+
+.remind-option__copy {
   min-width: 0;
   flex: 1;
-  align-items: center;
-  justify-content: flex-end;
 }
 
-.reminder-switch {
-  flex: 0 0 auto;
-  margin-left: 4rpx;
-  transform: scale(0.78);
-  transform-origin: right center;
+.remind-option__title {
+  display: block;
+  color: #213b32;
+  font-size: 27rpx;
+  font-weight: 500;
+}
+
+.remind-option__desc {
+  display: block;
+  margin-top: 8rpx;
+  color: #8a948f;
+  font-size: 21rpx;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .remind-option__tick {
+    animation: remind-tick-in 200ms ease-out;
+  }
+}
+
+@keyframes remind-tick-in {
+  from {
+    opacity: 0;
+    transform: rotate(-45deg) scale(0.35);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(-45deg) scale(1);
+  }
 }
 
 /* 数量行：主输入占满剩余空间，单位小输入框固定宽度贴右。 */
@@ -326,132 +392,6 @@ button {
   color: #213b32;
   font-size: 25rpx;
   text-align: center;
-}
-
-/* 提醒设置弹窗（与「我的」页同款布局，组件样式隔离需自带一份） */
-.modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 60rpx;
-  background: rgba(15, 27, 22, 0.45);
-}
-
-.modal {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 620rpx;
-  padding: 40rpx 36rpx calc(32rpx + env(safe-area-inset-bottom));
-  border-radius: 28rpx;
-  background: #ffffff;
-  box-shadow: 0 20rpx 60rpx rgba(24, 48, 38, 0.22);
-}
-
-.modal__title {
-  display: block;
-  color: #213b32;
-  font-size: 33rpx;
-  font-weight: 650;
-  text-align: center;
-}
-
-.modal__subtitle {
-  display: block;
-  margin-top: 10rpx;
-  margin-bottom: 26rpx;
-  color: #8a948f;
-  font-size: 23rpx;
-  text-align: center;
-}
-
-.modal-setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18rpx;
-  padding: 24rpx 4rpx;
-  border-bottom: 2rpx solid #edf0ee;
-}
-
-.modal-setting-row__label {
-  display: block;
-  color: #344a42;
-  font-size: 27rpx;
-  font-weight: 500;
-}
-
-.modal-setting-row__description {
-  display: block;
-  margin-top: 6rpx;
-  color: #98a09d;
-  font-size: 21rpx;
-}
-
-.modal-setting-row__value {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  color: #213b32;
-  font-size: 26rpx;
-}
-
-.modal-setting-row__chevron {
-  width: 22rpx;
-  height: 22rpx;
-  color: #9aa39f;
-}
-
-.modal-setting-row__chevron::before {
-  top: 5rpx;
-  left: 6rpx;
-  width: 8rpx;
-  height: 8rpx;
-}
-
-/* 弹窗里的「提醒授权」行：文案占满左侧，右侧「查看设置」跳微信订阅设置页。 */
-.modal-setting-row--notification {
-  align-items: center;
-}
-
-.modal-setting-row__copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.modal-setting-row__link {
-  min-width: 120rpx;
-  height: 64rpx;
-  margin: 0 0 0 16rpx;
-  padding: 0 10rpx;
-  background: transparent;
-  color: #1f5d49;
-  font-size: 24rpx;
-  font-weight: 600;
-  line-height: 64rpx;
-}
-
-.modal__actions {
-  display: flex;
-  gap: 20rpx;
-  margin-top: 30rpx;
-}
-
-.modal__button {
-  flex: 1;
-  margin: 0;
-  min-height: 84rpx;
-  border-radius: 16rpx;
-  font-size: 27rpx;
-  font-weight: 650;
-  line-height: 84rpx;
-}
-
-.secondary-button {
-  background: #f2f4f2;
-  color: #4b5a54;
 }
 
 .form-hint {

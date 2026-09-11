@@ -6,15 +6,25 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * 切走再切回，原本填好的到期日期就消失了。
  */
 
+const saveItemMock = vi.fn(async () => ({ itemId: 'created-1', version: 1, expiryDate: '2026-12-31' }))
+const restoreItemMock = vi.fn(async () => undefined)
+const armReminderMock = vi.fn(async () => ({ status: 'scheduled', remindDate: '2026-12-30' }))
+const requestReminderAuthorizationMock = vi.fn(async () => true)
+const updateSettingsMock = vi.fn()
+
 vi.mock('../../miniprogram/services/inventory-service', () => ({
-  getItem: vi.fn(), saveItem: vi.fn(), restoreItem: vi.fn(), generateItemCover: vi.fn(),
+  getItem: vi.fn(),
+  saveItem: (...args: unknown[]) => saveItemMock(...(args as [])),
+  restoreItem: (...args: unknown[]) => restoreItemMock(...(args as [])),
+  generateItemCover: vi.fn(async () => undefined),
 }))
 vi.mock('../../miniprogram/services/reminder-service', () => ({
-  readReminderAuthorization: vi.fn(async () => ({ authorized: false, summary: '' })),
+  armReminder: (...args: unknown[]) => armReminderMock(...(args as [])),
+  requestReminderAuthorization: () => requestReminderAuthorizationMock(),
 }))
 vi.mock('../../miniprogram/services/settings-service', () => ({
   getSettings: vi.fn(async () => ({ defaultReminderLeadDays: 1 })),
-  updateSettings: vi.fn(),
+  updateSettings: updateSettingsMock,
 }))
 vi.mock('../../miniprogram/utils/analytics', () => ({ track: vi.fn() }))
 
@@ -37,6 +47,9 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  saveItemMock.mockResolvedValue({ itemId: 'created-1', version: 1, expiryDate: '2026-12-31' })
+  requestReminderAuthorizationMock.mockResolvedValue(true)
+  armReminderMock.mockResolvedValue({ status: 'scheduled', remindDate: '2026-12-30' })
 })
 
 /** 造一个组件实例：properties 初值合并进 data，setData 用顶层键合并。 */
@@ -51,7 +64,20 @@ function sheetInstance(mode: 'direct' | 'shelf_life') {
     Object.assign(instance.data, patch)
     callback?.()
   }
+  instance.triggerEvent = vi.fn()
   return instance
+}
+
+/** 一份能通过校验的新增表单（到期日在未来）。 */
+function fillValidNewItem(instance: Record<string, any>) {
+  Object.assign(instance.data, {
+    name: '牛奶',
+    quantity: '2',
+    unit: '盒',
+    reminderLeadDays: '3',
+    expiryDate: '2099-12-31',
+    today: '2026-09-11',
+  })
 }
 
 function switchMode(instance: Record<string, any>, mode: string) {
@@ -109,5 +135,108 @@ describe('item-form-sheet 到期计算方式切换', () => {
     sheet.data.dirty = false
     switchMode(sheet, 'direct')
     expect(sheet.data.dirty).toBe(false)
+  })
+})
+
+/**
+ * 提醒相关的收口约定（改坏了会退回「四个概念八个入口」的老账）：
+ * 表单里只剩「到期前 N 天」+「保存后开启提醒」，既不碰账号默认值，也不碰微信授权状态。
+ */
+describe('item-form-sheet 到期提醒', () => {
+  it('不再提供账号默认天数与授权开关的第二入口', () => {
+    expect(sheetDefinition.methods.saveReminderSettings).toBeUndefined()
+    expect(sheetDefinition.methods.handleReminderAuthSwitch).toBeUndefined()
+    expect(sheetDefinition.methods.readReminderAuthorization).toBeUndefined()
+    expect(sheetDefinition.methods.openNotificationSettings).toBeUndefined()
+    expect(sheetDefinition.data.reminderSettingsVisible).toBeUndefined()
+    expect(sheetDefinition.data.subscriptionAuthorized).toBeUndefined()
+  })
+
+  it('「保存后开启提醒」默认开启且可来回切换', () => {
+    const sheet = sheetInstance('direct')
+    expect(sheet.data.remindAfterSave).toBe(true)
+    sheet.toggleRemindAfterSave()
+    expect(sheet.data.remindAfterSave).toBe(false)
+    sheet.toggleRemindAfterSave()
+    expect(sheet.data.remindAfterSave).toBe(true)
+  })
+
+  it('新增保存成功后先申请授权再挂提醒，最后才通知宿主', async () => {
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+
+    await sheet.save()
+
+    expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+    expect(armReminderMock).toHaveBeenCalledWith('created-1')
+    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
+    // 授权弹窗必须发生在宿主跳转之前，否则会被 navigateBack 打断。
+    const armOrder = armReminderMock.mock.invocationCallOrder[0]
+    const savedOrder = (sheet.triggerEvent as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
+    expect(armOrder).toBeLessThan(savedOrder)
+  })
+
+  it('用户取消勾选时不申请授权也不挂提醒', async () => {
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+    sheet.toggleRemindAfterSave()
+
+    await sheet.save()
+
+    expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
+    expect(armReminderMock).not.toHaveBeenCalled()
+    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
+  })
+
+  it('编辑已有物品不顺手挂提醒（交给详情页决定）', async () => {
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+    sheet.data.itemId = 'existing-1'
+    sheet.data.version = 3
+
+    await sheet.save()
+
+    expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
+    expect(armReminderMock).not.toHaveBeenCalled()
+  })
+
+  it('到期日已过时直接说明不提醒，不弹授权', async () => {
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+    sheet.data.expiryDate = '2020-01-01'
+
+    await sheet.save()
+
+    expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
+    expect(armReminderMock).not.toHaveBeenCalled()
+    expect(globalThis.wx.showToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '已过期，不提醒' }),
+    )
+  })
+
+  it('挂提醒失败不影响保存成功的结果', async () => {
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+    armReminderMock.mockRejectedValueOnce(new Error('REMINDER_NOT_CONFIGURED'))
+
+    await sheet.save()
+
+    expect(sheet.data.errorMessage).toBe('')
+    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
+    expect(globalThis.wx.showToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '提醒未能开启' }),
+    )
+  })
+
+  it('用户拒绝授权时不再叠一层提示，保存照常完成', async () => {
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+    requestReminderAuthorizationMock.mockResolvedValueOnce(false)
+
+    await sheet.save()
+
+    expect(armReminderMock).not.toHaveBeenCalled()
+    expect(globalThis.wx.showToast).not.toHaveBeenCalled()
+    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
   })
 })

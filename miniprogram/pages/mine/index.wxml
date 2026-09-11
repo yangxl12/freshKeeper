@@ -17,7 +17,7 @@
     <button class="entry" data-entry="settings" bindtap="openEntry" hover-class="entry--pressed">
       <view class="entry__icon entry__icon--bell" aria-hidden="true"></view>
       <text class="entry__label">提醒设置</text>
-      <text class="entry__value">默认提前 {{savedReminderDayIndex}} 天</text>
+      <text class="entry__value">{{savedReminderDayValue === 0 ? '默认到期当天' : '默认到期前 ' + savedReminderDayValue + ' 天'}}</text>
       <view class="entry__chevron" aria-hidden="true"></view>
     </button>
     <button class="entry" data-entry="trash" bindtap="openEntry" hover-class="entry--pressed">
@@ -97,7 +97,7 @@
   <view wx:if="{{activeModal === 'settings'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
     <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
       <text class="modal__title">提醒设置</text>
-      <text class="modal__subtitle">用于新增物品和微信通知</text>
+      <text class="modal__subtitle">这里是默认天数与微信通知的唯一入口</text>
 
       <view wx:if="{{settingsError}}" class="compact-error">
         <text>{{settingsError}}</text>
@@ -115,8 +115,8 @@
         >
           <view class="setting-row">
             <view>
-              <text class="setting-row__label">默认提前提醒</text>
-              <text class="setting-row__description">新增物品时自动带入</text>
+              <text class="setting-row__label">默认提醒时间</text>
+              <text class="setting-row__description">只影响之后新增的物品</text>
             </view>
             <view class="setting-row__value">
               <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
@@ -126,7 +126,7 @@
         </picker>
         <view class="setting-row setting-row--notification">
           <view class="setting-row__notification-copy">
-            <text class="setting-row__label">提醒授权</text>
+            <text class="setting-row__label">微信通知</text>
             <text class="setting-row__description">{{subscriptionSummary}}</text>
           </view>
           <button class="setting-row__link" bindtap="openNotificationSettings" hover-class="pressable--pressed">查看设置</button>

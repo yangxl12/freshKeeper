@@ -19,7 +19,6 @@ import {
   onItemCoverReady,
   updateQuantity,
 } from '../../services/inventory-service'
-import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
 import type {
   Category,
   InventoryOverviewResult,
@@ -35,7 +34,8 @@ interface MoreSheet {
   name: string
 }
 
-type MoreAction = 'complete' | 'delete' | 'remind'
+// 到期提醒需要看得见任务状态才能决策，只在物品详情里操作，不放进这个看不见状态的快捷菜单。
+type MoreAction = 'complete' | 'delete'
 
 let searchTimer: number | undefined
 let midnightTimer: number | undefined
@@ -381,7 +381,6 @@ Page({
     }
     if (action === 'complete') await this.completeItemAction(item)
     else if (action === 'delete') await this.deleteItemAction(item)
-    else await this.remindItem(item)
   },
 
   async completeItemAction(item: InventoryCardItem) {
@@ -424,26 +423,6 @@ Page({
       wx.showToast({ title: '已删除', icon: 'success' })
       void this.refreshOverview()
       void this.refresh(true, false)
-    } catch (error) {
-      this.handleActionError(error)
-    }
-  },
-
-  async remindItem(item: InventoryCardItem) {
-    if (this.data.actionLoading) return
-    if (item.expiryStatus === 'expired') {
-      wx.showToast({ title: '已过期，无需提醒', icon: 'none' })
-      this.closeMore()
-      return
-    }
-    const accepted = await requestReminderAuthorization()
-    this.closeMore()
-    if (!accepted) return
-    this.setData({ actionLoading: true })
-    try {
-      await armReminder(item._id)
-      this.setData({ actionLoading: false })
-      wx.showToast({ title: '提醒已开启', icon: 'success' })
     } catch (error) {
       this.handleActionError(error)
     }

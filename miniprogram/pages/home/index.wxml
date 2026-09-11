@@ -196,10 +196,6 @@
         <image class="action-sheet__icon" src="/assets/icons/action-delete.svg" mode="aspectFit" aria-hidden="true" />
         <text class="action-sheet__label action-sheet__label--danger">删除</text>
       </button>
-      <button class="action-sheet__item" data-action="remind" bindtap="handleMoreAction" hover-class="action-sheet__item--pressed">
-        <image class="action-sheet__icon" src="/assets/icons/action-remind.svg" mode="aspectFit" aria-hidden="true" />
-        <text class="action-sheet__label">提醒</text>
-      </button>
       <button class="action-sheet__cancel" bindtap="closeMore" hover-class="action-sheet__item--pressed">取消</button>
     </view>
   </view>

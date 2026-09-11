@@ -28,8 +28,8 @@ export interface ReminderAuthorization {
 const AUTHORIZATION_SUMMARY: Record<ReminderAuthorizationState, string> = {
   authorized: '通知已开启，每件物品仍需单独授权',
   'main-switch-off': '微信通知总开关已关闭',
-  'template-rejected': '临期提醒授权已关闭',
-  unrequested: '可在物品详情中逐件开启一次性提醒',
+  'template-rejected': '到期提醒的通知授权已关闭',
+  unrequested: '开启提醒时会逐件申请一次授权',
 }
 
 /**

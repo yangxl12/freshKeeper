@@ -17,8 +17,14 @@ import type { UserProfile, UserProfileUpdateInput } from '../../types/inventory'
 
 const REMINDER_DAY_OPTIONS = Array.from({ length: 31 }, (_, value) => ({
   value,
-  label: value === 0 ? '到期当天' : `提前 ${value} 天`,
+  label: value === 0 ? '到期当天提醒' : `到期前 ${value} 天`,
 }))
+
+/** 天数不等于选项下标：picker 只认下标，一律显式换算，别拿天数当索引传。 */
+function reminderDayIndexOf(value: number): number {
+  const index = REMINDER_DAY_OPTIONS.findIndex((option) => option.value === value)
+  return index >= 0 ? index : 1
+}
 
 const PROFILE_STORAGE_KEY = 'mine_profile'
 const PROFILE_MIGRATED_KEY = 'profile_migrated'
@@ -87,12 +93,14 @@ Page({
     settingsSaving: false,
     settingsError: '',
     reminderDayOptions: REMINDER_DAY_OPTIONS,
-    reminderDayIndex: 1,
-    savedReminderDayIndex: 1,
+    /** picker 选中项的下标。 */
+    reminderDayIndex: reminderDayIndexOf(1),
+    /** 已保存的默认提醒天数（真实天数，不是下标）。 */
+    savedReminderDayValue: 1,
     hasReminderJobs: false,
-    /** 微信订阅消息授权状态；由 reminder-service 折算，与「完整录入」共用同一份判断。 */
+    /** 微信通知授权状态；由 reminder-service 折算，是这里唯一的数据源。 */
     subscriptionAuthorized: false,
-    subscriptionSummary: '可在物品详情中逐件开启一次性提醒',
+    subscriptionSummary: '开启后仍需逐件授权一次',
     trashLoading: false,
     trashLoadingMore: false,
     trashError: '',
@@ -133,8 +141,8 @@ Page({
     try {
       const settings = await getSettings()
       this.setData({
-        reminderDayIndex: settings.defaultReminderLeadDays,
-        savedReminderDayIndex: settings.defaultReminderLeadDays,
+        reminderDayIndex: reminderDayIndexOf(settings.defaultReminderLeadDays),
+        savedReminderDayValue: settings.defaultReminderLeadDays,
         hasReminderJobs: Boolean(settings.hasReminderJobs),
         settingsLoading: false,
       })
@@ -288,7 +296,7 @@ Page({
     this.setData({
       activeModal: '',
       settingsError: '',
-      reminderDayIndex: this.data.savedReminderDayIndex,
+      reminderDayIndex: reminderDayIndexOf(this.data.savedReminderDayValue),
     })
   },
 
@@ -309,8 +317,8 @@ Page({
         defaultReminderLeadDays: REMINDER_DAY_OPTIONS[this.data.reminderDayIndex].value,
       })
       this.setData({
-        reminderDayIndex: settings.defaultReminderLeadDays,
-        savedReminderDayIndex: settings.defaultReminderLeadDays,
+        reminderDayIndex: reminderDayIndexOf(settings.defaultReminderLeadDays),
+        savedReminderDayValue: settings.defaultReminderLeadDays,
         settingsSaving: false,
         activeModal: '',
       })
@@ -327,7 +335,7 @@ Page({
       // 授权已开启且已有提醒任务时，用更具体的说明覆盖通用文案。
       subscriptionSummary:
         authorization.authorized && this.data.hasReminderJobs
-          ? '通知已开启，已有物品保存了提醒任务'
+          ? '通知已开启，已有物品在等提醒'
           : authorization.summary,
     })
   },

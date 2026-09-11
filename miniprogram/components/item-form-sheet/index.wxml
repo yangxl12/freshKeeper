@@ -93,7 +93,7 @@
         </block>
 
         <view class="form-row">
-          <text class="form-row__label">提前提醒 <text class="required-mark">*</text></text>
+          <text class="form-row__label">到期前提醒 <text class="required-mark">*</text></text>
           <view class="number-suffix-control">
             <input
               class="number-suffix-control__input"
@@ -104,21 +104,6 @@
               bindinput="handleTextInput"
             />
             <text class="number-suffix-control__suffix">天</text>
-          </view>
-        </view>
-
-        <!-- 订阅授权由微信系统控制，小程序无法写入：开关只反映真实状态，拨动后引导用户去系统设置页。 -->
-        <view class="form-row">
-          <text class="form-row__label">提醒授权</text>
-          <view class="reminder-auth">
-            <switch
-              wx:if="{{!authSwitchRebuilding}}"
-              class="reminder-switch"
-              checked="{{subscriptionAuthorized}}"
-              color="#24684f"
-              aria-label="微信临期提醒授权"
-              bindchange="handleReminderAuthSwitch"
-            />
           </view>
         </view>
 
@@ -168,7 +153,25 @@
         </view>
       </view>
 
-      <text wx:if="{{purpose !== 'draft'}}" class="form-hint">保存后可在物品详情中单独开启微信提醒</text>
+      <!-- 一次性订阅只能一件一件申请，所以「开启提醒」的意向放在这里、授权留到保存成功那一刻。 -->
+      <view
+        wx:if="{{purpose !== 'draft' && !itemId && !restore}}"
+        class="remind-option {{remindAfterSave ? 'remind-option--on' : ''}}"
+        bindtap="toggleRemindAfterSave"
+        role="checkbox"
+        aria-checked="{{remindAfterSave}}"
+        aria-label="保存后开启到期提醒"
+      >
+        <view class="remind-option__box">
+          <view wx:if="{{remindAfterSave}}" class="remind-option__tick" aria-hidden="true"></view>
+        </view>
+        <view class="remind-option__copy">
+          <text class="remind-option__title">保存后开启到期提醒</text>
+          <text class="remind-option__desc">到期前 {{reminderLeadDays}} 天推送一条微信提醒，需要单独授权一次</text>
+        </view>
+      </view>
+
+      <text wx:if="{{purpose !== 'draft' && itemId}}" class="form-hint">到期提醒可在物品详情里开启或取消</text>
     </view>
 
     <view wx:if="{{purpose !== 'draft'}}" class="save-bar">
@@ -177,45 +180,4 @@
       </button>
     </view>
   </block>
-
-  <!-- 提醒设置弹窗（与「我的—提醒设置」同款） -->
-  <view wx:if="{{reminderSettingsVisible}}" class="modal-mask" bindtap="closeReminderSettings" catchtouchmove="noop">
-    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
-      <text class="modal__title">提醒设置</text>
-      <text class="modal__subtitle">用于新增物品和微信通知</text>
-
-      <picker
-        disabled="{{reminderSaving}}"
-        mode="selector"
-        range="{{reminderDayOptions}}"
-        range-key="label"
-        value="{{reminderDayIndex}}"
-        bindchange="handleReminderDaysChange"
-      >
-        <view class="modal-setting-row">
-          <view>
-            <text class="modal-setting-row__label">默认提前提醒</text>
-            <text class="modal-setting-row__description">新增物品时自动带入</text>
-          </view>
-          <view class="modal-setting-row__value">
-            <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
-            <view class="line-icon line-icon--chevron-right modal-setting-row__chevron" aria-hidden="true"></view>
-          </view>
-        </view>
-      </picker>
-
-      <view class="modal-setting-row modal-setting-row--notification">
-        <view class="modal-setting-row__copy">
-          <text class="modal-setting-row__label">提醒授权</text>
-          <text class="modal-setting-row__description">{{subscriptionSummary}}</text>
-        </view>
-        <button class="modal-setting-row__link" bindtap="openNotificationSettings" hover-class="pressable--pressed">查看设置</button>
-      </view>
-
-      <view class="modal__actions">
-        <button class="secondary-button modal__button" disabled="{{reminderSaving}}" bindtap="closeReminderSettings" hover-class="pressable--pressed">取消</button>
-        <button class="primary-button modal__button" disabled="{{reminderSaving}}" bindtap="saveReminderSettings" hover-class="pressable--pressed">{{reminderSaving ? '保存中…' : '保存'}}</button>
-      </view>
-    </view>
-  </view>
 </view>
