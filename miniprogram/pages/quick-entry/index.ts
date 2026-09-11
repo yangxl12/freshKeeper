@@ -21,6 +21,7 @@ import {
   uploadQuickEntryMedia,
   removeMedia,
 } from '../../services/quick-entry-service'
+import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
 import { getSettings } from '../../services/settings-service'
 import type { QuickEntryCapabilities, QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
@@ -956,23 +957,31 @@ Page({
     const updated = [...savingDrafts]
     let succeeded = 0
     let failed = 0
+    /** 保存成功且勾了「入库后开启到期提醒」的条目，保存完统一逐条申请授权。 */
+    const reminderTargets: Array<{ itemId: string; draft: QuickEntryDraft }> = []
     results.forEach((result, resultIndex) => {
       const target = targets[resultIndex]
       if (result.status === 'fulfilled') {
         updated[target.index] = { ...target.draft, status: 'saved', selected: false, evidence: undefined }
         succeeded += 1
+        if (target.draft.fields.remindAfterSave) {
+          reminderTargets.push({ itemId: result.value.itemId, draft: target.draft })
+        }
       } else {
         updated[target.index] = { ...target.draft, status: 'failed', selected: false, errorMessage: getErrorMessage(result.reason) }
         failed += 1
       }
     })
-    this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
     this.savedCount += succeeded
     this.commitDrafts(updated)
     const savedItemIds = results
       .map((result) => (result.status === 'fulfilled' ? result.value.itemId : ''))
       .filter(Boolean)
     if (savedItemIds.length) void this.requestCovers(savedItemIds)
+    // 提醒授权必须在保存期间完成：这里还压着 saving 状态，用户不会重复点「加入库存」，
+    // 而下面的 exitToHome 也要等授权弹窗收完才跳转。
+    if (reminderTargets.length) await this.armSavedReminders(reminderTargets)
+    this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
     track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draftCount: targets.length, durationMs: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
     if (!updated.some((draft) => draft.status !== 'saved')) {
       wx.disableAlertBeforeUnload?.()
@@ -980,6 +989,34 @@ Page({
       this.commitDrafts([])
       void this.refreshRecentProfiles()
       this.exitToHome()
+    }
+  },
+
+  /**
+   * 保存成功后逐条开启到期提醒。
+   * 微信一次性订阅「一次授权换一条发送额度」，所以只能一件一件申请，攒不成一次批量开通。
+   * 用户拒绝（或授权调用失败）就停下、不再连弹；单条挂失败也只跳过这一条——
+   * 物品已经入库，提醒始终是附加动作，不影响保存结果。
+   */
+  async armSavedReminders(targets: Array<{ itemId: string; draft: QuickEntryDraft }>) {
+    const today = this.data.today
+    for (const { itemId, draft } of targets) {
+      if (!itemId) continue
+      const expiryDate = getExpirySummary(draft)
+      // 已过期或日期还没落定的不申请授权，与「完整录入」保持同一判据。
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) || expiryDate < today) continue
+      let accepted = false
+      try {
+        accepted = await requestReminderAuthorization()
+      } catch (_error) {
+        accepted = false
+      }
+      if (!accepted) return
+      try {
+        await armReminder(itemId)
+      } catch (_error) {
+        // 单条挂失败不阻断后面的条目。
+      }
     }
   },
 })

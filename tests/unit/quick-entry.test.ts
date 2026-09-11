@@ -138,6 +138,7 @@ describe('quick entry drafts', () => {
       shelfLifeValue: null,
       shelfLifeUnit: null,
       reminderLeadDays: 0,
+      remindAfterSave: true,
     })
   })
 

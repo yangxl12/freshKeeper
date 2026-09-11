@@ -44,6 +44,7 @@ export function defaultQuickEntryFields(reminderLeadDays = 1): QuickEntryDraftFi
     shelfLifeUnit: 'day',
     expiryDate: null,
     reminderLeadDays,
+    remindAfterSave: true,
   }
 }
 
@@ -366,7 +367,9 @@ export function getDraftSummary(draft: QuickEntryDraft): string {
   const fields = draft.fields
   const quantity = fields.quantity == null ? '待补数量' : `${fields.quantity}${fields.unit || '件'}`
   const location = fields.storageLocation ? ` · ${fields.storageLocation}` : ''
-  return `${quantity} · ${categoryLabel(fields.category)}${location} · 提前${fields.reminderLeadDays ?? 1}天提醒`
+  // 关掉提醒的草稿不能再写「提前 N 天提醒」，否则卡片文案和入库后的实际行为对不上。
+  const reminder = fields.remindAfterSave ? `提前${fields.reminderLeadDays ?? 1}天提醒` : '不提醒'
+  return `${quantity} · ${categoryLabel(fields.category)}${location} · ${reminder}`
 }
 
 export function getExpirySummary(draft: QuickEntryDraft): string {
@@ -409,7 +412,7 @@ export function draftToManualFields(draft: QuickEntryDraft): Partial<import('../
  * 与 draftToManualFields 的区别：这里如实带上当前值（含冲突日期），不做「有问题就清空」的裁剪——
  * 用户是进来看清楚再改的，把有疑问的日期藏起来只会让人无从下手。
  */
-export function draftToFormPrefill(draft: QuickEntryDraft): Partial<InventorySaveInput> {
+export function draftToFormPrefill(draft: QuickEntryDraft): Partial<InventorySaveInput> & { remindAfterSave?: boolean } {
   const fields = draft.fields
   return {
     name: fields.name,
@@ -423,6 +426,7 @@ export function draftToFormPrefill(draft: QuickEntryDraft): Partial<InventorySav
     shelfLifeValue: fields.shelfLifeValue,
     shelfLifeUnit: fields.shelfLifeUnit,
     reminderLeadDays: fields.reminderLeadDays ?? undefined,
+    remindAfterSave: fields.remindAfterSave,
   }
 }
 

@@ -5,11 +5,12 @@ import { applyFormValuesToDraft, createDraftFromParsed, createDraftFromRecent, p
 
 import { CloudServiceError } from '../../miniprogram/services/cloud-client'
 
-const { getQuickEntryCapabilitiesMock, getSettingsMock, listRecentProfilesMock, parseMock, photoMock, uploadMock, saveMock } = vi.hoisted(() => ({
+const { getQuickEntryCapabilitiesMock, getSettingsMock, listRecentProfilesMock, parseMock, photoMock, uploadMock, saveMock, requestReminderAuthorizationMock, armReminderMock } = vi.hoisted(() => ({
   getQuickEntryCapabilitiesMock: vi.fn(),
   getSettingsMock: vi.fn(),
   listRecentProfilesMock: vi.fn(),
   parseMock: vi.fn(), photoMock: vi.fn(), uploadMock: vi.fn(), saveMock: vi.fn(),
+  requestReminderAuthorizationMock: vi.fn(), armReminderMock: vi.fn(),
 }))
 
 vi.mock('../../miniprogram/services/quick-entry-service', () => ({
@@ -19,6 +20,10 @@ vi.mock('../../miniprogram/services/quick-entry-service', () => ({
   removeMedia: vi.fn(),
 }))
 vi.mock('../../miniprogram/services/inventory-service', () => ({ saveItem: saveMock }))
+vi.mock('../../miniprogram/services/reminder-service', () => ({
+  requestReminderAuthorization: () => requestReminderAuthorizationMock(),
+  armReminder: (...args: unknown[]) => armReminderMock(...(args as [])),
+}))
 
 vi.mock('../../miniprogram/services/settings-service', () => ({
   getSettings: getSettingsMock,
@@ -29,6 +34,8 @@ let quickEntryPage: Record<string, unknown>
 const originalWx = globalThis.wx
 beforeEach(() => {
   vi.clearAllMocks()
+  requestReminderAuthorizationMock.mockResolvedValue(true)
+  armReminderMock.mockResolvedValue({ status: 'scheduled', remindDate: '2026-09-09' })
   globalThis.wx = {
     setNavigationBarTitle: vi.fn(),
     pageScrollTo: vi.fn(),
@@ -463,6 +470,76 @@ describe('quick entry page compatibility', () => {
     expect(page.data.drafts).toHaveLength(3)
     expect(page.data.drafts[2].status).toBe('saved')
     expect(wx.navigateBack).not.toHaveBeenCalled()
+  })
+
+  /**
+   * 微信一次性订阅「一次授权换一条额度」，所以批量保存只能一件一件申请。
+   * 这几条守住：谁该申请、谁该跳过、拒绝之后不再连弹。
+   */
+  describe('quick entry 保存后开启提醒', () => {
+    it('对每条勾了提醒的草稿依次申请授权并挂提醒', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-08' })
+      page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' }).mockResolvedValueOnce({ itemId: 'yogurt' })
+
+      await page.saveDrafts()
+
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(2)
+      expect(armReminderMock.mock.calls.map((call) => call[0])).toEqual(['milk', 'yogurt'])
+    })
+
+    it('用户拒绝授权后停止，不再对后面几条连弹', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-08' })
+      page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' }).mockResolvedValueOnce({ itemId: 'yogurt' })
+      requestReminderAuthorizationMock.mockResolvedValueOnce(false)
+
+      await page.saveDrafts()
+
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+      expect(armReminderMock).not.toHaveBeenCalled()
+    })
+
+    it('取消勾选提醒的草稿不申请授权', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-08' })
+      const noReminder = completeDraft('酸奶')
+      noReminder.fields.remindAfterSave = false
+      page.commitDrafts([completeDraft('牛奶'), noReminder])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' }).mockResolvedValueOnce({ itemId: 'yogurt' })
+
+      await page.saveDrafts()
+
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+      expect(armReminderMock).toHaveBeenCalledWith('milk')
+    })
+
+    it('已过期的草稿不申请授权，与完整录入保持一致', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-10' })
+      page.commitDrafts([completeDraft('牛奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' })
+
+      await page.saveDrafts()
+
+      expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
+      expect(armReminderMock).not.toHaveBeenCalled()
+    })
+
+    it('挂提醒失败不影响保存结果', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-08' })
+      page.commitDrafts([completeDraft('牛奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' })
+      armReminderMock.mockRejectedValueOnce(new Error('REMINDER_NOT_CONFIGURED'))
+
+      await page.saveDrafts()
+
+      expect(page.data.drafts).toHaveLength(0)
+      expect(wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '已加入库存' }))
+    })
   })
   it('resolves an ambiguous date conflict only when the form actually changed the dates', () => {
     const item = completeDraft('牛奶')

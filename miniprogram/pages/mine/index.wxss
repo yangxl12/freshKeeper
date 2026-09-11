@@ -422,22 +422,6 @@
 
 .setting-row__chevron { margin-left: 10rpx; color: #93a099; }
 
-.setting-row--notification { align-items: center; }
-
-.setting-row__notification-copy { flex: 1; min-width: 0; }
-
-.setting-row__link {
-  min-width: 120rpx;
-  height: 64rpx;
-  margin: 0 0 0 16rpx;
-  padding: 0 10rpx;
-  background: transparent;
-  color: #1f5d49;
-  font-size: 24rpx;
-  font-weight: 600;
-  line-height: 64rpx;
-}
-
 .compact-error {
   display: flex;
   align-items: center;

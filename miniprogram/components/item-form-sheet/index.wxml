@@ -155,18 +155,18 @@
 
       <!-- 一次性订阅只能一件一件申请，所以「开启提醒」的意向放在这里、授权留到保存成功那一刻。 -->
       <view
-        wx:if="{{purpose !== 'draft' && !itemId && !restore}}"
+        wx:if="{{!itemId && !restore}}"
         class="remind-option {{remindAfterSave ? 'remind-option--on' : ''}}"
         bindtap="toggleRemindAfterSave"
         role="checkbox"
         aria-checked="{{remindAfterSave}}"
-        aria-label="保存后开启到期提醒"
+        aria-label="入库后开启到期提醒"
       >
         <view class="remind-option__box">
           <view wx:if="{{remindAfterSave}}" class="remind-option__tick" aria-hidden="true"></view>
         </view>
         <view class="remind-option__copy">
-          <text class="remind-option__title">保存后开启到期提醒</text>
+          <text class="remind-option__title">入库后开启到期提醒</text>
           <text class="remind-option__desc">到期前 {{reminderLeadDays}} 天推送一条微信提醒，需要单独授权一次</text>
         </view>
       </view>

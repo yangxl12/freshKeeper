@@ -32,6 +32,9 @@ const LEGACY_STORAGE_LABELS: Record<string, string> = {
 
 type FormTextField = 'name' | 'quantity' | 'unit' | 'storageLocation' | 'shelfLifeValue' | 'reminderLeadDays'
 
+/** 宿主注入的预填值：完整录入字段 + 本次是否顺带开启到期提醒的意向。 */
+type FormPrefill = Partial<InventorySaveInput> & { remindAfterSave?: boolean }
+
 /** 完整录入表单；pages/item-form 与「物品录入」的完整录入 tab 共用同一份实现。 */
 Component({
   properties: {
@@ -93,24 +96,24 @@ Component({
 
   lifetimes: {
     attached() {
-      this.start(this.data.prefill as Partial<InventorySaveInput> | null)
+      this.start(this.data.prefill as FormPrefill | null)
     },
   },
 
   methods: {
-    start(pendingDraft: Partial<InventorySaveInput> | null = null) {
+    start(pendingDraft: FormPrefill | null = null) {
       if (this.data.itemId) this.loadItem(this.data.itemId)
       else this.loadDefaults(pendingDraft)
     },
 
     /** 宿主页面切换到本表单时注入一条快速录入草稿。 */
-    applyPrefill(pendingDraft: Partial<InventorySaveInput> | null, saveKey = '') {
+    applyPrefill(pendingDraft: FormPrefill | null, saveKey = '') {
       const patch: Record<string, unknown> = { errorMessage: '', loadFailed: false, dirty: false, prefilled: Boolean(pendingDraft) }
       if (saveKey) patch.quickSaveKey = saveKey
       this.setData(patch, () => this.loadDefaults(pendingDraft))
     },
 
-    async loadDefaults(pendingDraft: Partial<InventorySaveInput> | null = null) {
+    async loadDefaults(pendingDraft: FormPrefill | null = null) {
       try {
         const settings = await getSettings()
         // attached 时 id 尚未到达而先走了默认值加载；等待期间编辑 id 已到、或宿主已灌入草稿
@@ -118,6 +121,7 @@ Component({
         if (!pendingDraft && (this.data.itemId || this.data.prefilled)) return
         this.setData({
           reminderLeadDays: String(pendingDraft?.reminderLeadDays ?? settings.defaultReminderLeadDays),
+          remindAfterSave: pendingDraft?.remindAfterSave ?? true,
         })
       } catch (_error) {
         // 默认设置读取失败不阻塞录入，继续使用产品默认值。
@@ -138,6 +142,7 @@ Component({
         shelfLifeValue: pendingDraft.shelfLifeValue == null ? '' : String(pendingDraft.shelfLifeValue),
         shelfLifeUnitIndex: shelfLifeUnitIndex >= 0 ? shelfLifeUnitIndex : 0,
         reminderLeadDays: String(pendingDraft.reminderLeadDays ?? 1),
+        remindAfterSave: pendingDraft.remindAfterSave ?? true,
       }, () => this.updateExpiryPreview())
     },
 
@@ -269,6 +274,8 @@ Component({
         shelfLifeUnit: isShelfLife ? (SHELF_LIFE_OPTIONS[this.data.shelfLifeUnitIndex]?.value ?? null) : null,
         expiryDate: isShelfLife ? null : (this.data.expiryDate || null),
         reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
+        /** 本次入库是否顺带开启到期提醒；与完整录入共用同一个勾选。 */
+        remindAfterSave: this.data.remindAfterSave,
       }
     },
 
@@ -410,7 +417,7 @@ Component({
 
     retryLoad() {
       if (this.data.itemId) this.loadItem(this.data.itemId)
-      else this.loadDefaults(this.data.prefill as Partial<InventorySaveInput> | null)
+      else this.loadDefaults(this.data.prefill as FormPrefill | null)
     },
   },
 })

@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 /**
  * 回归测试：item-form-sheet 里「到期日期 ↔ 保质期计算」来回切换不得清空已填数据。
@@ -238,5 +240,36 @@ describe('item-form-sheet 到期提醒', () => {
     expect(armReminderMock).not.toHaveBeenCalled()
     expect(globalThis.wx.showToast).not.toHaveBeenCalled()
     expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
+  })
+
+  /**
+   * 快速录入的草稿编辑复用同一张表单，提醒开关必须一路贯通：
+   * 弹窗里看得到 → 切换得了 → 点「完成」把意向交回草稿 → 下次打开还能还原。
+   */
+  describe('草稿编辑模式', () => {
+    it('提醒开关不再被 purpose=draft 挡掉', () => {
+      const formTemplate = readFileSync(resolve(process.cwd(), 'miniprogram/components/item-form-sheet/index.wxml'), 'utf8')
+      expect(formTemplate).toContain('class="remind-option')
+      expect(formTemplate).toContain('wx:if="{{!itemId && !restore}}"')
+    })
+
+    it('切换开关后随「完成」把意向回传给宿主', () => {
+      const sheet = sheetInstance('direct')
+      sheet.data.purpose = 'draft'
+      expect(sheet.data.remindAfterSave).toBe(true)
+
+      sheet.toggleRemindAfterSave()
+
+      expect(sheet.collectDraftFields().remindAfterSave).toBe(false)
+    })
+
+    it('宿主灌入的草稿带回自己保存过的提醒意向', async () => {
+      const sheet = sheetInstance('direct')
+      sheet.data.purpose = 'draft'
+
+      await sheet.loadDefaults({ name: '牛奶', remindAfterSave: false })
+
+      expect(sheet.data.remindAfterSave).toBe(false)
+    })
   })
 })

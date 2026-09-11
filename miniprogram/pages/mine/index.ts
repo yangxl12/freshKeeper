@@ -1,7 +1,6 @@
 import { toInventoryCardItem } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { listTrash, permanentlyDeleteItem } from '../../services/inventory-service'
-import { readReminderAuthorization } from '../../services/reminder-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
 import {
   confirmExport,
@@ -101,10 +100,6 @@ Page({
     reminderDayIndex: reminderDayIndexOf(1),
     /** 已保存的默认提醒天数（真实天数，不是下标）。 */
     savedReminderDayValue: 1,
-    hasReminderJobs: false,
-    /** 微信通知授权状态；由 reminder-service 折算，是这里唯一的数据源。 */
-    subscriptionAuthorized: false,
-    subscriptionSummary: '开启后仍需逐件授权一次',
     trashLoading: false,
     trashLoadingMore: false,
     trashError: '',
@@ -149,13 +144,11 @@ Page({
       this.setData({
         reminderDayIndex: reminderDayIndexOf(settings.defaultReminderLeadDays),
         savedReminderDayValue: settings.defaultReminderLeadDays,
-        hasReminderJobs: Boolean(settings.hasReminderJobs),
         settingsLoading: false,
       })
     } catch (error) {
       this.setData({ settingsLoading: false, settingsError: getErrorMessage(error) })
     }
-    void this.readSubscriptionSetting()
   },
 
   /* 资料 */
@@ -332,27 +325,6 @@ Page({
     } catch (error) {
       this.setData({ settingsSaving: false, settingsError: getErrorMessage(error) })
     }
-  },
-
-  async readSubscriptionSetting() {
-    const authorization = await readReminderAuthorization()
-    this.setData({
-      subscriptionAuthorized: authorization.authorized,
-      // 授权已开启且已有提醒任务时，用更具体的说明覆盖通用文案。
-      subscriptionSummary:
-        authorization.authorized && this.data.hasReminderJobs
-          ? '通知已开启，已有物品在等提醒'
-          : authorization.summary,
-    })
-  },
-
-  openNotificationSettings() {
-    wx.openSetting({
-      withSubscriptions: true,
-      complete: () => {
-        void this.readSubscriptionSetting()
-      },
-    })
   },
 
   retrySettings() {
