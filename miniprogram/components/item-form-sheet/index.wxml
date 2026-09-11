@@ -94,25 +94,32 @@
 
         <view class="form-row">
           <text class="form-row__label">提前提醒 <text class="required-mark">*</text></text>
-          <view class="number-suffix-control {{reminderEnabled ? '' : 'number-suffix-control--disabled'}}">
+          <view class="number-suffix-control">
             <input
               class="number-suffix-control__input"
               value="{{reminderLeadDays}}"
               type="number"
               maxlength="2"
-              disabled="{{!reminderEnabled}}"
               data-field="reminderLeadDays"
               bindinput="handleTextInput"
             />
             <text class="number-suffix-control__suffix">天</text>
           </view>
-          <switch
-            class="reminder-switch"
-            checked="{{reminderEnabled}}"
-            color="#24684f"
-            aria-label="开启或关闭提醒"
-            bindchange="handleReminderSwitch"
-          />
+        </view>
+
+        <!-- 订阅授权由微信系统控制，小程序无法写入：开关只反映真实状态，拨动后引导用户去系统设置页。 -->
+        <view class="form-row">
+          <text class="form-row__label">提醒授权</text>
+          <view class="reminder-auth">
+            <switch
+              wx:if="{{!authSwitchRebuilding}}"
+              class="reminder-switch"
+              checked="{{subscriptionAuthorized === true}}"
+              color="#24684f"
+              aria-label="微信临期提醒授权"
+              bindchange="handleReminderAuthSwitch"
+            />
+          </view>
         </view>
 
         <view class="form-row">
@@ -196,6 +203,14 @@
           </view>
         </view>
       </picker>
+
+      <view class="modal-setting-row modal-setting-row--notification">
+        <view class="modal-setting-row__copy">
+          <text class="modal-setting-row__label">提醒授权</text>
+          <text class="modal-setting-row__description">{{subscriptionSummary}}</text>
+        </view>
+        <button class="modal-setting-row__link" bindtap="openNotificationSettings" hover-class="pressable--pressed">查看设置</button>
+      </view>
 
       <view class="modal__actions">
         <button class="secondary-button modal__button" disabled="{{reminderSaving}}" bindtap="closeReminderSettings" hover-class="pressable--pressed">取消</button>

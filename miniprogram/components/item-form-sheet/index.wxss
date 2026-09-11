@@ -289,6 +289,15 @@ button {
   opacity: 0.45;
 }
 
+/* 提醒授权行：开关贴右；授权状态来自微信系统，开关本身不接收写入。 */
+.reminder-auth {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .reminder-switch {
   flex: 0 0 auto;
   margin-left: 4rpx;
@@ -397,6 +406,28 @@ button {
   left: 6rpx;
   width: 8rpx;
   height: 8rpx;
+}
+
+/* 弹窗里的「提醒授权」行：文案占满左侧，右侧「查看设置」跳微信订阅设置页。 */
+.modal-setting-row--notification {
+  align-items: center;
+}
+
+.modal-setting-row__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.modal-setting-row__link {
+  min-width: 120rpx;
+  height: 64rpx;
+  margin: 0 0 0 16rpx;
+  padding: 0 10rpx;
+  background: transparent;
+  color: #1f5d49;
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 64rpx;
 }
 
 .modal__actions {

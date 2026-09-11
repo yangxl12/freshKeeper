@@ -67,7 +67,10 @@ Component({
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
     shelfLifeUnitIndex: 0,
     reminderLeadDays: '1',
-    reminderEnabled: true,
+    /** 微信订阅消息总开关：null 表示尚未授权过（此时微信不下发状态）。 */
+    subscriptionAuthorized: null as boolean | null,
+    subscriptionSummary: '可在物品详情中逐件开启一次性提醒',
+    authSwitchRebuilding: false,
     reminderSettingsVisible: false,
     reminderSaving: false,
     reminderDayOptions: REMINDER_DAY_OPTIONS,
@@ -78,6 +81,14 @@ Component({
   lifetimes: {
     attached() {
       this.start(this.data.prefill as Partial<InventorySaveInput> | null)
+      this.readReminderAuthorization()
+    },
+  },
+
+  pageLifetimes: {
+    // 从「我的—提醒设置」或微信订阅设置页返回时，按系统真实状态重新对齐开关。
+    show() {
+      this.readReminderAuthorization()
     },
   },
 
@@ -202,14 +213,53 @@ Component({
       this.setData({ categoryIndex: Number(event.detail.value) })
     },
 
-    /* 提醒开关 + 提醒设置弹窗（与「我的—提醒设置」同一套数据源） */
-    handleReminderSwitch(event: WechatMiniprogram.SwitchChange) {
-      const reminderEnabled = Boolean(event.detail.value)
-      // 无论开还是关，都顺带打开提醒设置弹窗，让用户直接改默认提前提醒天数。
+    /* 提醒授权开关 + 提醒设置弹窗（与「我的—提醒设置」同一套数据源） */
+
+    /**
+     * 读取微信订阅消息总开关，作为「提醒授权」开关的唯一数据源。
+     * 该状态由微信系统持有，小程序既写不进去也关不掉，因此每次进页面／回到页面都重新读取。
+     */
+    readReminderAuthorization() {
+      wx.getSetting({
+        withSubscriptions: true,
+        success: (result) => {
+          const mainSwitch = result.subscriptionsSetting?.mainSwitch ?? null
+          this.setData({ subscriptionAuthorized: mainSwitch }, () => this.updateSubscriptionSummary())
+        },
+      })
+    },
+
+    updateSubscriptionSummary() {
+      const authorized = this.data.subscriptionAuthorized
       this.setData({
-        reminderEnabled,
+        subscriptionSummary:
+          authorized === true
+            ? '通知已开启，每件物品仍需单独授权'
+            : authorized === false
+              ? '微信通知总开关已关闭'
+              : '可在物品详情中逐件开启一次性提醒',
+      })
+    },
+
+    /**
+     * 「提醒授权」开关只做引导：不落任何本地状态，先把开关重建回微信的真实状态，
+     * 再打开提醒设置弹窗。用户在弹窗里点「查看设置」去系统页才是唯一能改授权的地方。
+     */
+    handleReminderAuthSwitch() {
+      this.setData({
         reminderSettingsVisible: true,
         reminderDayIndex: Number(this.data.reminderLeadDays) || 0,
+      })
+      this.readReminderAuthorization()
+      // 此时遮罩已盖住表单：重建开关让 checked 回到真实值，避免留下「看着已关闭」的假状态。
+      this.setData({ authSwitchRebuilding: true }, () => this.setData({ authSwitchRebuilding: false }))
+    },
+
+    /** 打开微信订阅消息设置页，返回后按系统真实状态校准开关。 */
+    openNotificationSettings() {
+      wx.openSetting({
+        withSubscriptions: true,
+        complete: () => this.readReminderAuthorization(),
       })
     },
 
@@ -238,8 +288,9 @@ Component({
 
     closeReminderSettings() {
       if (this.data.reminderSaving) return
-      // 关闭开关的同时点「取消」时，开关状态保持用户的选择，只收起弹窗。
+      // 只收起弹窗；授权状态始终以微信系统为准，这里再读一次兜底。
       this.setData({ reminderSettingsVisible: false })
+      this.readReminderAuthorization()
     },
 
     stopPropagation() {},
