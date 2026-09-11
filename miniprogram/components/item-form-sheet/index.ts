@@ -9,8 +9,17 @@ import type {
   InventorySaveInput,
   ShelfLifeUnit,
 } from '../../types/inventory'
+import type { QuickEntryDraftFields } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
 import { calculateExpiryDate, localTodayKey, parseDateKey } from '../../utils/date-key'
+
+/** 空字符串或非法数字统一折算成 null，免得把 NaN 塞进草稿。 */
+function toNumberOrNull(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
+}
 
 const FORM_CATEGORY_OPTIONS = CATEGORY_OPTIONS.slice(1)
 const REMINDER_DAY_OPTIONS = Array.from({ length: 31 }, (_, value) => ({
@@ -44,6 +53,11 @@ Component({
     source: { type: String, value: '' },
     quickSaveKey: { type: String, value: '' },
     prefill: { type: Object, value: null },
+    /**
+     * save（默认）：表单自己写库，用于完整录入、编辑物品和重新入库。
+     * draft：表单只把值回传给宿主（快速录入的草稿编辑），由宿主决定何时落地。
+     */
+    purpose: { type: String, value: 'save' },
   },
 
   data: {
@@ -54,6 +68,8 @@ Component({
     loadFailed: false,
     saving: false,
     errorMessage: '',
+    /** 用户是否动过表单；草稿编辑模式下宿主据此决定退出要不要二次确认。 */
+    dirty: false,
     today: localTodayKey(),
     mode: 'direct' as ExpiryInputMode,
     name: '',
@@ -101,7 +117,7 @@ Component({
 
     /** 宿主页面切换到本表单时注入一条快速录入草稿。 */
     applyPrefill(pendingDraft: Partial<InventorySaveInput> | null, saveKey = '') {
-      const patch: Record<string, unknown> = { errorMessage: '', loadFailed: false }
+      const patch: Record<string, unknown> = { errorMessage: '', loadFailed: false, dirty: false }
       if (saveKey) patch.quickSaveKey = saveKey
       this.setData(patch, () => this.loadDefaults(pendingDraft))
     },
@@ -122,6 +138,7 @@ Component({
       const categoryIndex = FORM_CATEGORY_OPTIONS.findIndex((option) => option.value === pendingDraft.category)
       const shelfLifeUnitIndex = SHELF_LIFE_OPTIONS.findIndex((option) => option.value === pendingDraft.shelfLifeUnit)
       this.setData({
+        dirty: false,
         name: pendingDraft.name || '',
         quantity: pendingDraft.quantity == null ? '1' : String(pendingDraft.quantity),
         unit: pendingDraft.unit || '件',
@@ -145,6 +162,7 @@ Component({
         originalCreatedAt: 0,
         saving: false,
         errorMessage: '',
+        dirty: false,
         today: localTodayKey(),
         mode: 'direct',
         name: '',
@@ -198,20 +216,20 @@ Component({
       if (mode === this.data.mode) return
       this.setData(
         mode === 'direct'
-          ? { mode, productionDate: '', shelfLifeValue: '', expiryPreview: '' }
-          : { mode, expiryDate: '', expiryPreview: '' },
+          ? { mode, productionDate: '', shelfLifeValue: '', expiryPreview: '', dirty: true }
+          : { mode, expiryDate: '', expiryPreview: '', dirty: true },
       )
     },
 
     handleTextInput(event: WechatMiniprogram.Input) {
       const field = event.currentTarget.dataset.field as FormTextField
-      this.setData({ [field]: event.detail.value }, () => {
+      this.setData({ [field]: event.detail.value, dirty: true }, () => {
         if (field === 'shelfLifeValue') this.updateExpiryPreview()
       })
     },
 
     handleCategoryChange(event: WechatMiniprogram.PickerChange) {
-      this.setData({ categoryIndex: Number(event.detail.value) })
+      this.setData({ categoryIndex: Number(event.detail.value), dirty: true })
     },
 
     /* 提醒授权开关 + 提醒设置弹窗（与「我的—提醒设置」同一套数据源） */
@@ -287,14 +305,43 @@ Component({
     noop() {},
 
     handleShelfLifeUnitChange(event: WechatMiniprogram.PickerChange) {
-      this.setData({ shelfLifeUnitIndex: Number(event.detail.value) }, () => {
+      this.setData({ shelfLifeUnitIndex: Number(event.detail.value), dirty: true }, () => {
         this.updateExpiryPreview()
       })
     },
 
     handleDateChange(event: WechatMiniprogram.PickerChange) {
       const field = event.currentTarget.dataset.field as 'expiryDate' | 'productionDate'
-      this.setData({ [field]: String(event.detail.value) }, () => this.updateExpiryPreview())
+      this.setData({ [field]: String(event.detail.value), dirty: true }, () => this.updateExpiryPreview())
+    },
+
+    /** 草稿编辑模式下宿主用来判断退出要不要二次确认。 */
+    isDirty(): boolean {
+      return this.data.dirty === true
+    },
+
+    /**
+     * 草稿编辑模式回传的字段：与快速录入草稿的字段一一对应，空值统一折算成 null，
+     * 好让宿主直接用 refreshDraftValidation 重算状态。
+     */
+    collectDraftFields(): QuickEntryDraftFields {
+      const mode = this.data.mode
+      const isShelfLife = mode === 'shelf_life'
+      // 选项表已去掉空分类，这里的 value 一定是合法分类。
+      const category = FORM_CATEGORY_OPTIONS[this.data.categoryIndex]?.value as Category | undefined
+      return {
+        name: this.data.name,
+        quantity: toNumberOrNull(this.data.quantity),
+        unit: this.data.unit,
+        category: category || null,
+        storageLocation: this.data.storageLocation,
+        expiryInputMode: mode,
+        productionDate: isShelfLife ? (this.data.productionDate || null) : null,
+        shelfLifeValue: isShelfLife ? toNumberOrNull(this.data.shelfLifeValue) : null,
+        shelfLifeUnit: isShelfLife ? (SHELF_LIFE_OPTIONS[this.data.shelfLifeUnitIndex]?.value ?? null) : null,
+        expiryDate: isShelfLife ? null : (this.data.expiryDate || null),
+        reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
+      }
     },
 
     updateExpiryPreview() {
@@ -341,6 +388,13 @@ Component({
 
     async save() {
       if (this.data.saving) return
+      // 草稿编辑模式：只把表单值交回宿主，落库由快速录入的「加入库存」决定。
+      // 这里不做阻断式校验——草稿状态由 domain 的 refreshDraftValidation 统一重算，
+      // 否则缺日期的草稿会被表单锁在里面出不去。
+      if (this.data.purpose === 'draft') {
+        this.triggerEvent('draftsubmit', this.collectDraftFields())
+        return
+      }
       const validationMessage = this.validateForm()
       if (validationMessage) {
         this.setData({ errorMessage: validationMessage })

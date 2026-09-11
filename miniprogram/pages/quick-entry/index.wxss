@@ -38,6 +38,11 @@
   box-sizing: border-box;
 }
 
+/* 有草稿时底部会出现固定操作条（约 160rpx 高）：必须让它这段高度，否则最后一张卡片被压住一截。 */
+.quick-body--with-footer {
+  padding-bottom: calc(204rpx + env(safe-area-inset-bottom));
+}
+
 .quick-entry__loading {
   padding: 260rpx 0;
   color: #7d8984;
@@ -153,16 +158,30 @@
   background: #dcece3;
 }
 
+.recent-entry-button[disabled] {
+  background: #f0f3f1;
+  color: #aab6b1;
+}
+
+/* 原生 textarea 在 Android 上会把「文字/光标」按 line-height 居中、placeholder 行内居顶，
+   line-height 给到 76rpx 时光标和占位文字就差出十几像素。这里改成与字号相当的行高，
+   整行高度靠上下对称的内边距撑出来，两边行盒一致才对得齐。 */
 .quick-input {
   box-sizing: border-box;
   width: 100%;
   height: 76rpx;
-  padding: 0 6rpx;
+  padding: 20rpx 6rpx;
   border: 0;
   background: transparent;
   color: #173b31;
   font-size: 28rpx;
-  line-height: 76rpx;
+  line-height: 36rpx;
+}
+
+.quick-input-placeholder {
+  color: #a8afac;
+  font-size: 28rpx;
+  line-height: 36rpx;
 }
 
 .quick-input-tools {
@@ -422,6 +441,12 @@
 .draft-card--tone-warn,
 .draft-card--tone-alert {
   border-color: #eadfd2;
+}
+
+/* 整张卡片都是「进编辑」的热区，按下去要有反馈，不然用户不知道能点。 */
+.draft-card--pressed {
+  background: #fbfdfc;
+  transform: scale(0.994);
 }
 
 .draft-card--saved {
@@ -748,6 +773,8 @@
   box-shadow: none;
 }
 
+/* 草稿编辑页：整屏表单，直接复用完整录入的 item-form-sheet。
+   它自己的 save-bar 是 position:fixed，正好充当底部的「完成」主按钮。 */
 .draft-editor {
   position: fixed;
   top: 0;
@@ -757,441 +784,69 @@
   z-index: 60;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-}
-
-.draft-editor__mask {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  background: rgba(19, 36, 29, 0.42);
-  animation: mask-in 200ms ease-out;
-}
-
-.draft-editor__panel {
-  position: relative;
-  display: flex;
-  box-sizing: border-box;
-  height: 82vh;
-  min-height: 0;
-  overflow: hidden;
-  flex-direction: column;
-  border-radius: 32rpx 32rpx 0 0;
   background: #f7faf8;
-  box-shadow: 0 -10rpx 36rpx rgba(30, 51, 43, 0.14);
-  animation: entry-sheet-up 240ms ease;
+  animation: mask-in 160ms ease-out;
 }
 
 .draft-editor__head {
-  position: relative;
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  justify-content: center;
-  padding: 40rpx 32rpx 24rpx;
+  gap: 16rpx;
+  padding: 24rpx 32rpx;
   border-bottom: 2rpx solid #e8ece9;
   background: #ffffff;
 }
 
-.draft-editor__handle {
-  position: absolute;
-  top: 14rpx;
-  left: 50%;
-  width: 64rpx;
-  height: 7rpx;
-  border-radius: 999rpx;
-  background: #d9dfdc;
-  transform: translateX(-50%);
-}
-
 .draft-editor__title {
+  min-width: 0;
+  flex: 1;
   color: #173b31;
   font-size: 30rpx;
   font-weight: 650;
 }
 
+.draft-editor__camera,
 .draft-editor__close {
-  position: absolute;
-  top: 30rpx;
-  right: 28rpx;
   display: flex;
-  width: 56rpx;
-  height: 56rpx;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0 0 4rpx;
-  border-radius: 50%;
-  background: #ecefec;
-  color: #6f7c76;
-  font-size: 38rpx;
-  font-weight: 300;
-  line-height: 1;
-}
-
-.draft-editor__body {
-  width: 100%;
-  min-height: 0;
-  flex: 1;
-}
-
-.draft-editor__form {
-  padding: 24rpx 28rpx 32rpx;
-}
-
-.draft-editor__foot {
-  display: flex;
+  width: 60rpx;
+  height: 60rpx;
   flex-shrink: 0;
-  gap: 16rpx;
-  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
-  border-top: 2rpx solid #e8ece9;
-  background: #ffffff;
-}
-
-.draft-editor__cancel,
-.draft-editor__done {
-  display: flex;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 88rpx;
   align-items: center;
   justify-content: center;
-  margin: 0;
-  padding: 18rpx 16rpx;
-  border: 0;
-  border-radius: 18rpx;
-  font-size: 27rpx;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.draft-editor__cancel {
-  flex: 1;
-  background: #eff2ef;
-  color: #53665e;
-}
-
-.draft-editor__cancel[disabled] {
-  background: #f3f5f3;
-  color: #aab6b1;
-}
-
-.draft-editor__done {
-  flex: 2;
-  background: linear-gradient(115deg, #338b70, #28755e);
-  box-shadow: 0 6rpx 16rpx rgba(40, 117, 94, 0.22);
-  color: #ffffff;
-}
-
-.entry-sheet__button--pressed {
-  opacity: 0.78;
-}
-
-/* 弹窗表单：与 item-form-sheet 的 form-card / form-row 视觉语言对齐 */
-.qe-card {
-  overflow: hidden;
-  padding: 0 26rpx;
-  border: 2rpx solid #e8ece9;
-  border-radius: 28rpx;
-  background: #ffffff;
-  box-shadow: 0 8rpx 30rpx rgba(40, 66, 56, 0.045);
-}
-
-.qe-card--details {
-  margin-top: 24rpx;
-}
-
-.qe-row {
-  position: relative;
-  display: flex;
-  box-sizing: border-box;
-  min-height: 104rpx;
-  align-items: center;
-  gap: 18rpx;
-  border-bottom: 2rpx solid #edf0ee;
-}
-
-.qe-row:last-child {
-  border-bottom: 0;
-}
-
-.qe-row--name {
-  min-height: 136rpx;
-  align-items: flex-start;
-  padding-top: 29rpx;
-}
-
-.qe-row--mode {
-  min-height: 122rpx;
-}
-
-.qe-row__label {
-  width: 178rpx;
-  flex: 0 0 178rpx;
-  color: #344a42;
-  font-size: 27rpx;
-  font-weight: 500;
-  line-height: 1.45;
-}
-
-.required-mark {
-  color: #c45b50;
-  font-size: 22rpx;
-}
-
-.qe-row__content {
-  min-width: 0;
-  flex: 1;
-}
-
-.qe-row__content--stacked {
-  position: relative;
-  padding-bottom: 34rpx;
-}
-
-.qe-input {
-  box-sizing: border-box;
-  width: 100%;
-  height: 100rpx;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #213b32;
-  font-size: 27rpx;
-}
-
-.qe-input--name {
-  height: 58rpx;
-  font-weight: 600;
-}
-
-.qe-input--missing {
-  color: #9b6b2c;
-}
-
-.qe-input--shelf {
-  width: auto;
-  flex: 1;
-}
-
-.qe-count {
-  position: absolute;
-  right: 0;
-  bottom: 12rpx;
-  color: #b0b7b4;
-  font-size: 20rpx;
-  font-variant-numeric: tabular-nums;
-}
-
-.qe-expiry {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12rpx;
-}
-
-.qe-expiry__value {
-  min-width: 0;
-  color: #244138;
-  font-size: 29rpx;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.qe-expiry__badge {
-  flex: 0 0 auto;
-  padding: 6rpx 18rpx;
-  border-radius: 999rpx;
-  background: rgba(50, 115, 91, 0.1);
-  color: #32735b;
-  font-size: 21rpx;
-  font-weight: 600;
-}
-
-.qe-row--expiry-soon .qe-expiry__badge {
-  background: rgba(160, 110, 45, 0.12);
-  color: #a06e2d;
-}
-
-.qe-row--expiry-expired .qe-expiry__value {
-  color: #a4473c;
-}
-
-.qe-row--expiry-expired .qe-expiry__badge {
-  background: rgba(164, 71, 60, 0.1);
-  color: #a4473c;
-}
-
-.qe-row--expiry-empty .qe-expiry__value,
-.qe-row--expiry-empty .qe-expiry__badge {
-  background: transparent;
-  color: #a1aaa5;
-}
-
-.qe-picker {
-  min-width: 0;
-  flex: 1;
-}
-
-.qe-picker-value {
-  display: flex;
-  min-height: 100rpx;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12rpx;
-  color: #213b32;
-  font-size: 27rpx;
-}
-
-.qe-calendar {
-  width: 27rpx;
-  height: 27rpx;
-  color: #668078;
-}
-
-.qe-arrow {
-  width: 22rpx;
-  height: 22rpx;
-  color: #9aa39f;
-}
-
-.qe-arrow::before {
-  top: 5rpx;
-  left: 6rpx;
-  width: 8rpx;
-  height: 8rpx;
-}
-
-.qe-camera {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 64rpx;
-  height: 64rpx;
   margin: 0;
   padding: 0;
   border-radius: 50%;
   background: #eef4f0;
   color: #32735b;
+  line-height: 1;
 }
 
-.qe-camera .line-icon {
+.draft-editor__camera .line-icon {
   width: 30rpx;
   height: 30rpx;
 }
 
-.qe-camera[disabled] {
+.draft-editor__camera[disabled] {
   background: #f0f3f1;
   color: #aab6b1;
 }
 
-.qe-unit {
-  flex: 0 0 112rpx;
+.draft-editor__close {
+  padding: 0 0 4rpx;
+  background: #ecefec;
+  color: #6f7c76;
+  font-size: 38rpx;
+  font-weight: 300;
 }
 
-.qe-unit__value {
-  display: flex;
-  height: 100rpx;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8rpx;
-  color: #53665e;
-  font-size: 26rpx;
-}
-
-.qe-number {
-  display: flex;
-  min-width: 0;
+.draft-editor__body {
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
   flex: 1;
-  align-items: center;
+  padding: 24rpx 32rpx 0;
 }
-
-.qe-number__input {
-  height: 100rpx;
-  min-width: 0;
-  flex: 1;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #213b32;
-  font-size: 27rpx;
-}
-
-.qe-number__suffix {
-  color: #7b8782;
-  font-size: 25rpx;
-}
-
-.mode-switch {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  padding: 6rpx;
-  border-radius: 15rpx;
-  background: #f2f4f2;
-}
-
-.mode-switch__item {
-  min-width: 0;
-  min-height: 72rpx;
-  flex: 1;
-  margin: 0;
-  padding: 0 8rpx;
-  border-radius: 11rpx;
-  background: transparent;
-  color: #7c8984;
-  font-size: 24rpx;
-  font-weight: 500;
-  line-height: 72rpx;
-  white-space: nowrap;
-}
-
-.candidate-list {
-  margin: 16rpx 0;
-  padding: 6rpx;
-  border: 2rpx solid #e6ebe8;
-  border-radius: 16rpx;
-  background: #f8faf8;
-}
-
-.candidate-item {
-  padding: 14rpx 16rpx;
-  border-bottom: 2rpx solid #edf1ee;
-}
-
-.candidate-item:last-child {
-  border-bottom: 0;
-}
-
-.candidate-item__text {
-  display: flex;
-  justify-content: space-between;
-  gap: 16rpx;
-  color: #5e7068;
-  font-size: 23rpx;
-}
-
-.candidate-item__actions {
-  display: flex;
-  gap: 12rpx;
-  margin-top: 12rpx;
-}
-
-.candidate-item__actions button {
-  flex: 1;
-  border-radius: 10rpx;
-  background: #eef6f1;
-  color: #286d53;
-  font-size: 22rpx;
-  line-height: 56rpx;
-}
-
 .manual-button {
   display: block;
   min-height: 84rpx;
@@ -1440,17 +1095,6 @@
   }
 }
 
-@keyframes entry-sheet-up {
-  from {
-    opacity: 0.6;
-    transform: translateY(8%);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes mask-in {
   from {
     opacity: 0;
@@ -1492,25 +1136,9 @@
   }
 }
 
-@media (max-width: 340px) {
-  .qe-row__label {
-    width: 164rpx;
-    flex-basis: 164rpx;
-  }
-
-  .qe-row {
-    gap: 12rpx;
-  }
-
-  .mode-switch__item {
-    font-size: 22rpx;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .draft-card,
-  .draft-editor__panel,
-  .draft-editor__mask,
+  .draft-editor,
   .quick-footer,
   .quick-entry__tip,
   .tool-button--recording,

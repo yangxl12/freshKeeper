@@ -168,12 +168,12 @@
         </view>
       </view>
 
-      <text class="form-hint">保存后可在物品详情中单独开启微信提醒</text>
+      <text wx:if="{{purpose !== 'draft'}}" class="form-hint">保存后可在物品详情中单独开启微信提醒</text>
     </view>
 
     <view class="save-bar">
       <button class="primary-button save-button" disabled="{{saving}}" bindtap="save" hover-class="pressable--pressed">
-        {{saving ? '正在保存…' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存'))}}
+        {{saving ? '正在保存…' : (purpose === 'draft' ? '完成' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存')))}}
       </button>
     </view>
   </block>

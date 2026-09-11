@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  applyFormValuesToDraft,
+  createDraftFromParsed,
   createDraftFromRecent,
   createSaveKey,
+  draftToFormPrefill,
   parseQuickTextLocally,
   refreshDraftValidation,
 } from '../../miniprogram/domain/quick-entry'
@@ -115,5 +118,67 @@ describe('quick entry drafts', () => {
 
     expect(item.name).toBe('面包')
     expect(item.dateCandidates?.[0]).toMatchObject({ date: '2026-09-20', role: 'unknown' })
+  })
+
+  it('fills the shared entry form with the draft values as they are, conflicts included', () => {
+    const draft = createDraftFromRecent(profile)
+    draft.fields.expiryDate = '2026-09-20'
+    draft.fields.productionDate = '2026-09-01'
+    draft.dateConflict = '日期有冲突'
+
+    expect(draftToFormPrefill(draft)).toEqual({
+      name: '鲜牛奶',
+      quantity: 2,
+      unit: '盒',
+      category: 'food',
+      storageLocation: '冰箱',
+      expiryInputMode: 'direct',
+      expiryDate: '2026-09-20',
+      productionDate: '2026-09-01',
+      shelfLifeValue: null,
+      shelfLifeUnit: null,
+      reminderLeadDays: 0,
+    })
+  })
+
+  it('only clears the confirmations the form actually resolved', () => {
+    const draft = createDraftFromRecent({ ...profile, quantity: 0, invalidFields: ['quantity'] })
+    draft.confirmationFields = ['quantity', 'date:0']
+    expect(draft.status).toBe('needs_confirmation')
+
+    // 点「完成」即视为逐项看过：非日期类待确认项结清
+    const resolved = applyFormValuesToDraft(draft, draft.fields)
+    expect(resolved.confirmationFields).toEqual(['date:0'])
+    expect(resolved.status).toBe('needs_confirmation')
+
+    // 日期真被改过之后，日期类歧义也一并结清
+    const completed = applyFormValuesToDraft(draft, { ...draft.fields, expiryDate: '2026-09-25' })
+    expect(completed.confirmationFields).toEqual([])
+    expect(completed.status).toBe('savable')
+  })
+
+  it('carries only the active expiry mode into the draft', () => {
+    const draft = createDraftFromParsed(parseQuickTextLocally('牛奶明天到期', '2026-09-08').items[0], 'text')
+    const switched = applyFormValuesToDraft(draft, {
+      ...draft.fields,
+      expiryInputMode: 'shelf_life',
+      expiryDate: null,
+      productionDate: '2026-09-01',
+      shelfLifeValue: 7,
+      shelfLifeUnit: 'day',
+    })
+    expect(switched.fields.expiryDate).toBeNull()
+    expect(switched.fields.productionDate).toBe('2026-09-01')
+    expect(switched.fields.shelfLifeValue).toBe(7)
+    expect(switched.status).toBe('savable')
+  })
+
+  it('drops the resolved AI hints once the user confirms the whole form', () => {
+    const draft = createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1')
+    draft.fields.expiryDate = '2026-09-20'
+    expect(draft.aiMissingFields).toEqual(['quantity', 'unit'])
+
+    const resolved = applyFormValuesToDraft(refreshDraftValidation(draft), { ...draft.fields })
+    expect(resolved.aiMissingFields).toEqual([])
   })
 })
