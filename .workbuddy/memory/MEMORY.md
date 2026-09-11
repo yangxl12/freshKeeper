@@ -24,7 +24,32 @@
   对比基线用 `git show HEAD:<path>`。
 - `fatal: bad object HEAD`：先 `git ls-remote origin`，远端有就 `git fetch origin` 拉回。
 
-## 云函数部署
+## 用户体系（A 档已落地，见 docs/user-account-plan.md）
+- 第 4 个业务集合 `users`（`_id`=OPENID + 冗余 `ownerId`，权限「无权限」）+ 第 7 个云函数 `userApi`
+  （`index.js`/`error.js`/`validation.js`/`date.js`/`account.js`，`timeout: 60`）。
+- **核心逻辑在注入式 `account.js` 的 `createAccountService({ db, deleteFile })`**，
+  `index.js` 才 require `wx-server-sdk` —— 单测注入假 db，不加载真 SDK（同 `image-cover.js`）。
+- action：`touch`（同日不写库，客户端 + 服务端双层节流）/ `get` / `updateProfile` / `deleteAccount`。
+  注销**顺序不能错**：收集 coverFileId → `deleteFile`（50/批）→ remove 四个集合；
+  20 轮上限，超限抛 `DELETE_INCOMPLETE`，重试天然幂等，不留墓碑。
+- 业务错误码**只在 `error.code`，不在 message**：测试别用 `toThrow('CODE')`，取 `error.code` 断言。
+- 客户端 `services/user-service.ts`：同日节流放在 `touchUserOnceToday()` 里（app.ts 一行调用，
+  测试不用 stub `App()`）；`utils/shanghai-time.ts:shanghaiTodayKey()` 提供上海日期串。
+- 注销入口：我的页第 6 个 entry `data-entry="account"`「账号与数据」→ 两步 `wx.showModal`
+  → `showLoading` → `clearStorageSync()` → 结果 modal → `reLaunch` 首页；
+  结果提示一律用 modal（toast 超 7 汉字截断）。
+- 部署前必须：控制台先建 `users` 集合，再首建部署 `userApi`（timeout 只在首建时读 config）。
+  「用户隐私保护指引」补注销入口说明是审核项，代码代替不了。
+
+## 云函数部署（CLI 可用，路径 D:\微信web开发者工具\cli.bat）
+- **CLI 部署实测不会应用 `config.json` 的 timeout**：2026-09-11 首建 `userApi` 后
+  `cli cloud functions info` 显示 `timeout: 3`、`runtime: Nodejs16.13`（同 settingsApi；
+  inventoryApi / quickEntryApi 的 60 是当初在控制台手动改的）。**建完一定去控制台改超时**。
+- 首建偶发 `FailedOperation.UpdateFunctionCode 当前函数处于 Creating 状态` → 等 45 秒重跑同一条 deploy
+  即可（第二次会走 "exists in the cloud, will update it"）。
+- 常用命令：`cli.bat cloud functions list|info|deploy --env cloud1-d0gkh66ce94b1be08
+  --names <fn> --project D:/myProject/freshKeeper [--remote-npm-install]`。
+  PowerShell 里调用 `& 'D:\微信web开发者工具\cli.bat' ...`，输出 `*>&1 | Out-File` 落盘再 Read。
 - `config.json` 的 `timeout`/`envVariables`/`triggers` **只在函数首次创建时写入云端**，之后 deploy 只更新代码；
   改超时/环境变量只能去云开发控制台（CLI 无该命令）。默认超时 3s，调 LLM 的函数上线先改 60s。
 - 「云函数本地调试」没有网关注入，`cloud.ai()` 必 404（`AI_PARSE_DEGRADED` + `reason:"404"`）；
