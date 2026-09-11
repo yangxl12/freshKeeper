@@ -25,6 +25,14 @@ interface BatchIntent {
 }
 
 const CHUNK_SIZE = 20
+const TRASH_SCOPE_LABEL = '回收站全部'
+
+/** 回收站工具栏文案：搜索词 + 已加载件数；空列表不显示「0 件」，避免看起来像加载失败。 */
+function trashScopeLabel(search: string, count: number): string {
+  const keyword = search.length > 8 ? `${search.slice(0, 8)}…` : search
+  const base = keyword ? `搜索：${keyword}` : TRASH_SCOPE_LABEL
+  return count ? `${base} · ${count} 件` : base
+}
 
 const VIEW_STATUS_TITLE: Record<InventoryViewStatus, string> = {
   active_all: '全部在库批量操作',
@@ -53,6 +61,10 @@ Page({
     operating: false,
     errorMessage: '',
     canComplete: true,
+    /** 回收站来源下沿用入口页当前的关键词，避免「搜了 3 条、批量页却列出全部」。 */
+    trashSearch: '',
+    /** 回收站来源下工具栏的说明文案：搜索词 + 已加载数量；其它来源留空，不参与渲染。 */
+    scopeLabel: '',
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -65,7 +77,17 @@ Page({
     const title = resolveScopeTitle(source, viewStatus)
     const categoryLabel = CATEGORY_OPTIONS.find((option) => option.value === (intent?.category || ''))?.label || '全部种类'
     const statusLabel = INVENTORY_VIEW_STATUS_OPTIONS.find((option) => option.value === viewStatus)?.label || '全部状态'
-    this.setData({ source, title, viewStatus, canComplete, categoryLabel, statusLabel })
+    const trashSearch = source === 'trash' ? intent?.search || '' : ''
+    this.setData({
+      source,
+      title,
+      viewStatus,
+      canComplete,
+      categoryLabel,
+      statusLabel,
+      trashSearch,
+      scopeLabel: source === 'trash' ? trashScopeLabel(trashSearch, 0) : '',
+    })
     wx.setNavigationBarTitle({ title: '批量操作' })
     void this.loadAll({ ...(intent || {}), source, viewStatus })
   },
@@ -77,7 +99,7 @@ Page({
       const items: BatchListItem[] = []
       do {
         const result: InventoryListResult = intent.source === 'trash'
-          ? await listTrash({ cursor })
+          ? await listTrash({ search: intent.search || '', cursor })
           : await listInventory({
               search: intent.search || '',
               category: intent.category || '',
@@ -89,7 +111,12 @@ Page({
           selected: false,
         })))
         cursor = result.nextCursor
-        this.setData({ items: [...items] })
+        // 边加载边更新件数：回收站要清空时用户能看清「全选」到底选中了多少件。
+        if (intent.source === 'trash') {
+          this.setData({ items: [...items], scopeLabel: trashScopeLabel(intent.search || '', items.length) })
+        } else {
+          this.setData({ items: [...items] })
+        }
       } while (cursor)
       this.setData({ loading: false })
     } catch (error) {

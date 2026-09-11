@@ -540,6 +540,40 @@
   line-height: 76rpx;
 }
 
+/* 批量管理的入口，固定在弹窗底部，不跟着列表滚动。 */
+.trash-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding-top: 18rpx;
+  border-top: 2rpx solid #eef3f0;
+}
+
+.trash-foot__hint {
+  min-width: 0;
+  color: #84918b;
+  flex: 1;
+  font-size: 22rpx;
+}
+
+.trash-foot__batch {
+  min-width: 180rpx;
+  min-height: 76rpx;
+  margin: 0;
+  padding: 0 26rpx;
+  border: 2rpx solid #cbd8d2;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #1f5d49;
+  flex: 0 0 auto;
+  font-size: 25rpx;
+  font-weight: 650;
+  line-height: 74rpx;
+}
+
+.trash-foot__batch[disabled] { opacity: 0.42; }
+
 /* 反馈 / 帮助 / 关于 */
 .feedback-input {
   box-sizing: border-box;

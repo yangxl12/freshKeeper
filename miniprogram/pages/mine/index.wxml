@@ -181,6 +181,16 @@
         </block>
         <view wx:else class="trash-tip">回收站是空的</view>
       </scroll-view>
+
+      <view wx:if="{{trashItems.length}}" class="trash-foot">
+        <text class="trash-foot__hint">可多选或全选后一次性彻底删除</text>
+        <button
+          class="trash-foot__batch"
+          disabled="{{trashLoading}}"
+          bindtap="openTrashBatch"
+          hover-class="pressable--pressed"
+        >批量管理</button>
+      </view>
     </view>
   </view>
 

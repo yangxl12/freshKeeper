@@ -121,6 +121,8 @@ Page({
     this.setData({ profile: readProfile() })
     // 资料与设置并发读：资料读失败静默降级，不该拖慢设置。
     void Promise.all([this.loadSettings(), this.loadProfile()])
+    // 去「批量管理」彻底删完再回来时回收站还开着，必须重拉，否则残留已删除的物品。
+    if (this.data.activeModal === 'trash') void this.loadTrash(true)
   },
 
   onUnload() {
@@ -427,6 +429,17 @@ Page({
   loadMoreTrash() {
     if (!this.data.trashNextCursor || this.data.trashLoadingMore) return
     void this.loadTrash(false)
+  },
+
+  /**
+   * 批量管理：跳到批量操作页复用「多选 / 全选 / 分块彻底删除」，不在弹窗里再实现一套选择逻辑。
+   * 当前搜索词一并带过去，否则用户搜完再批量会看到整个回收站，选中范围和预期不符。
+   */
+  openTrashBatch() {
+    if (this.data.trashLoading || !this.data.trashItems.length) return
+    const app = getApp<IAppOption>()
+    app.globalData.pendingBatchIntent = { source: 'trash', search: this.data.trashSearch }
+    wx.navigateTo({ url: '/pages/batch-operation/index?source=trash' })
   },
 
   retryTrash() {
