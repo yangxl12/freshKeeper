@@ -26,10 +26,10 @@ export interface ReminderAuthorization {
 }
 
 const AUTHORIZATION_SUMMARY: Record<ReminderAuthorizationState, string> = {
-  authorized: '通知已开启，每件物品仍需单独授权',
-  'main-switch-off': '微信通知总开关已关闭',
-  'template-rejected': '到期提醒的通知授权已关闭',
-  unrequested: '开启提醒时会逐件申请一次授权',
+  authorized: '已开启，到期前会自动推送',
+  'main-switch-off': '微信通知总开关已关闭，收不到提醒',
+  'template-rejected': '本小程序的订阅消息已关闭，收不到提醒',
+  unrequested: '首次保存物品时会申请一次授权',
 }
 
 /**
@@ -63,7 +63,7 @@ export function resolveReminderAuthorization(
   }
 }
 
-/** 读取微信订阅消息设置并折算成「提醒授权」；「完整录入」与「我的—提醒设置」共用同一份判断。 */
+/** 读取微信订阅消息设置并折算成「提醒授权」；「我的—提醒设置」用它解释「为什么没收到提醒」。 */
 export function readReminderAuthorization(): Promise<ReminderAuthorization> {
   return new Promise((resolve) => {
     wx.getSetting({
@@ -74,18 +74,31 @@ export function readReminderAuthorization(): Promise<ReminderAuthorization> {
   })
 }
 
+/** 模板 ID 还是占位串时视为「未配置」，避免拿着假 ID 去申请授权、只换来一个看不懂的失败提示。 */
+export function isReminderTemplateConfigured(): boolean {
+  return Boolean(REMINDER_TEMPLATE_ID) && !REMINDER_TEMPLATE_ID.startsWith('TODO_')
+}
+
+/** 未配置提示每次启动只弹一次，免得每次保存都糊用户一脸。 */
+let configurationPromptShown = false
+
 /**
  * 向用户申请一次性订阅消息授权，返回是否已同意。
- * 未配置模板 ID 或用户拒绝时给出与详情页一致的提示。
+ *
+ * 微信一次性订阅「一次同意换一条发送额度」，所以这件物品每保存一次就申请一次；
+ * 用户勾过「总是保持以上选择」之后微信不再弹窗，直接返回 accept。
  */
 export function requestReminderAuthorization(): Promise<boolean> {
   return new Promise((resolve) => {
-    if (!REMINDER_TEMPLATE_ID) {
-      wx.showModal({
-        title: '提醒功能尚未配置',
-        content: '请先在运行配置中填写微信一次性订阅消息模板 ID。',
-        showCancel: false,
-      })
+    if (!isReminderTemplateConfigured()) {
+      if (!configurationPromptShown) {
+        configurationPromptShown = true
+        wx.showModal({
+          title: '提醒功能尚未配置',
+          content: '请先在运行配置中填写微信一次性订阅消息模板 ID。',
+          showCancel: false,
+        })
+      }
       resolve(false)
       return
     }
@@ -111,13 +124,13 @@ export function requestReminderAuthorization(): Promise<boolean> {
   })
 }
 
+/**
+ * 预约到期提醒。云端返回 `missed` 表示提醒时刻已过、不会再推——
+ * 那时不会留下任何提醒任务，详情页据「提醒时间」自行展示「已错过」。
+ */
 export function armReminder(itemId: string): Promise<{
-  status: ReminderStatus
+  status: ReminderStatus | 'missed'
   remindDate: string
 }> {
   return callCloud('reminderApi', { action: 'arm', itemId })
-}
-
-export function cancelReminder(itemId: string): Promise<{ status: ReminderStatus }> {
-  return callCloud('reminderApi', { action: 'cancel', itemId })
 }

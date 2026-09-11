@@ -2,18 +2,25 @@
 
 const crypto = require('node:crypto')
 const cloud = require('wx-server-sdk')
-const {
-  canArmReminder,
-  canCancelReminder,
-  isTerminalReminderStatus,
-} = require('./rules')
+const { isTerminalReminderStatus } = require('./rules')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
 const db = cloud.database()
 const ITEMS = 'inventory_items'
 const REMINDERS = 'reminder_jobs'
-const DEFAULT_REMINDER_TEMPLATE_ID = 'jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8'
+
+/**
+ * 订阅消息模板 ID。刻意写在代码里而不是读环境变量：
+ * 云函数的 envVariables 只在**首次创建**时写入云端，之后改 config.json 或重新部署都不会更新，
+ * 留着旧环境变量反而会把代码里的新配置盖掉。模板建好后只改这一行 + 重新部署。
+ */
+const REMINDER_TEMPLATE_ID = 'TODO_REPLACE_WITH_REAL_TEMPLATE_ID'
+
+/** 提醒统一在提前 N 天的 09:30（Asia/Shanghai）推送，与 dispatchReminders 的定时触发器一致。 */
+const REMIND_HOUR = 9
+const REMIND_MINUTE = 30
+
 const MILLIS_PER_DAY = 86_400_000
 
 class AppError extends Error {
@@ -74,15 +81,43 @@ function addDays(value, amount) {
   return fromOrdinal(toOrdinal(value) + amount)
 }
 
-function todayKey() {
+function shanghaiParts(options) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    ...options,
   }).formatToParts(new Date())
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]))
+}
+
+function todayKey() {
+  const values = shanghaiParts({ year: 'numeric', month: '2-digit', day: '2-digit' })
   return `${values.year}-${values.month}-${values.day}`
+}
+
+function shanghaiHourMinute() {
+  const values = shanghaiParts({ hour: '2-digit', minute: '2-digit', hour12: false })
+  return { hour: Number(values.hour), minute: Number(values.minute) }
+}
+
+/** 提前天数缺失或非法时回落到 1 天，与录入表单的产品默认值一致。 */
+function normalizedLeadDays(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 30 ? value : 1
+}
+
+function reminderDateOf(item) {
+  return addDays(item.expiryDate, -normalizedLeadDays(item.reminderLeadDays))
+}
+
+/**
+ * 提醒时刻（提醒日 09:30）是否已经过去。
+ * 派发侧只认当天，所以错过的提醒不会补发，这里也就没必要落任何任务。
+ */
+function isReminderMissed(remindDate) {
+  const today = todayKey()
+  if (remindDate < today) return true
+  if (remindDate > today) return false
+  const { hour, minute } = shanghaiHourMinute()
+  return hour > REMIND_HOUR || (hour === REMIND_HOUR && minute >= REMIND_MINUTE)
 }
 
 async function findOwned(collectionName, ownerId, id) {
@@ -94,30 +129,37 @@ async function findOwned(collectionName, ownerId, id) {
   return result.data[0] || null
 }
 
+/**
+ * 预约这件物品的到期提醒。
+ *
+ * 幂等：已预约 → 原样返回；已发送/发送中/结果未确定 → 原样返回（终态不重开，避免重复推送）；
+ * 其余情况（无任务、失败、已取消）→ 重新写入 scheduled。
+ * 提醒时刻已过 → 返回 `missed` 且不落任何任务。
+ */
 async function arm(ownerId, event) {
   const itemId = validateItemId(event.itemId)
-  const templateId = process.env.REMINDER_TEMPLATE_ID || DEFAULT_REMINDER_TEMPLATE_ID
-  assert(templateId, 'REMINDER_NOT_CONFIGURED', '提醒功能尚未完成配置')
+  assert(
+    REMINDER_TEMPLATE_ID && !REMINDER_TEMPLATE_ID.startsWith('TODO_'),
+    'REMINDER_NOT_CONFIGURED',
+    '提醒模板尚未配置，请先填写订阅消息模板 ID',
+  )
 
   const item = await findOwned(ITEMS, ownerId, itemId)
   assert(item, 'NOT_FOUND', '物品不存在或已被删除')
   assert(item.inventoryStatus === 'active', 'INVALID_STATE', '已处理物品不能开启提醒')
-  assert(toOrdinal(item.expiryDate) >= toOrdinal(todayKey()), 'EXPIRED_ITEM', '已过期物品不能开启提醒')
 
-  const remindDate = addDays(item.expiryDate, -item.reminderLeadDays)
+  const remindDate = reminderDateOf(item)
+  if (isReminderMissed(remindDate)) return { status: 'missed', remindDate }
+
   const current = await findOwned(REMINDERS, ownerId, itemId)
-  if (current?.status === 'scheduled') {
-    return { status: current.status, remindDate: current.remindDate }
+  if (current?.status === 'scheduled' || isTerminalReminderStatus(current?.status)) {
+    return { status: current.status, remindDate: current.remindDate || remindDate }
   }
-  if (isTerminalReminderStatus(current?.status)) {
-    throw new AppError('REMINDER_TERMINAL', '本次提醒已经处理，不能重复开启')
-  }
-  assert(canArmReminder(current?.status), 'INVALID_STATE', '当前提醒状态不能重新开启')
 
   const data = {
     itemId,
     ownerId,
-    templateId,
+    templateId: REMINDER_TEMPLATE_ID,
     remindDate,
     status: 'scheduled',
     acceptedAt: db.serverDate(),
@@ -135,21 +177,7 @@ async function arm(ownerId, event) {
   return { status: 'scheduled', remindDate }
 }
 
-async function cancel(ownerId, event) {
-  const itemId = validateItemId(event.itemId)
-  const current = await findOwned(REMINDERS, ownerId, itemId)
-  if (!current) return { status: 'cancelled' }
-  if (!canCancelReminder(current.status)) return { status: current.status }
-  await db.collection(REMINDERS).where({ _id: itemId, ownerId }).update({
-    data: {
-      status: 'cancelled',
-      updatedAt: db.serverDate(),
-    },
-  })
-  return { status: 'cancelled' }
-}
-
-const handlers = { arm, cancel }
+const handlers = { arm }
 
 exports.main = async (event = {}) => {
   const requestId = crypto.randomUUID()

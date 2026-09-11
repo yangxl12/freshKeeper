@@ -420,6 +420,30 @@
   font-weight: 600;
 }
 
+/* 微信通知行：状态由微信系统下发，小程序侧只读，右边只给一个跳转入口。 */
+.setting-row--static {
+  align-items: flex-start;
+}
+
+.setting-row__main {
+  min-width: 0;
+  flex: 1;
+}
+
+.setting-row__action {
+  flex: 0 0 auto;
+  margin: 0 0 0 16rpx;
+  padding: 0 24rpx;
+  height: 64rpx;
+  border: 2rpx solid #cddcd4;
+  border-radius: 16rpx;
+  background: #ffffff;
+  color: #1f5d49;
+  font-size: 23rpx;
+  font-weight: 600;
+  line-height: 60rpx;
+}
+
 .setting-row__chevron { margin-left: 10rpx; color: #93a099; }
 
 .compact-error {

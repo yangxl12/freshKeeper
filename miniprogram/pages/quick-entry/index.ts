@@ -22,6 +22,7 @@ import {
   removeMedia,
 } from '../../services/quick-entry-service'
 import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
+import { resolveReminderTime } from '../../domain/reminder-time'
 import { getSettings } from '../../services/settings-service'
 import type { QuickEntryCapabilities, QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
@@ -957,16 +958,14 @@ Page({
     const updated = [...savingDrafts]
     let succeeded = 0
     let failed = 0
-    /** 保存成功且勾了「入库后开启到期提醒」的条目，保存完统一逐条申请授权。 */
+    /** 保存成功的条目统一补一次到期提醒预约（提醒时间是算出来的，没有开关）。 */
     const reminderTargets: Array<{ itemId: string; draft: QuickEntryDraft }> = []
     results.forEach((result, resultIndex) => {
       const target = targets[resultIndex]
       if (result.status === 'fulfilled') {
         updated[target.index] = { ...target.draft, status: 'saved', selected: false, evidence: undefined }
         succeeded += 1
-        if (target.draft.fields.remindAfterSave) {
-          reminderTargets.push({ itemId: result.value.itemId, draft: target.draft })
-        }
+        reminderTargets.push({ itemId: result.value.itemId, draft: target.draft })
       } else {
         updated[target.index] = { ...target.draft, status: 'failed', selected: false, errorMessage: getErrorMessage(result.reason) }
         failed += 1
@@ -993,18 +992,20 @@ Page({
   },
 
   /**
-   * 保存成功后逐条开启到期提醒。
+   * 保存成功后逐条预约到期提醒。
    * 微信一次性订阅「一次授权换一条发送额度」，所以只能一件一件申请，攒不成一次批量开通。
    * 用户拒绝（或授权调用失败）就停下、不再连弹；单条挂失败也只跳过这一条——
    * 物品已经入库，提醒始终是附加动作，不影响保存结果。
    */
   async armSavedReminders(targets: Array<{ itemId: string; draft: QuickEntryDraft }>) {
-    const today = this.data.today
     for (const { itemId, draft } of targets) {
       if (!itemId) continue
-      const expiryDate = getExpirySummary(draft)
-      // 已过期或日期还没落定的不申请授权，与「完整录入」保持同一判据。
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) || expiryDate < today) continue
+      // 提醒日已经过去（含日期还没落定的草稿）不申请授权，与「完整录入」同一判据。
+      const reminder = resolveReminderTime({
+        expiryDate: getExpirySummary(draft),
+        reminderLeadDays: draft.fields.reminderLeadDays ?? 1,
+      })
+      if (!reminder || reminder.date < this.data.today) continue
       let accepted = false
       try {
         accepted = await requestReminderAuthorization()

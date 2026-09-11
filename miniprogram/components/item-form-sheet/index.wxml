@@ -107,6 +107,12 @@
           </view>
         </view>
 
+        <view class="form-row form-row--preview">
+          <text class="form-row__label">提醒时间</text>
+          <text class="reminder-at {{reminderAtText ? 'reminder-at--ready' : ''}} {{reminderMissed ? 'reminder-at--missed' : ''}}">{{reminderAtText || '填写到期日期后自动计算'}}</text>
+        </view>
+        <text wx:if="{{reminderAtText && reminderMissed}}" class="form-hint form-hint--warn">提醒时刻已过，这件物品不会再收到推送</text>
+
         <view class="form-row">
           <text class="form-row__label">数量 <text class="required-mark">*</text></text>
           <input
@@ -152,26 +158,6 @@
           />
         </view>
       </view>
-
-      <!-- 一次性订阅只能一件一件申请，所以「开启提醒」的意向放在这里、授权留到保存成功那一刻。 -->
-      <view
-        wx:if="{{!itemId && !restore}}"
-        class="remind-option {{remindAfterSave ? 'remind-option--on' : ''}}"
-        bindtap="toggleRemindAfterSave"
-        role="checkbox"
-        aria-checked="{{remindAfterSave}}"
-        aria-label="入库后开启到期提醒"
-      >
-        <view class="remind-option__box">
-          <view wx:if="{{remindAfterSave}}" class="remind-option__tick" aria-hidden="true"></view>
-        </view>
-        <view class="remind-option__copy">
-          <text class="remind-option__title">入库后开启到期提醒</text>
-          <text class="remind-option__desc">到期前 {{reminderLeadDays}} 天推送一条微信提醒，需要单独授权一次</text>
-        </view>
-      </view>
-
-      <text wx:if="{{purpose !== 'draft' && itemId}}" class="form-hint">到期提醒可在物品详情里开启或取消</text>
     </view>
 
     <view wx:if="{{purpose !== 'draft'}}" class="save-bar">

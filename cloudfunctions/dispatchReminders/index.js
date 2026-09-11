@@ -13,7 +13,6 @@ const REMINDERS = 'reminder_jobs'
 const BATCH_SIZE = 50
 const MAX_BATCHES = 20
 const MILLIS_PER_DAY = 86_400_000
-
 class AppError extends Error {
   constructor(code, message) {
     super(message)
@@ -56,6 +55,11 @@ function addDays(value, amount) {
   return ordinal === null ? null : fromOrdinal(ordinal + amount)
 }
 
+/** 提前天数缺失或非法时回落到 1 天，与录入表单、reminderApi 保持同一归一化口径。 */
+function normalizedLeadDays(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 30 ? value : 1
+}
+
 function todayKey() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai',
@@ -69,12 +73,6 @@ function todayKey() {
 
 function loadConfig() {
   const config = {
-    itemField: process.env.REMINDER_ITEM_FIELD || 'thing7',
-    dateField: process.env.REMINDER_DATE_FIELD || 'time2',
-    remainingDaysField: process.env.REMINDER_REMAINING_DAYS_FIELD || 'number5',
-    quantityField: process.env.REMINDER_QUANTITY_FIELD || 'number4',
-    noteField:
-      process.env.REMINDER_NOTE_FIELD || process.env.REMINDER_STATUS_FIELD || 'thing3',
     miniprogramState: process.env.MINIPROGRAM_STATE || 'developer',
   }
   assert(
@@ -111,7 +109,7 @@ async function updateJob(job, status, data = {}) {
     })
 }
 
-async function cancelInvalidJob(job, code) {
+async function cancelJob(job, code, reason) {
   await db
     .collection(REMINDERS)
     .where({ _id: job._id, ownerId: job.ownerId, status: 'scheduled' })
@@ -119,7 +117,7 @@ async function cancelInvalidJob(job, code) {
       data: {
         status: 'cancelled',
         failureCode: code,
-        failureReason: '物品状态或提醒日期已变化',
+        failureReason: reason,
         updatedAt: db.serverDate(),
       },
     })
@@ -131,9 +129,16 @@ function isUncertainError(error) {
 }
 
 async function processJob(job, today, config) {
+  // 提醒只认当天 09:30 那一刻：过了就是「已错过」，不补发，否则用户会在几天后
+  // 突然收到一串「还有 -3 天到期」的骚扰消息。
+  if (job.remindDate !== today) {
+    await cancelJob(job, 'REMINDER_MISSED', '提醒时间已过，不再补发')
+    return 'cancelled'
+  }
+
   const item = await findOwnedItem(job.ownerId, job.itemId)
   const expectedRemindDate = item
-    ? addDays(item.expiryDate, -item.reminderLeadDays)
+    ? addDays(item.expiryDate, -normalizedLeadDays(item.reminderLeadDays))
     : null
   const expiryOrdinal = item ? toOrdinal(item.expiryDate) : null
   const todayOrdinal = toOrdinal(today)
@@ -144,7 +149,7 @@ async function processJob(job, today, config) {
     expiryOrdinal === null ||
     expiryOrdinal < todayOrdinal
   ) {
-    await cancelInvalidJob(job, 'ITEM_NOT_ELIGIBLE')
+    await cancelJob(job, 'ITEM_NOT_ELIGIBLE', '物品状态或提醒日期已变化')
     return 'cancelled'
   }
 
@@ -167,7 +172,7 @@ async function processJob(job, today, config) {
   const sendItem = await findOwnedItem(job.ownerId, job.itemId)
   const sendExpiryOrdinal = sendItem ? toOrdinal(sendItem.expiryDate) : null
   const sendRemindDate = sendItem
-    ? addDays(sendItem.expiryDate, -sendItem.reminderLeadDays)
+    ? addDays(sendItem.expiryDate, -normalizedLeadDays(sendItem.reminderLeadDays))
     : null
   if (
     !sendItem ||
@@ -193,7 +198,6 @@ async function processJob(job, today, config) {
       },
     })
 
-  const daysLeft = sendExpiryOrdinal - todayOrdinal
   try {
     await cloud.openapi.subscribeMessage.send({
       touser: job.ownerId,
@@ -201,7 +205,7 @@ async function processJob(job, today, config) {
       page: `pages/item-detail/index?id=${encodeURIComponent(job.itemId)}&source=subscribe`,
       miniprogramState: config.miniprogramState,
       lang: 'zh_CN',
-      data: buildReminderTemplateData(sendItem, daysLeft, config),
+      data: buildReminderTemplateData(sendItem),
     })
     await updateJob(job, 'sent', {
       sentAt: db.serverDate(),

@@ -1,30 +1,19 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * 锁死物品详情页的「到期提醒」状态机。
+ * 锁死物品详情页的「提醒时间」展示。
  *
- * 微信一次性订阅的事实：一次授权换一条额度，发出去就结束。所以终态
- * （sending / sent / unknown）必须没有任何可点按钮，也不能出现「还能再开一次」的暗示；
- * 能重新开启的只有 failed / cancelled / 没有任务，与云端 reminderApi/rules.js 一致。
+ * 提醒已经全部改走订阅消息，详情页不再有任何开关或按钮：
+ * 时间由「到期日期 - 提前天数（当天 09:30）」算出来，状态只读。
  */
 
-const { getItemMock, armReminderMock, cancelReminderMock, requestAuthorizationMock } = vi.hoisted(() => ({
-  getItemMock: vi.fn(),
-  armReminderMock: vi.fn(),
-  cancelReminderMock: vi.fn(),
-  requestAuthorizationMock: vi.fn(),
-}))
+const { getItemMock } = vi.hoisted(() => ({ getItemMock: vi.fn() }))
 
 vi.mock('../../miniprogram/services/inventory-service', () => ({
   completeItem: vi.fn(),
   deleteItem: vi.fn(),
   getItem: getItemMock,
   permanentlyDeleteItem: vi.fn(),
-}))
-vi.mock('../../miniprogram/services/reminder-service', () => ({
-  armReminder: armReminderMock,
-  cancelReminder: cancelReminderMock,
-  requestReminderAuthorization: requestAuthorizationMock,
 }))
 vi.mock('../../miniprogram/utils/analytics', () => ({ track: vi.fn() }))
 
@@ -51,9 +40,6 @@ beforeEach(() => {
     setNavigationBarTitle: vi.fn(),
     navigateBack: vi.fn(),
   } as never
-  requestAuthorizationMock.mockResolvedValue(true)
-  armReminderMock.mockResolvedValue({ status: 'scheduled', remindDate: '2026-09-27' })
-  cancelReminderMock.mockResolvedValue({ status: 'cancelled' })
 })
 
 function instance() {
@@ -66,7 +52,7 @@ function instance() {
   return page
 }
 
-/** 到期 2026-09-30、提前 3 天 → 提醒日 2026-09-27。 */
+/** 到期 2099-09-30、提前 3 天 → 提醒时间 2099-09-27 09:30。 */
 function itemWith(overrides: Record<string, unknown> = {}) {
   return {
     _id: 'item-1',
@@ -79,7 +65,7 @@ function itemWith(overrides: Record<string, unknown> = {}) {
     productionDate: null,
     shelfLifeValue: null,
     shelfLifeUnit: null,
-    expiryDate: '2026-09-30',
+    expiryDate: '2099-09-30',
     reminderLeadDays: 3,
     inventoryStatus: 'active',
     version: 1,
@@ -101,102 +87,59 @@ async function loadWith(overrides: Record<string, unknown> = {}) {
   return page
 }
 
-describe('物品详情 · 到期提醒状态机', () => {
-  it('没有提醒任务时可以开启，说明里带上真实推送日期', async () => {
+describe('物品详情 · 提醒时间', () => {
+  it('把到期日与提前天数折算成当天 09:30', async () => {
     const page = await loadWith({ reminderStatus: null })
-    expect(page.data.item.reminderStateText).toBe('未开启')
-    expect(page.data.item.reminderSendDateText).toBe('9 月 27 日')
-    expect(page.data.item.reminderCopy).toContain('9 月 27 日')
-    expect(page.data.item.reminderArmText).toBe('开启到期提醒')
-    expect(page.data.item.canArmReminder).toBe(true)
-    expect(page.data.item.canCancelReminder).toBe(false)
+    expect(page.data.item.reminderAtText).toBe('2099年9月27日 09:30')
+    expect(page.data.item.reminderAtNote).toBe('到点自动推送')
   })
 
-  it('已预约时只能取消，状态位直接显示发送日期', async () => {
-    const page = await loadWith({ reminderStatus: 'scheduled' })
-    expect(page.data.item.reminderStateText).toBe('已预约 · 9 月 27 日')
-    expect(page.data.item.canCancelReminder).toBe(true)
-    expect(page.data.item.canArmReminder).toBe(false)
-  })
-
-  it.each([
-    ['sending', '正在发送'],
-    ['sent', '已发送'],
-    ['unknown', '结果未确定'],
-  ])('终态 %s 不给任何按钮，也不承诺还能再开', async (status, stateText) => {
-    const page = await loadWith({ reminderStatus: status })
-    expect(page.data.item.reminderStateText).toBe(stateText)
-    expect(page.data.item.canArmReminder).toBe(false)
-    expect(page.data.item.canCancelReminder).toBe(false)
-    expect(page.data.item.reminderCopy).not.toContain('可以重新开启')
-  })
-
-  it.each([
-    ['failed', '发送失败'],
-    ['cancelled', '已取消'],
-  ])('可恢复状态 %s 允许重新开启', async (status, stateText) => {
-    const page = await loadWith({ reminderStatus: status })
-    expect(page.data.item.reminderStateText).toBe(stateText)
-    expect(page.data.item.canArmReminder).toBe(true)
-    expect(page.data.item.reminderArmText).toBe('重新开启提醒')
-  })
-
-  it('已过期的物品不给开启入口，且明说不再提醒', async () => {
-    const page = await loadWith({ expiryStatus: 'expired', reminderStatus: null })
-    expect(page.data.item.reminderStateText).toBe('已过期')
-    expect(page.data.item.reminderCopy).toContain('不再发送提醒')
-    expect(page.data.item.canArmReminder).toBe(false)
-  })
-
-  it('已用完 / 回收站里的物品不能开启提醒', async () => {
-    const page = await loadWith({ inventoryStatus: 'used_up', reminderStatus: null })
-    expect(page.data.item.canArmReminder).toBe(false)
-  })
-
-  it('提前 0 天时提醒日就是到期日', async () => {
+  it('提前 0 天时提醒时间就是到期日当天 09:30', async () => {
     const page = await loadWith({ reminderLeadDays: 0, reminderStatus: null })
-    expect(page.data.item.reminderSendDateText).toBe('9 月 30 日')
+    expect(page.data.item.reminderAtText).toBe('2099年9月30日 09:30')
   })
 
-  it('开启提醒会先申请授权再挂任务，并刷新详情', async () => {
-    const page = await loadWith({ reminderStatus: null })
-    getItemMock.mockResolvedValue(itemWith({ reminderStatus: 'scheduled' }))
-
-    await page.requestReminder()
-
-    expect(requestAuthorizationMock).toHaveBeenCalledTimes(1)
-    expect(armReminderMock).toHaveBeenCalledWith('item-1')
-    expect(page.data.item.reminderStateText).toBe('已预约 · 9 月 27 日')
-  })
-
-  it('用户拒绝授权就不挂任务', async () => {
-    const page = await loadWith({ reminderStatus: null })
-    requestAuthorizationMock.mockResolvedValueOnce(false)
-
-    await page.requestReminder()
-
-    expect(armReminderMock).not.toHaveBeenCalled()
-  })
-
-  it('终态下即便被误触也不会发出请求', async () => {
+  it('已经推送过的只标注状态，不再给任何操作暗示', async () => {
     const page = await loadWith({ reminderStatus: 'sent' })
-
-    await page.requestReminder()
-    await page.cancelReminder()
-
-    expect(requestAuthorizationMock).not.toHaveBeenCalled()
-    expect(armReminderMock).not.toHaveBeenCalled()
-    expect(cancelReminderMock).not.toHaveBeenCalled()
+    expect(page.data.item.reminderAtText).toBe('2099年9月27日 09:30')
+    expect(page.data.item.reminderAtNote).toBe('已推送')
   })
 
-  it('取消提醒只在已预约时可用', async () => {
-    const page = await loadWith({ reminderStatus: 'scheduled' })
-    getItemMock.mockResolvedValue(itemWith({ reminderStatus: 'cancelled' }))
+  it.each([
+    ['sending', '推送中'],
+    ['unknown', '结果未确定'],
+  ])('推送中/结果未确定（%s）如实标注', async (status, note) => {
+    const page = await loadWith({ reminderStatus: status })
+    expect(page.data.item.reminderAtNote).toBe(note)
+  })
 
-    await page.cancelReminder()
+  it('提醒时刻已过的标记为已错过', async () => {
+    // 到期 2020-01-01、提前 3 天 → 2019-12-29 09:30，早就过去了。
+    const page = await loadWith({ expiryDate: '2020-01-01', reminderStatus: null })
+    expect(page.data.item.reminderAtText).toBe('2019年12月29日 09:30')
+    expect(page.data.item.reminderAtNote).toBe('已错过')
+  })
 
-    expect(cancelReminderMock).toHaveBeenCalledWith('item-1')
-    expect(page.data.item.reminderStateText).toBe('已取消')
-    expect(page.data.item.canArmReminder).toBe(true)
+  it('非在库物品直接标为已停止推送', async () => {
+    const page = await loadWith({ inventoryStatus: 'used_up', reminderStatus: null })
+    expect(page.data.item.reminderAtNote).toBe('已停止')
+  })
+
+  it('到期日期非法时不编造时间', async () => {
+    const page = await loadWith({ expiryDate: 'not-a-date', reminderStatus: null })
+    expect(page.data.item.reminderAtText).toBe('')
+    expect(page.data.item.reminderAtNote).toBe('')
+  })
+
+  it('不再保留任何开关、按钮或提醒弹窗', () => {
+    expect(detailPage.data.reminderSheetVisible).toBeUndefined()
+    for (const method of [
+      'openReminder',
+      'closeReminder',
+      'requestReminder',
+      'cancelReminder',
+    ]) {
+      expect(detailPage[method]).toBeUndefined()
+    }
   })
 })

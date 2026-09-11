@@ -63,8 +63,11 @@
           <text class="info-row__value">{{item.inventoryStatusLabel}}</text>
         </view>
         <view class="info-row">
-          <text class="info-row__label">到期提醒</text>
-          <text class="info-row__value">{{item.reminderStateText}} · 到期前 {{item.reminderLeadDays}} 天</text>
+          <text class="info-row__label">提醒时间</text>
+          <view class="info-row__tail">
+            <text class="info-row__value">{{item.reminderAtText || '—'}}</text>
+            <text wx:if="{{item.reminderAtNote}}" class="info-row__note">{{item.reminderAtNote}}</text>
+          </view>
         </view>
       </view>
     </view>
@@ -90,9 +93,6 @@
         <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="confirmDelete" hover-class="action-bar__button--pressed">
           <text class="action-bar__text action-bar__text--danger">删除</text>
         </button>
-        <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="openReminder" hover-class="action-bar__button--pressed">
-          <text class="action-bar__text">提醒</text>
-        </button>
       </block>
       <block wx:else>
         <button class="action-bar__button" disabled="{{actionLoading}}" bindtap="restoreItem" hover-class="action-bar__button--pressed">
@@ -102,31 +102,6 @@
           <text class="action-bar__text action-bar__text--danger">彻底删除</text>
         </button>
       </block>
-    </view>
-
-    <view wx:if="{{reminderSheetVisible}}" class="sheet-mask" bindtap="closeReminder" catchtouchmove="noop">
-      <view class="sheet" catchtap="noop" role="dialog" aria-modal="true" aria-label="到期提醒">
-        <text class="sheet__title">到期提醒 · {{item.reminderStateText}}</text>
-        <text class="sheet__subtitle">到期前 {{item.reminderLeadDays}} 天推送一条微信消息</text>
-        <text class="sheet__copy">{{item.reminderCopy}}</text>
-        <view wx:if="{{item.canCancelReminder || item.canArmReminder}}" class="sheet__actions">
-          <button
-            wx:if="{{item.canCancelReminder}}"
-            class="secondary-button sheet__button"
-            disabled="{{actionLoading}}"
-            bindtap="cancelReminder"
-            hover-class="pressable--pressed"
-          >取消提醒</button>
-          <button
-            wx:if="{{item.canArmReminder}}"
-            class="primary-button sheet__button"
-            disabled="{{actionLoading}}"
-            bindtap="requestReminder"
-            hover-class="pressable--pressed"
-          >{{item.reminderArmText}}</button>
-        </view>
-        <button class="sheet__close" bindtap="closeReminder" hover-class="pressable--pressed">关闭</button>
-      </view>
     </view>
   </block>
 </view>

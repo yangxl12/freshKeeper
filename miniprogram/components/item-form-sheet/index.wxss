@@ -288,90 +288,22 @@ button {
   font-size: 25rpx;
 }
 
-/* 「保存后开启到期提醒」勾选：纯本地意向，不是微信授权状态的镜像。 */
-.remind-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 18rpx;
-  margin-top: 22rpx;
-  padding: 26rpx 26rpx;
-  border: 2rpx solid #e3e9e5;
-  border-radius: 20rpx;
-  background: #ffffff;
-  transition: border-color 180ms ease, background-color 180ms ease;
-}
-
-.remind-option--on {
-  border-color: #bcd8cb;
-  background: #f2f8f4;
-}
-
-.remind-option__box {
-  position: relative;
-  box-sizing: border-box;
-  width: 40rpx;
-  height: 40rpx;
-  flex: 0 0 40rpx;
-  margin-top: 4rpx;
-  border: 2rpx solid #c3ccc7;
-  border-radius: 10rpx;
-  background: #ffffff;
-  transition: border-color 180ms ease, background-color 180ms ease;
-}
-
-.remind-option--on .remind-option__box {
-  border-color: #24684f;
-  background: #24684f;
-}
-
-.remind-option__tick {
-  position: absolute;
-  top: 9rpx;
-  left: 10rpx;
-  box-sizing: border-box;
-  width: 18rpx;
-  height: 10rpx;
-  border-bottom: 3rpx solid #ffffff;
-  border-left: 3rpx solid #ffffff;
-  transform: rotate(-45deg);
-}
-
-.remind-option__copy {
+/* 「提醒时间」只读行：由到期日与提前天数算出来，用户改不了。 */
+.reminder-at {
   min-width: 0;
   flex: 1;
+  color: #a6aeaa;
+  font-size: 26rpx;
 }
 
-.remind-option__title {
-  display: block;
-  color: #213b32;
-  font-size: 27rpx;
-  font-weight: 500;
+.reminder-at--ready {
+  color: #32735b;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
 
-.remind-option__desc {
-  display: block;
-  margin-top: 8rpx;
-  color: #8a948f;
-  font-size: 21rpx;
-  line-height: 1.5;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .remind-option__tick {
-    animation: remind-tick-in 200ms ease-out;
-  }
-}
-
-@keyframes remind-tick-in {
-  from {
-    opacity: 0;
-    transform: rotate(-45deg) scale(0.35);
-  }
-
-  to {
-    opacity: 1;
-    transform: rotate(-45deg) scale(1);
-  }
+.reminder-at--missed {
+  color: #b0762c;
 }
 
 /* 数量行：主输入占满剩余空间，单位小输入框固定宽度贴右。 */
@@ -400,6 +332,11 @@ button {
   color: #98a09d;
   font-size: 21rpx;
   line-height: 1.55;
+}
+
+.form-hint--warn {
+  padding-top: 10rpx;
+  color: #b0762c;
 }
 
 .save-bar {

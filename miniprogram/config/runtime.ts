@@ -4,8 +4,15 @@
  */
 export const CLOUD_ENV_ID = 'cloud1-d0gkh66ce94b1be08'
 
-/** 一次性订阅消息模板 ID，需与云函数环境变量保持一致。 */
-export const REMINDER_TEMPLATE_ID = 'jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8'
+/**
+ * 到期提醒的订阅消息模板 ID。
+ *
+ * 模板「物品保质期到期提醒」需在微信公众平台 → 功能 → 订阅消息 里创建
+ * （或从模板库选用），字段依次为：物品名称 / 到期日期 / 物品类型 / 存放位置 / 数量。
+ * 建好后把下面的占位串换掉，并同步 `cloudfunctions/dispatchReminders/template.js`
+ * 里的 TEMPLATE_FIELDS 与 `cloudfunctions/reminderApi/index.js` 里的 REMINDER_TEMPLATE_ID。
+ */
+export const REMINDER_TEMPLATE_ID = 'TODO_REPLACE_WITH_REAL_TEMPLATE_ID'
 
 /**
  * 快速录入能力开关。

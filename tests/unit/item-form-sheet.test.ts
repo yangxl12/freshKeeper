@@ -141,26 +141,63 @@ describe('item-form-sheet 到期计算方式切换', () => {
 })
 
 /**
- * 提醒相关的收口约定（改坏了会退回「四个概念八个入口」的老账）：
- * 表单里只剩「到期前 N 天」+「保存后开启提醒」，既不碰账号默认值，也不碰微信授权状态。
+ * 提醒相关的收口约定：表单里只有「到期前 N 天」这个输入 + 「提醒时间」只读派生行，
+ * 既不碰账号默认值，也不碰微信授权状态，更没有「要不要开提醒」的勾选。
  */
 describe('item-form-sheet 到期提醒', () => {
-  it('不再提供账号默认天数与授权开关的第二入口', () => {
+  it('不再提供账号默认天数、授权开关与「保存后开启提醒」的第二入口', () => {
     expect(sheetDefinition.methods.saveReminderSettings).toBeUndefined()
     expect(sheetDefinition.methods.handleReminderAuthSwitch).toBeUndefined()
     expect(sheetDefinition.methods.readReminderAuthorization).toBeUndefined()
     expect(sheetDefinition.methods.openNotificationSettings).toBeUndefined()
+    expect(sheetDefinition.methods.toggleRemindAfterSave).toBeUndefined()
     expect(sheetDefinition.data.reminderSettingsVisible).toBeUndefined()
     expect(sheetDefinition.data.subscriptionAuthorized).toBeUndefined()
+    expect(sheetDefinition.data.remindAfterSave).toBeUndefined()
+
+    const formTemplate = readFileSync(resolve(process.cwd(), 'miniprogram/components/item-form-sheet/index.wxml'), 'utf8')
+    expect(formTemplate).not.toContain('remind-option')
+    expect(formTemplate).not.toContain('入库后开启到期提醒')
   })
 
-  it('「保存后开启提醒」默认开启且可来回切换', () => {
+  it('「提醒时间」跟着到期日与提前天数实时联动', () => {
     const sheet = sheetInstance('direct')
-    expect(sheet.data.remindAfterSave).toBe(true)
-    sheet.toggleRemindAfterSave()
-    expect(sheet.data.remindAfterSave).toBe(false)
-    sheet.toggleRemindAfterSave()
-    expect(sheet.data.remindAfterSave).toBe(true)
+    sheet.data.expiryDate = '2099-09-10'
+    sheet.data.reminderLeadDays = '1'
+    sheet.refreshDerived()
+    expect(sheet.data.reminderAtText).toBe('2099年9月9日 09:30')
+    expect(sheet.data.reminderMissed).toBe(false)
+
+    sheet.data.reminderLeadDays = '0'
+    sheet.refreshDerived()
+    expect(sheet.data.reminderAtText).toBe('2099年9月10日 09:30')
+  })
+
+  it('提醒时刻已过时表单里如实标注', () => {
+    const sheet = sheetInstance('direct')
+    sheet.data.expiryDate = '2020-01-05'
+    sheet.data.reminderLeadDays = '1'
+    sheet.refreshDerived()
+    expect(sheet.data.reminderAtText).toBe('2020年1月4日 09:30')
+    expect(sheet.data.reminderMissed).toBe(true)
+  })
+
+  it('到期日还没填时不编造时间', () => {
+    const sheet = sheetInstance('direct')
+    sheet.data.expiryDate = ''
+    sheet.refreshDerived()
+    expect(sheet.data.reminderAtText).toBe('')
+  })
+
+  it('保质期计算模式下用算出来的到期日推算提醒时间', () => {
+    const sheet = sheetInstance('shelf_life')
+    sheet.data.productionDate = '2099-09-01'
+    sheet.data.shelfLifeValue = '7'
+    sheet.data.shelfLifeUnitIndex = 0
+    sheet.data.reminderLeadDays = '2'
+    sheet.refreshDerived()
+    expect(sheet.data.expiryPreview).toBe('2099-09-08')
+    expect(sheet.data.reminderAtText).toBe('2099年9月6日 09:30')
   })
 
   it('新增保存成功后先申请授权再挂提醒，最后才通知宿主', async () => {
@@ -178,23 +215,12 @@ describe('item-form-sheet 到期提醒', () => {
     expect(armOrder).toBeLessThan(savedOrder)
   })
 
-  it('用户取消勾选时不申请授权也不挂提醒', async () => {
-    const sheet = sheetInstance('direct')
-    fillValidNewItem(sheet)
-    sheet.toggleRemindAfterSave()
-
-    await sheet.save()
-
-    expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
-    expect(armReminderMock).not.toHaveBeenCalled()
-    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
-  })
-
-  it('编辑已有物品不顺手挂提醒（交给详情页决定）', async () => {
+  it('编辑一件已预约的物品不再重复申请授权', async () => {
     const sheet = sheetInstance('direct')
     fillValidNewItem(sheet)
     sheet.data.itemId = 'existing-1'
     sheet.data.version = 3
+    sheet.data.reminderStatus = 'scheduled'
 
     await sheet.save()
 
@@ -202,7 +228,38 @@ describe('item-form-sheet 到期提醒', () => {
     expect(armReminderMock).not.toHaveBeenCalled()
   })
 
-  it('到期日已过时直接说明不提醒，不弹授权', async () => {
+  it('编辑一件没有任务或上次失败的物品会补挂提醒', async () => {
+    for (const status of [null, 'failed', 'cancelled']) {
+      vi.clearAllMocks()
+      requestReminderAuthorizationMock.mockResolvedValue(true)
+      saveItemMock.mockResolvedValue({ itemId: 'existing-1', version: 4, expiryDate: '2099-12-31' })
+      const sheet = sheetInstance('direct')
+      fillValidNewItem(sheet)
+      sheet.data.itemId = 'existing-1'
+      sheet.data.version = 3
+      sheet.data.reminderStatus = status
+
+      await sheet.save()
+
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+      expect(armReminderMock).toHaveBeenCalledWith('existing-1')
+    }
+  })
+
+  it('重新入库时会补挂提醒', async () => {
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+    sheet.data.itemId = 'existing-1'
+    sheet.data.restore = true
+    sheet.data.reminderStatus = 'sent'
+
+    await sheet.save()
+
+    expect(restoreItemMock).toHaveBeenCalledTimes(1)
+    expect(armReminderMock).toHaveBeenCalledWith('existing-1')
+  })
+
+  it('提醒时刻已过时既不申请授权也不挂提醒，也完全不打扰用户', async () => {
     const sheet = sheetInstance('direct')
     fillValidNewItem(sheet)
     sheet.data.expiryDate = '2020-01-01'
@@ -211,9 +268,8 @@ describe('item-form-sheet 到期提醒', () => {
 
     expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
     expect(armReminderMock).not.toHaveBeenCalled()
-    expect(globalThis.wx.showToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: '已过期，不提醒' }),
-    )
+    expect(globalThis.wx.showToast).not.toHaveBeenCalled()
+    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
   })
 
   it('挂提醒失败不影响保存成功的结果', async () => {
@@ -225,12 +281,9 @@ describe('item-form-sheet 到期提醒', () => {
 
     expect(sheet.data.errorMessage).toBe('')
     expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
-    expect(globalThis.wx.showToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: '提醒未能开启' }),
-    )
   })
 
-  it('用户拒绝授权时不再叠一层提示，保存照常完成', async () => {
+  it('用户拒绝授权时不挂提醒，保存照常完成', async () => {
     const sheet = sheetInstance('direct')
     fillValidNewItem(sheet)
     requestReminderAuthorizationMock.mockResolvedValueOnce(false)
@@ -242,34 +295,9 @@ describe('item-form-sheet 到期提醒', () => {
     expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
   })
 
-  /**
-   * 快速录入的草稿编辑复用同一张表单，提醒开关必须一路贯通：
-   * 弹窗里看得到 → 切换得了 → 点「完成」把意向交回草稿 → 下次打开还能还原。
-   */
-  describe('草稿编辑模式', () => {
-    it('提醒开关不再被 purpose=draft 挡掉', () => {
-      const formTemplate = readFileSync(resolve(process.cwd(), 'miniprogram/components/item-form-sheet/index.wxml'), 'utf8')
-      expect(formTemplate).toContain('class="remind-option')
-      expect(formTemplate).toContain('wx:if="{{!itemId && !restore}}"')
-    })
-
-    it('切换开关后随「完成」把意向回传给宿主', () => {
-      const sheet = sheetInstance('direct')
-      sheet.data.purpose = 'draft'
-      expect(sheet.data.remindAfterSave).toBe(true)
-
-      sheet.toggleRemindAfterSave()
-
-      expect(sheet.collectDraftFields().remindAfterSave).toBe(false)
-    })
-
-    it('宿主灌入的草稿带回自己保存过的提醒意向', async () => {
-      const sheet = sheetInstance('direct')
-      sheet.data.purpose = 'draft'
-
-      await sheet.loadDefaults({ name: '牛奶', remindAfterSave: false })
-
-      expect(sheet.data.remindAfterSave).toBe(false)
-    })
+  it('草稿回传字段里不再有提醒意向', () => {
+    const sheet = sheetInstance('direct')
+    sheet.data.purpose = 'draft'
+    expect(sheet.collectDraftFields()).not.toHaveProperty('remindAfterSave')
   })
 })

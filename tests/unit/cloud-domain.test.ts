@@ -16,8 +16,6 @@ const validation = require('../../cloudfunctions/inventoryApi/validation') as {
   validateBatchItems(value: unknown): Array<{ itemId: string; version: number }>
 }
 const reminderRules = require('../../cloudfunctions/reminderApi/rules') as {
-  canArmReminder(status?: string): boolean
-  canCancelReminder(status?: string): boolean
   isTerminalReminderStatus(status?: string): boolean
 }
 const inventoryRules = require('../../cloudfunctions/inventoryApi/rules') as {
@@ -28,11 +26,13 @@ const inventoryRules = require('../../cloudfunctions/inventoryApi/rules') as {
   summarizeOverviewRows(rows: Array<{ _id: string; total: number }>): Record<string, number>
 }
 const reminderTemplate = require('../../cloudfunctions/dispatchReminders/template') as {
-  buildReminderTemplateData(
-    item: { name: string; expiryDate: string; quantity: number },
-    daysLeft: number,
-    fields: Record<string, string>,
-  ): Record<string, { value: string }>
+  buildReminderTemplateData(item: {
+    name: string
+    expiryDate: string
+    quantity: number
+    category?: string
+    storageLocation?: string
+  }): Record<string, { value: string }>
 }
 const trashRules = require('../../cloudfunctions/cleanupTrash/rules') as {
   shouldPurgeTrash(item: Record<string, unknown>, now?: Date): boolean
@@ -182,42 +182,63 @@ describe('cloud inventory domain', () => {
 })
 
 describe('reminder states', () => {
-  it('maps the configured reminder template fields', () => {
+  it('maps the reminder template to 名称/到期日期/类型/位置/数量', () => {
     expect(
-      reminderTemplate.buildReminderTemplateData(
-        { name: '鲜牛奶', expiryDate: '2026-09-09', quantity: 2 },
-        3,
-        {
-          itemField: 'thing7',
-          dateField: 'time2',
-          remainingDaysField: 'number5',
-          quantityField: 'number4',
-          noteField: 'thing3',
-        },
-      ),
+      reminderTemplate.buildReminderTemplateData({
+        name: '鲜牛奶',
+        expiryDate: '2026-09-09',
+        quantity: 2,
+        category: 'food',
+        storageLocation: 'refrigerated',
+      }),
     ).toEqual({
-      thing7: { value: '鲜牛奶' },
+      thing1: { value: '鲜牛奶' },
       time2: { value: '2026年9月9日' },
-      number5: { value: '3' },
-      number4: { value: '2' },
-      thing3: { value: '还有3天到期' },
+      thing3: { value: '食品' },
+      thing4: { value: '冷藏' },
+      number5: { value: '2' },
     })
   })
 
-  it('only rearms explicitly unsent terminal outcomes', () => {
-    expect(reminderRules.canArmReminder()).toBe(true)
-    expect(reminderRules.canArmReminder('failed')).toBe(true)
-    expect(reminderRules.canArmReminder('cancelled')).toBe(true)
-    expect(reminderRules.canArmReminder('sent')).toBe(false)
-    expect(reminderRules.canArmReminder('unknown')).toBe(false)
+  it('falls back to readable labels for missing category and free-text location', () => {
+    expect(
+      reminderTemplate.buildReminderTemplateData({
+        name: '牛奶',
+        expiryDate: '2026-09-09',
+        quantity: 1,
+        storageLocation: '床头柜',
+      }),
+    ).toMatchObject({ thing3: { value: '其他' }, thing4: { value: '床头柜' } })
+    expect(
+      reminderTemplate.buildReminderTemplateData({
+        name: '牛奶',
+        expiryDate: '2026-09-09',
+        quantity: 1,
+        category: 'food',
+        storageLocation: '',
+      }),
+    ).toMatchObject({ thing4: { value: '未填写' } })
+  })
+
+  it('truncates long values to the 20-character thing limit', () => {
+    const item = reminderTemplate.buildReminderTemplateData({
+      name: '奶'.repeat(30),
+      expiryDate: '2026-09-09',
+      quantity: 1,
+      category: 'food',
+      storageLocation: '柜'.repeat(40),
+    })
+    expect(item.thing1.value).toHaveLength(20)
+    expect(item.thing4.value).toHaveLength(20)
   })
 
   it('keeps sending, sent and unknown states terminal', () => {
+    expect(reminderRules.isTerminalReminderStatus('scheduled')).toBe(false)
+    expect(reminderRules.isTerminalReminderStatus('failed')).toBe(false)
+    expect(reminderRules.isTerminalReminderStatus('cancelled')).toBe(false)
     expect(reminderRules.isTerminalReminderStatus('sending')).toBe(true)
     expect(reminderRules.isTerminalReminderStatus('sent')).toBe(true)
     expect(reminderRules.isTerminalReminderStatus('unknown')).toBe(true)
-    expect(reminderRules.canCancelReminder('scheduled')).toBe(true)
-    expect(reminderRules.canCancelReminder('sent')).toBe(false)
   })
 })
 

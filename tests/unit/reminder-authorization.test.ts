@@ -45,7 +45,7 @@ describe('reminder authorization', () => {
 
     expect(authorization.authorized).toBe(false)
     expect(authorization.state).toBe('main-switch-off')
-    expect(authorization.summary).toBe('微信通知总开关已关闭')
+    expect(authorization.summary).toBe('微信通知总开关已关闭，收不到提醒')
   })
 
   it('stays unauthorized when wechat never returned the main switch', () => {

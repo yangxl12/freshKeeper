@@ -39,8 +39,6 @@ export interface QuickEntryDraftFields {
   shelfLifeUnit: ShelfLifeUnit | null
   expiryDate: string | null
   reminderLeadDays: number | null
-  /** 本次入库是否顺带开启到期提醒（本地意向，真正授权发生在保存成功那一刻）。 */
-  remindAfterSave: boolean
 }
 
 export interface DateCandidate {

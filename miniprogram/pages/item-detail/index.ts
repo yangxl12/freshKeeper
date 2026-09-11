@@ -5,30 +5,16 @@ import {
   getItem,
   permanentlyDeleteItem,
 } from '../../services/inventory-service'
-import {
-  armReminder,
-  cancelReminder,
-  requestReminderAuthorization,
-} from '../../services/reminder-service'
+import { resolveReminderTime } from '../../domain/reminder-time'
 import type { InventoryItem } from '../../types/inventory'
 import { track } from '../../utils/analytics'
-import { addDays, parseDateKey } from '../../utils/date-key'
-
-/** 能重新开启的状态，与云端 reminderApi/rules.js:canArmReminder 保持一致。 */
-const ARMABLE_STATUSES = ['failed', 'cancelled']
-
-function formatMonthDay(value: string): string {
-  const parts = parseDateKey(value)
-  return parts ? `${parts.month} 月 ${parts.day} 日` : value
-}
 
 /**
- * 把提醒任务折算成「一句状态 + 一句说明 + 能不能点」。
+ * 把物品折算成「提醒时间 + 一句状态」。
  *
- * 微信一次性订阅的事实：一次授权换一条额度，发出去就结束。所以终态
- * （sending / sent / unknown）不提供任何按钮，也不承诺「还能再开一次」。
- * 发送日期按「到期日 - 提前天数」本地换算：保存时云端会同步 remindDate，
- * 派发时对不上的任务直接作废，所以真能发出去的任务日期必然等于这个值。
+ * 提醒时间完全由「到期日期 - 提前天数（到点 09:30）」推出来，不落库、不可编辑。
+ * 微信一次性订阅的事实：额度用完就结束，所以已推送/推送中不再给任何操作入口，
+ * 也没有「取消提醒」——取消的语义已经被「删物品 / 标记已用完」覆盖。
  */
 function decorateItem(item: InventoryItem) {
   const shelfLifeText = item.shelfLifeValue
@@ -36,56 +22,26 @@ function decorateItem(item: InventoryItem) {
         item.shelfLifeUnit === 'day' ? '天' : item.shelfLifeUnit === 'month' ? '个月' : '年'
       }`
     : ''
+  const reminder = resolveReminderTime({
+    expiryDate: item.expiryDate,
+    reminderLeadDays: item.reminderLeadDays,
+  })
   const reminderStatus = item.reminderStatus || null
-  const expired = item.expiryStatus === 'expired'
-  let sendDateText = ''
-  try {
-    sendDateText = formatMonthDay(addDays(item.expiryDate, -item.reminderLeadDays))
-  } catch (_error) {
-    sendDateText = ''
-  }
-  const sendDateClause = sendDateText ? `将在 ${sendDateText}` : '将在提醒日'
 
-  let reminderStateText = '未开启'
-  let reminderCopy = sendDateText
-    ? `开启后 ${sendDateText} 推送一条微信提醒，只发一次。`
-    : '开启后会在提醒日推送一条微信提醒，只发一次。'
-  if (expired) {
-    reminderStateText = '已过期'
-    reminderCopy = '这件物品已经过期，不再发送提醒。'
-  } else if (reminderStatus === 'scheduled') {
-    reminderStateText = sendDateText ? `已预约 · ${sendDateText}` : '已预约'
-    reminderCopy = `提醒${sendDateClause}推送一条微信消息，只发一次。`
-  } else if (reminderStatus === 'sending') {
-    reminderStateText = '正在发送'
-    reminderCopy = '提醒正在推送，请勿重复开启。'
-  } else if (reminderStatus === 'sent') {
-    reminderStateText = '已发送'
-    reminderCopy = '这次提醒已经发送。一次性提醒发完即结束。'
-  } else if (reminderStatus === 'unknown') {
-    reminderStateText = '结果未确定'
-    reminderCopy = '上次发送结果未确定，为避免重复推送不再重试。'
-  } else if (reminderStatus === 'failed') {
-    reminderStateText = '发送失败'
-    reminderCopy = '上次提醒没能发出去，可以重新开启一次。'
-  } else if (reminderStatus === 'cancelled') {
-    reminderStateText = '已取消'
-    reminderCopy = '提醒已取消，可以重新开启一次。'
-  }
+  let reminderAtNote = ''
+  if (!reminder) reminderAtNote = ''
+  else if (item.inventoryStatus !== 'active') reminderAtNote = '已停止'
+  else if (reminderStatus === 'sent') reminderAtNote = '已推送'
+  else if (reminderStatus === 'sending') reminderAtNote = '推送中'
+  else if (reminderStatus === 'unknown') reminderAtNote = '结果未确定'
+  else if (reminder.missed) reminderAtNote = '已错过'
+  else reminderAtNote = '到点自动推送'
 
   return {
     ...item,
     shelfLifeText,
-    reminderStatus,
-    reminderSendDateText: sendDateText,
-    reminderStateText,
-    reminderCopy,
-    reminderArmText: reminderStatus ? '重新开启提醒' : '开启到期提醒',
-    canArmReminder:
-      !expired &&
-      item.inventoryStatus === 'active' &&
-      (!reminderStatus || ARMABLE_STATUSES.includes(reminderStatus)),
-    canCancelReminder: reminderStatus === 'scheduled',
+    reminderAtText: reminder?.text || '',
+    reminderAtNote,
   }
 }
 
@@ -96,7 +52,6 @@ Page({
     actionLoading: false,
     errorMessage: '',
     item: null as ReturnType<typeof decorateItem> | null,
-    reminderSheetVisible: false,
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -127,43 +82,6 @@ Page({
 
   restoreItem() {
     wx.navigateTo({ url: `/pages/item-form/index?id=${this.data.itemId}&restore=1` })
-  },
-
-  openReminder() {
-    this.setData({ reminderSheetVisible: true })
-  },
-
-  closeReminder() {
-    this.setData({ reminderSheetVisible: false })
-  },
-
-  async requestReminder() {
-    const item = this.data.item
-    if (!item || this.data.actionLoading || !item.canArmReminder) return
-    const accepted = await requestReminderAuthorization()
-    if (!accepted) return
-    this.setData({ actionLoading: true })
-    try {
-      await armReminder(this.data.itemId)
-      this.setData({ actionLoading: false })
-      wx.showToast({ title: '提醒已开启', icon: 'success' })
-      await this.loadItem()
-    } catch (error) {
-      this.handleActionError(error)
-    }
-  },
-
-  async cancelReminder() {
-    if (this.data.actionLoading || !this.data.item?.canCancelReminder) return
-    this.setData({ actionLoading: true })
-    try {
-      await cancelReminder(this.data.itemId)
-      this.setData({ actionLoading: false })
-      wx.showToast({ title: '提醒已取消', icon: 'success' })
-      await this.loadItem()
-    } catch (error) {
-      this.handleActionError(error)
-    }
   },
 
   async confirmComplete() {
@@ -246,6 +164,4 @@ Page({
   backHome() {
     wx.switchTab({ url: '/pages/home/index' })
   },
-
-  noop() {},
 })

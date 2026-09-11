@@ -1,4 +1,5 @@
 import { CATEGORY_OPTIONS, SHELF_LIFE_OPTIONS } from '../../domain/inventory'
+import { resolveReminderTime } from '../../domain/reminder-time'
 import { getErrorMessage } from '../../services/cloud-client'
 import { getItem, generateItemCover, restoreItem, saveItem } from '../../services/inventory-service'
 import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
@@ -32,8 +33,8 @@ const LEGACY_STORAGE_LABELS: Record<string, string> = {
 
 type FormTextField = 'name' | 'quantity' | 'unit' | 'storageLocation' | 'shelfLifeValue' | 'reminderLeadDays'
 
-/** 宿主注入的预填值：完整录入字段 + 本次是否顺带开启到期提醒的意向。 */
-type FormPrefill = Partial<InventorySaveInput> & { remindAfterSave?: boolean }
+/** 宿主注入的预填值：完整录入字段。 */
+type FormPrefill = Partial<InventorySaveInput>
 
 /** 完整录入表单；pages/item-form 与「物品录入」的完整录入 tab 共用同一份实现。 */
 Component({
@@ -86,11 +87,11 @@ Component({
     shelfLifeOptions: SHELF_LIFE_OPTIONS,
     shelfLifeUnitIndex: 0,
     reminderLeadDays: '1',
-    /**
-     * 新增物品时是否在保存成功后顺手开启这一次到期提醒。
-     * 只是本地意向，真正的授权在保存成功那一刻才向微信申请。
-     */
-    remindAfterSave: true,
+    /** 只读派生值：到期日往前推 N 天、当天 09:30。保存时云端按同一规则落 remindDate。 */
+    reminderAtText: '',
+    reminderMissed: false,
+    /** 编辑既有物品时读到的提醒任务状态，决定要不要重新申请一次订阅授权。 */
+    reminderStatus: null as string | null,
     expiryPreview: '',
   },
 
@@ -121,7 +122,6 @@ Component({
         if (!pendingDraft && (this.data.itemId || this.data.prefilled)) return
         this.setData({
           reminderLeadDays: String(pendingDraft?.reminderLeadDays ?? settings.defaultReminderLeadDays),
-          remindAfterSave: pendingDraft?.remindAfterSave ?? true,
         })
       } catch (_error) {
         // 默认设置读取失败不阻塞录入，继续使用产品默认值。
@@ -142,8 +142,7 @@ Component({
         shelfLifeValue: pendingDraft.shelfLifeValue == null ? '' : String(pendingDraft.shelfLifeValue),
         shelfLifeUnitIndex: shelfLifeUnitIndex >= 0 ? shelfLifeUnitIndex : 0,
         reminderLeadDays: String(pendingDraft.reminderLeadDays ?? 1),
-        remindAfterSave: pendingDraft.remindAfterSave ?? true,
-      }, () => this.updateExpiryPreview())
+      }, () => this.refreshDerived())
     },
 
     /** 回到空白的新增状态，供保存成功后接着录入下一条。 */
@@ -169,7 +168,9 @@ Component({
         shelfLifeValue: '',
         shelfLifeUnitIndex: 0,
         expiryPreview: '',
-        remindAfterSave: true,
+        reminderAtText: '',
+        reminderMissed: false,
+        reminderStatus: null,
       })
       this.loadDefaults(null)
     },
@@ -197,10 +198,11 @@ Component({
           shelfLifeValue: item.shelfLifeValue ? String(item.shelfLifeValue) : '',
           shelfLifeUnitIndex: shelfLifeUnitIndex >= 0 ? shelfLifeUnitIndex : 0,
           reminderLeadDays: String(item.reminderLeadDays),
+          reminderStatus: item.reminderStatus || null,
           loading: false,
           loadFailed: false,
         })
-        this.updateExpiryPreview()
+        this.refreshDerived()
       } catch (error) {
         this.setData({ loading: false, loadFailed: true, errorMessage: getErrorMessage(error) })
       }
@@ -215,13 +217,14 @@ Component({
     handleModeChange(event: WechatMiniprogram.BaseEvent) {
       const mode = event.currentTarget.dataset.mode as ExpiryInputMode
       if (mode === this.data.mode) return
-      this.setData({ mode, dirty: true }, () => this.updateExpiryPreview())
+      this.setData({ mode, dirty: true }, () => this.refreshDerived())
     },
 
     handleTextInput(event: WechatMiniprogram.Input) {
       const field = event.currentTarget.dataset.field as FormTextField
       this.setData({ [field]: event.detail.value, dirty: true }, () => {
-        if (field === 'shelfLifeValue') this.updateExpiryPreview()
+        // 保质期与提前天数都会改变派生值：到期日预览、提醒时间。
+        if (field === 'shelfLifeValue' || field === 'reminderLeadDays') this.refreshDerived()
       })
     },
 
@@ -229,23 +232,15 @@ Component({
       this.setData({ categoryIndex: Number(event.detail.value), dirty: true })
     },
 
-    /**
-     * 「保存后开启提醒」只是本地意向开关，不碰微信授权、不写账号设置。
-     * 全局默认天数与通知授权都只在「我的—提醒设置」里改，本表单不再提供第二入口。
-     */
-    toggleRemindAfterSave() {
-      this.setData({ remindAfterSave: !this.data.remindAfterSave })
-    },
-
     handleShelfLifeUnitChange(event: WechatMiniprogram.PickerChange) {
       this.setData({ shelfLifeUnitIndex: Number(event.detail.value), dirty: true }, () => {
-        this.updateExpiryPreview()
+        this.refreshDerived()
       })
     },
 
     handleDateChange(event: WechatMiniprogram.PickerChange) {
       const field = event.currentTarget.dataset.field as 'expiryDate' | 'productionDate'
-      this.setData({ [field]: String(event.detail.value), dirty: true }, () => this.updateExpiryPreview())
+      this.setData({ [field]: String(event.detail.value), dirty: true }, () => this.refreshDerived())
     },
 
     /** 草稿编辑模式下宿主用来判断退出要不要二次确认。 */
@@ -274,9 +269,29 @@ Component({
         shelfLifeUnit: isShelfLife ? (SHELF_LIFE_OPTIONS[this.data.shelfLifeUnitIndex]?.value ?? null) : null,
         expiryDate: isShelfLife ? null : (this.data.expiryDate || null),
         reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
-        /** 本次入库是否顺带开启到期提醒；与完整录入共用同一个勾选。 */
-        remindAfterSave: this.data.remindAfterSave,
       }
+    },
+
+    /** 当前生效的到期日：直填模式用输入值，保质期模式用算出来的预览值。 */
+    currentExpiryDate(): string {
+      return this.data.mode === 'shelf_life' ? this.data.expiryPreview : this.data.expiryDate
+    },
+
+    /** 两个派生字段一起重算：到期日预览与提醒时间都跟着 mode / 日期 / 天数走。 */
+    refreshDerived() {
+      this.updateExpiryPreview()
+      this.updateReminderAt()
+    },
+
+    updateReminderAt() {
+      const reminder = resolveReminderTime({
+        expiryDate: this.currentExpiryDate(),
+        reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
+      })
+      this.setData({
+        reminderAtText: reminder?.text || '',
+        reminderMissed: reminder?.missed || false,
+      })
     },
 
     updateExpiryPreview() {
@@ -368,15 +383,16 @@ Component({
           if (!itemId) void generateItemCover(saved.itemId).catch(() => {})
         }
         if (!itemId) track('item_create_success')
-        const finalExpiryDate = this.data.mode === 'direct' ? this.data.expiryDate : this.data.expiryPreview
+        const finalExpiryDate = this.currentExpiryDate()
         if (itemId && !restoring && finalExpiryDate !== this.data.originalExpiryDate) {
           const age = Date.now() - this.data.originalCreatedAt
           track('item_expiry_corrected', { within24h: this.data.originalCreatedAt > 0 && age >= 0 && age <= 86400000 ? 1 : 0 })
         }
         this.setData({ saving: false })
-        // 顺手开启这一次提醒：只在新增路径做，且必须在 triggerEvent 之前——
-        // 宿主收到 saved 会跳转或重置表单，之后再弹订阅授权会被打断。
-        if (!itemId && !restoring && this.data.remindAfterSave) {
+        // 到期提醒默认全部走订阅消息，这里不再问用户要不要开。
+        // 编辑已预约/已发送的物品不再重复申请授权，避免每次改个数量都弹一次。
+        if (restoring || this.needsReminderArm()) {
+          // 授权弹窗必须排在 triggerEvent 之前——宿主收到 saved 会跳转或重置表单，之后弹会被打断。
           await this.armReminderAfterSave(savedItemId, finalExpiryDate)
         }
         this.triggerEvent('saved', {
@@ -394,24 +410,37 @@ Component({
     },
 
     /**
-     * 保存成功后开启这一次到期提醒。
-     * 微信一次性订阅：一次同意换一条额度、发完即失效，所以授权只在这一刻申请，
-     * 不做常开开关。整段失败都只提示不回滚——物品已经入库，提醒是附加动作。
+     * 编辑既有物品时要不要为它重新申请一次订阅授权。
+     *
+     * 微信一次性订阅「一次同意换一条额度」，所以只有真正缺额度的情况才值得打扰用户：
+     * 没有预约、上次发送失败、被取消。已预约（额度在手）与已发送（终态）都直接跳过。
+     */
+    needsReminderArm(): boolean {
+      const status = this.data.reminderStatus
+      return !status || status === 'failed' || status === 'cancelled'
+    },
+
+    /**
+     * 保存成功后预约这一次到期提醒。
+     *
+     * 只按「提醒日 < 今天」做拦截（当天 09:30 是否已过交给云端判定，它会返回 missed 且不落任务）：
+     * 前端拿着真实时钟做判断会让行为随运行时刻漂移，日期口径才和表单里「今天」一致。
+     * 整段失败都静默处理——物品已经入库，提醒是附加动作，失败不该盖过保存成功的结果。
      */
     async armReminderAfterSave(savedItemId: string, expiryDate: string) {
       if (!savedItemId) return
-      if (expiryDate && expiryDate < this.data.today) {
-        wx.showToast({ title: '已过期，不提醒', icon: 'none' })
-        return
-      }
+      const reminder = resolveReminderTime({
+        expiryDate,
+        reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
+      })
+      if (!reminder || reminder.date < this.data.today) return
       try {
         const accepted = await requestReminderAuthorization()
         // 用户拒绝授权时 reminder-service 已经给过提示，这里不再叠一层。
         if (!accepted) return
         await armReminder(savedItemId)
-        wx.showToast({ title: '提醒已开启', icon: 'success' })
       } catch (_error) {
-        wx.showToast({ title: '提醒未能开启', icon: 'none' })
+        // 附加动作，失败不改动表单状态。
       }
     },
 

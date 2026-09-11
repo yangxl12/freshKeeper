@@ -17,7 +17,7 @@
     <button class="entry" data-entry="settings" bindtap="openEntry" hover-class="entry--pressed">
       <view class="entry__icon entry__icon--bell" aria-hidden="true"></view>
       <text class="entry__label">提醒设置</text>
-      <text class="entry__value">{{savedReminderDayValue === 0 ? '默认到期当天' : '默认到期前 ' + savedReminderDayValue + ' 天'}}</text>
+      <text class="entry__value">{{savedReminderDayValue === 0 ? '到期当天 09:30' : '到期前 ' + savedReminderDayValue + ' 天 09:30'}}</text>
       <view class="entry__chevron" aria-hidden="true"></view>
     </button>
     <button class="entry" data-entry="trash" bindtap="openEntry" hover-class="entry--pressed">
@@ -97,7 +97,7 @@
   <view wx:if="{{activeModal === 'settings'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
     <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
       <text class="modal__title">提醒设置</text>
-      <text class="modal__subtitle">新增物品的默认提前天数，单件可在录入时单独调整</text>
+      <text class="modal__subtitle">新增物品的默认提前天数，单件可在录入时单独调整。到期提醒统一在当天 09:30 推送，无需逐件开启。</text>
 
       <view wx:if="{{settingsError}}" class="compact-error">
         <text>{{settingsError}}</text>
@@ -124,6 +124,14 @@
             </view>
           </view>
         </picker>
+
+        <view class="setting-row setting-row--static">
+          <view class="setting-row__main">
+            <text class="setting-row__label">微信通知</text>
+            <text class="setting-row__description">{{notificationSummary}}</text>
+          </view>
+          <button class="setting-row__action" bindtap="openNotificationSettings" hover-class="pressable--pressed">去微信设置</button>
+        </view>
       </block>
 
       <view class="modal__actions">

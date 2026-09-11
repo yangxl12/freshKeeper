@@ -1,5 +1,8 @@
 # 提醒功能梳理与收口方案
 
+> ⚠️ **本文档描述的「单品开关 + 详情页提醒弹窗」模型已于 2026-09-12 被推翻**，见文末
+> 「2026-09-12 改版」。下面保留原文用于追溯当时为什么这么设计。
+
 > 状态：**已落地（2026-09-11）**，首页入口取 B 案（直接删）。
 > 目标是把散落在 8 处的「提醒」收成 4 个概念、每个概念一个家。
 
@@ -124,3 +127,53 @@
 
 - `dispatchReminders` 发现 `remindDate` 与物品不符时仍是静默取消，只在日志里留痕。
 - 快速录入批量路径没有开启提醒的入口，与单条录入不对称——这是平台约束，不是遗漏。
+
+---
+
+## 2026-09-12 改版：提醒彻底去开关化
+
+### 为什么推翻上文
+
+上文的 L4「单次提醒」需要用户在详情页手动点「开启到期提醒」。结论是：**没人会点**。
+用户对提醒的预期是「录了就自动推」，而不是「先去详情页开一下」。
+
+### 新模型（只有 2 个概念）
+
+| 层 | 是什么 | 唯一入口 | 形态 |
+| --- | --- | --- | --- |
+| L1 默认提前天数 | 新建物品的初始值 | 我的 → 提醒设置 | picker；同页只读展示微信通知授权状态 + 「去微信设置」 |
+| L2 提醒时间 | 到期日 − 提前天数，当天 **09:30** | 录入/编辑表单、物品详情 | **只读派生值**，不可编辑，没有开关 |
+
+授权接入点只剩一个：**点「加入库存」/「保存修改」时同步申请一次**。
+`wx.requestSubscribeMessage` 在用户勾过「总是保持以上选择」后不再弹窗，静默拿到额度。
+
+### 硬规则
+
+1. **提醒时刻统一 09:30**（北京时间）。前端 `domain/reminder-time.ts:REMINDER_HOUR/MINUTE`
+   与云端 `dispatchReminders/config.json` 的触发器必须一致，改一处就要改另一处。
+2. **过期不补发**。`dispatchReminders` 只处理 `remindDate === today` 的任务，
+   `remindDate < today` 的一律置 `cancelled` + `failureCode: REMINDER_MISSED`。
+   `reminderApi.arm` 在提醒时刻已过时直接返回 `{status:'missed'}` 且**不落任务**。
+3. **前端拦截只看日期**（`reminder.date < today`），不看时钟：前端拿真实时钟判断会让
+   行为随运行时刻漂移。当天 09:30 是否已过由云端 arm 再判一次。
+4. **`missed` 只用于展示**（表单/详情打出「已错过」），不落库、不进 `ReminderStatus`。
+5. **取消入口不存在**。要停掉提醒就删物品或标记已用完；`reminderApi` 不再有 `cancel` action。
+6. 编辑既有物品时只在**缺额度**（无任务 / failed / cancelled）才重新申请授权，
+   已预约与已发送（终态）直接跳过，避免改个数量就弹一次。
+
+### 待办（部署前必做）
+
+1. 在微信公众平台 → 功能 → 订阅消息 建模板「物品保质期到期提醒」，字段：
+   物品名称 / 到期日期 / 物品类型 / 存放位置 / 数量。
+2. 拿到模板 ID 与关键词序号后改三处（都刻意写死，不读环境变量——
+   云函数 `envVariables` 只在首次创建时写入云端，读它反而会被旧值盖掉）：
+   - `miniprogram/config/runtime.ts` → `REMINDER_TEMPLATE_ID`
+   - `cloudfunctions/reminderApi/index.js` → `REMINDER_TEMPLATE_ID`
+   - `cloudfunctions/dispatchReminders/template.js` → `TEMPLATE_FIELDS`
+3. 云开发控制台把 `daily-reminder-dispatch` 触发器从 `0 0 9 * * * *` 改成 `0 30 9 * * * *`
+   （`config.json` 的 `triggers` 同样不参与更新）。
+4. 顺手删掉控制台里残留的 `REMINDER_ITEM_FIELD` / `REMINDER_DATE_FIELD` /
+   `REMINDER_REMAINING_DAYS_FIELD` / `REMINDER_QUANTITY_FIELD` / `REMINDER_NOTE_FIELD`
+   / `REMINDER_TEMPLATE_ID` 环境变量。
+5. 上线前把 `MINIPROGRAM_STATE` 从 `developer` 改成 `formal`，否则推送在正式版收不到。
+

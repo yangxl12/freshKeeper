@@ -1,6 +1,7 @@
 import { toInventoryCardItem } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { listTrash, permanentlyDeleteItem } from '../../services/inventory-service'
+import { readReminderAuthorization } from '../../services/reminder-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
 import {
   confirmExport,
@@ -100,6 +101,8 @@ Page({
     reminderDayIndex: reminderDayIndexOf(1),
     /** 已保存的默认提醒天数（真实天数，不是下标）。 */
     savedReminderDayValue: 1,
+    /** 微信订阅消息的授权状态说明；提醒已全部走订阅消息，这里是唯一的「为什么没收到」排查入口。 */
+    notificationSummary: '',
     trashLoading: false,
     trashLoadingMore: false,
     trashError: '',
@@ -149,6 +152,14 @@ Page({
     } catch (error) {
       this.setData({ settingsLoading: false, settingsError: getErrorMessage(error) })
     }
+    // 授权状态是本机系统状态，读失败不影响默认天数的展示。
+    const authorization = await readReminderAuthorization()
+    this.setData({ notificationSummary: authorization.summary })
+  },
+
+  /** 系统级订阅状态只能跳到微信设置页改，小程序侧的任何控件都只是镜像。 */
+  openNotificationSettings() {
+    wx.openSetting({ withSubscriptions: true })
   },
 
   /* 资料 */

@@ -476,8 +476,8 @@ describe('quick entry page compatibility', () => {
    * 微信一次性订阅「一次授权换一条额度」，所以批量保存只能一件一件申请。
    * 这几条守住：谁该申请、谁该跳过、拒绝之后不再连弹。
    */
-  describe('quick entry 保存后开启提醒', () => {
-    it('对每条勾了提醒的草稿依次申请授权并挂提醒', async () => {
+  describe('quick entry 保存后预约到期提醒', () => {
+    it('对每条保存成功的草稿依次申请授权并挂提醒', async () => {
       const page = pageInstance()
       page.setData({ today: '2026-09-08' })
       page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
@@ -502,22 +502,9 @@ describe('quick entry page compatibility', () => {
       expect(armReminderMock).not.toHaveBeenCalled()
     })
 
-    it('取消勾选提醒的草稿不申请授权', async () => {
+    it('提醒日已经过去的草稿不申请授权，与完整录入保持一致', async () => {
       const page = pageInstance()
-      page.setData({ today: '2026-09-08' })
-      const noReminder = completeDraft('酸奶')
-      noReminder.fields.remindAfterSave = false
-      page.commitDrafts([completeDraft('牛奶'), noReminder])
-      saveMock.mockResolvedValueOnce({ itemId: 'milk' }).mockResolvedValueOnce({ itemId: 'yogurt' })
-
-      await page.saveDrafts()
-
-      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
-      expect(armReminderMock).toHaveBeenCalledWith('milk')
-    })
-
-    it('已过期的草稿不申请授权，与完整录入保持一致', async () => {
-      const page = pageInstance()
+      // 草稿到期 2026-09-09、提前 1 天 → 提醒日 2026-09-08，已经过去。
       page.setData({ today: '2026-09-10' })
       page.commitDrafts([completeDraft('牛奶')])
       saveMock.mockResolvedValueOnce({ itemId: 'milk' })

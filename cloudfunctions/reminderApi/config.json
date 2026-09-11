@@ -1,6 +1,3 @@
 {
-  "timeout": 10,
-  "envVariables": {
-    "REMINDER_TEMPLATE_ID": "jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8"
-  }
+  "timeout": 10
 }
