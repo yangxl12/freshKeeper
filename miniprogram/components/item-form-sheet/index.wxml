@@ -1,4 +1,4 @@
-<view class="form-sheet-page">
+<view class="form-sheet-page {{purpose === 'draft' ? 'form-sheet-page--inline' : ''}}">
   <view wx:if="{{errorMessage}}" class="feedback-error" role="alert">
     <text>{{errorMessage}}</text>
     <button wx:if="{{loadFailed}}" class="inline-retry" bindtap="retryLoad">重新加载</button>
@@ -171,9 +171,9 @@
       <text wx:if="{{purpose !== 'draft'}}" class="form-hint">保存后可在物品详情中单独开启微信提醒</text>
     </view>
 
-    <view class="save-bar">
+    <view wx:if="{{purpose !== 'draft'}}" class="save-bar">
       <button class="primary-button save-button" disabled="{{saving}}" bindtap="save" hover-class="pressable--pressed">
-        {{saving ? '正在保存…' : (purpose === 'draft' ? '完成' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存')))}}
+        {{saving ? '正在保存…' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存'))}}
       </button>
     </view>
   </block>

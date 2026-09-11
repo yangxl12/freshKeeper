@@ -455,6 +455,15 @@ Page({
     return Boolean(form?.isDirty?.())
   },
 
+  /** 弹窗底部「完成」：把表单里的值交给表单自己走一遍（草稿模式只回传不落库）。 */
+  confirmDraftEditor() {
+    if (this.data.saving || this.data.editingIndex < 0) return
+    this.withForm('#draftForm', (form) => form.save())
+  },
+
+  /** 遮罩挡住滚动穿透用，不做任何事。 */
+  noop() {},
+
   /** 编辑表单点「完成」：表单值此刻才真正回写草稿。 */
   handleDraftFormSubmit(event: WechatMiniprogram.CustomEvent) {
     const { editingIndex, editingRecentNew } = this.data

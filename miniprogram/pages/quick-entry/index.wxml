@@ -164,15 +164,25 @@
     </view>
   </view>
 
+  <!-- 草稿编辑：底部弹窗，里面只放完整录入的表单（item-form-sheet），
+       按钮由弹窗自己持有——点「完成」才把表单值回写草稿。 -->
   <view wx:if="{{editingIndex >= 0}}" class="draft-editor">
-    <view class="draft-editor__head">
-      <text class="draft-editor__title">{{editingRecentNew ? '确认物品信息' : '编辑物品信息'}}</text>
-      <button wx:if="{{features.datePhoto && capabilities.datePhoto}}" class="draft-editor__camera" disabled="{{saving}}" bindtap="chooseDraftPhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
-      <button class="draft-editor__close" bindtap="requestCloseDraftEditor" aria-label="退出编辑">×</button>
+    <view class="draft-editor__mask" bindtap="requestCloseDraftEditor" catchtouchmove="noop" />
+    <view class="draft-editor__panel">
+      <view class="draft-editor__head">
+        <view class="draft-editor__handle" aria-hidden="true"></view>
+        <text class="draft-editor__title">{{editingRecentNew ? '确认物品信息' : '编辑物品信息'}}</text>
+        <button wx:if="{{features.datePhoto && capabilities.datePhoto}}" class="draft-editor__camera" disabled="{{saving}}" bindtap="chooseDraftPhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
+        <button class="draft-editor__close" bindtap="requestCloseDraftEditor" aria-label="退出编辑">×</button>
+      </view>
+      <scroll-view class="draft-editor__body" scroll-y>
+        <image wx:if="{{editingEvidence}}" class="date-photo-preview" src="{{editingEvidence}}" mode="aspectFit" />
+        <item-form-sheet id="draftForm" purpose="draft" bind:draftsubmit="handleDraftFormSubmit" />
+      </scroll-view>
+      <view class="draft-editor__foot">
+        <button class="draft-editor__cancel" hover-class="draft-editor__button--pressed" disabled="{{saving}}" bindtap="requestCloseDraftEditor">取消</button>
+        <button class="draft-editor__done" hover-class="draft-editor__button--pressed" disabled="{{saving}}" bindtap="confirmDraftEditor">{{editingRecentNew ? '确认添加' : '完成'}}</button>
+      </view>
     </view>
-    <scroll-view class="draft-editor__body" scroll-y>
-      <image wx:if="{{editingEvidence}}" class="date-photo-preview" src="{{editingEvidence}}" mode="aspectFit" />
-      <item-form-sheet id="draftForm" purpose="draft" bind:draftsubmit="handleDraftFormSubmit" />
-    </scroll-view>
   </view>
 </view>

@@ -3,7 +3,10 @@
   padding-bottom: calc(154rpx + env(safe-area-inset-bottom));
 }
 
-/* 必须用裸标签选择器（组件默认样式隔离，不会外泄）。
+/* 宿主自带底部按钮（草稿编辑弹窗）：不留 save-bar 的占位。 */
+.form-sheet-page--inline {
+  padding-bottom: 0;
+}/* 必须用裸标签选择器（组件默认样式隔离，不会外泄）。
    若写成 `.form-sheet-page button`（特异性 0,1,1），会盖过下面的
    .primary-button / .mode-switch__item（0,1,0），把 font-size / font-weight /
    line-height 一并重置为继承值，表现为按钮文字贴顶、不垂直居中。 */

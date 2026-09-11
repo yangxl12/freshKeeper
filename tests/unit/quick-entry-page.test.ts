@@ -66,10 +66,14 @@ function completeDraft(name: string) {
   return createDraftFromParsed(parseQuickTextLocally(`${name}明天到期`, '2026-09-08').items[0], 'text')
 }
 /** 把共用的完整录入表单替换成一个记录调用的替身，用来断言「灌进去什么」和「退出要不要拦」。 */
-function stubDraftForm(page: any, dirty = false) {
+function stubDraftForm(page: any, dirty = false, onSubmit?: () => void) {
   const applied: unknown[][] = []
   page.selectComponent = (selector: string) => selector === '#draftForm'
-    ? { applyPrefill: (...args: unknown[]) => applied.push(args), isDirty: () => dirty }
+    ? {
+        applyPrefill: (...args: unknown[]) => applied.push(args),
+        isDirty: () => dirty,
+        save: () => { onSubmit?.() },
+      }
     : null
   return applied
 }
@@ -231,17 +235,42 @@ describe('quick entry page compatibility', () => {
     expect(previewArea).not.toContain('mode-switch')
   })
 
-  it('reuses the full-entry form component as the draft edit page', () => {
+  it('keeps the bottom-sheet chrome and reuses only the full-entry form inside it', () => {
     const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
-    const editor = template.slice(template.indexOf('class="draft-editor"'), template.indexOf('class="draft-editor"') + 900)
+    const editor = template.slice(template.indexOf('class="draft-editor"'))
+    // 弹窗外壳：遮罩 + 底部面板 + 弹窗自己的取消/完成
+    expect(editor).toContain('class="draft-editor__mask"')
+    expect(editor).toContain('class="draft-editor__panel"')
+    expect(editor).toContain('class="draft-editor__cancel"')
+    expect(editor).toContain('bindtap="confirmDraftEditor"')
+    // 弹窗里只放共用的完整录入表单，且按钮由弹窗持有（表单自己的 save-bar 关掉）
     expect(editor).toContain('<item-form-sheet id="draftForm" purpose="draft"')
     expect(editor).toContain('bind:draftsubmit="handleDraftFormSubmit"')
-    // 编辑页自己不再重写一份表单：整页里没有草稿专用的 picker/输入行
+    const formTemplate = readFileSync(resolve(process.cwd(), 'miniprogram/components/item-form-sheet/index.wxml'), 'utf8')
+    // purpose="draft" 时表单不渲染自己的 save-bar，避免和弹窗的取消/完成叠成两排按钮
+    expect(formTemplate).toContain(`<view wx:if="{{purpose !== 'draft'}}" class="save-bar">`)
+    // 编辑弹窗自己不再重写一份表单：整页里没有草稿专用的 picker/输入行
     expect(template).not.toContain('class="qe-row')
     expect(template).not.toContain('class="mode-switch"')
     // 卡片任意位置都能进编辑，卡内的删除/重试不能把点击带成「进编辑」
     expect(template).toContain('bindtap="openDraftEditor"')
     expect(template).toContain('catchtap="removeDraft"')
+  })
+
+  it('submits the shared form when the sheet 完成 is tapped', () => {
+    const page = pageInstance()
+    let submits = 0
+    stubDraftForm(page, true, () => { submits += 1 })
+    page.commitDrafts([completeDraft('牛奶')])
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    page.confirmDraftEditor()
+    expect(submits).toBe(1)
+    // 弹窗没关：真正的回写由表单的 draftsubmit 事件触发
+    expect(page.data.editingIndex).toBe(0)
+    // 弹窗已关时点「完成」不再触发表单
+    page.dismissDraftEditor(false)
+    page.confirmDraftEditor()
+    expect(submits).toBe(1)
   })
 
   it('caps the preview cards at 20 and greys out the recent-add button at the limit', () => {

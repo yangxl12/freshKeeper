@@ -773,8 +773,8 @@
   box-shadow: none;
 }
 
-/* 草稿编辑页：整屏表单，直接复用完整录入的 item-form-sheet。
-   它自己的 save-bar 是 position:fixed，正好充当底部的「完成」主按钮。 */
+/* 草稿编辑弹窗：底部升起的面板，里面只复用完整录入的表单。
+   按钮由弹窗自己持有，「完成」才回写草稿。 */
 .draft-editor {
   position: fixed;
   top: 0;
@@ -784,23 +784,56 @@
   z-index: 60;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
+}
+
+.draft-editor__mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(19, 36, 29, 0.42);
+  animation: mask-in 200ms ease-out;
+}
+
+.draft-editor__panel {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  height: 82vh;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: column;
+  border-radius: 32rpx 32rpx 0 0;
   background: #f7faf8;
-  animation: mask-in 160ms ease-out;
+  box-shadow: 0 -10rpx 36rpx rgba(30, 51, 43, 0.14);
+  animation: entry-sheet-up 240ms ease;
 }
 
 .draft-editor__head {
+  position: relative;
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 16rpx;
-  padding: 24rpx 32rpx;
+  justify-content: center;
+  padding: 40rpx 32rpx 24rpx;
   border-bottom: 2rpx solid #e8ece9;
   background: #ffffff;
 }
 
+.draft-editor__handle {
+  position: absolute;
+  top: 14rpx;
+  left: 50%;
+  width: 64rpx;
+  height: 7rpx;
+  border-radius: 999rpx;
+  background: #d9dfdc;
+  transform: translateX(-50%);
+}
+
 .draft-editor__title {
-  min-width: 0;
-  flex: 1;
   color: #173b31;
   font-size: 30rpx;
   font-weight: 650;
@@ -808,18 +841,23 @@
 
 .draft-editor__camera,
 .draft-editor__close {
+  position: absolute;
+  top: 30rpx;
   display: flex;
-  width: 60rpx;
-  height: 60rpx;
-  flex-shrink: 0;
+  width: 56rpx;
+  height: 56rpx;
   align-items: center;
   justify-content: center;
   margin: 0;
   padding: 0;
   border-radius: 50%;
+  line-height: 1;
+}
+
+.draft-editor__camera {
+  left: 28rpx;
   background: #eef4f0;
   color: #32735b;
-  line-height: 1;
 }
 
 .draft-editor__camera .line-icon {
@@ -833,6 +871,7 @@
 }
 
 .draft-editor__close {
+  right: 28rpx;
   padding: 0 0 4rpx;
   background: #ecefec;
   color: #6f7c76;
@@ -845,7 +884,55 @@
   min-height: 0;
   box-sizing: border-box;
   flex: 1;
-  padding: 24rpx 32rpx 0;
+  padding: 24rpx 28rpx 32rpx;
+}
+
+.draft-editor__foot {
+  display: flex;
+  flex-shrink: 0;
+  gap: 16rpx;
+  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid #e8ece9;
+  background: #ffffff;
+}
+
+.draft-editor__cancel,
+.draft-editor__done {
+  display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 88rpx;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 18rpx 16rpx;
+  border: 0;
+  border-radius: 18rpx;
+  font-size: 27rpx;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.draft-editor__cancel {
+  flex: 1;
+  background: #eff2ef;
+  color: #53665e;
+}
+
+.draft-editor__cancel[disabled] {
+  background: #f3f5f3;
+  color: #aab6b1;
+}
+
+.draft-editor__done {
+  flex: 2;
+  background: linear-gradient(115deg, #338b70, #28755e);
+  box-shadow: 0 6rpx 16rpx rgba(40, 117, 94, 0.22);
+  color: #ffffff;
+}
+
+.draft-editor__button--pressed {
+  opacity: 0.78;
 }
 .manual-button {
   display: block;
@@ -1095,6 +1182,17 @@
   }
 }
 
+@keyframes entry-sheet-up {
+  from {
+    opacity: 0.6;
+    transform: translateY(8%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes mask-in {
   from {
     opacity: 0;
@@ -1138,7 +1236,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .draft-card,
-  .draft-editor,
+  .draft-editor__panel,
+  .draft-editor__mask,
   .quick-footer,
   .quick-entry__tip,
   .tool-button--recording,

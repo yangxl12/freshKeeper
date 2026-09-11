@@ -55,7 +55,8 @@ Component({
     prefill: { type: Object, value: null },
     /**
      * save（默认）：表单自己写库，用于完整录入、编辑物品和重新入库。
-     * draft：表单只把值回传给宿主（快速录入的草稿编辑），由宿主决定何时落地。
+     * draft：表单只把值回传给宿主（快速录入的草稿编辑弹窗），
+     *        底部主按钮由宿主持有，本组件不渲染 save-bar。
      */
     purpose: { type: String, value: 'save' },
   },
@@ -70,6 +71,8 @@ Component({
     errorMessage: '',
     /** 用户是否动过表单；草稿编辑模式下宿主据此决定退出要不要二次确认。 */
     dirty: false,
+    /** 宿主是否注入过数据（草稿/待录入物品）；用于让迟到的默认设置回填作废。 */
+    prefilled: false,
     today: localTodayKey(),
     mode: 'direct' as ExpiryInputMode,
     name: '',
@@ -117,7 +120,7 @@ Component({
 
     /** 宿主页面切换到本表单时注入一条快速录入草稿。 */
     applyPrefill(pendingDraft: Partial<InventorySaveInput> | null, saveKey = '') {
-      const patch: Record<string, unknown> = { errorMessage: '', loadFailed: false, dirty: false }
+      const patch: Record<string, unknown> = { errorMessage: '', loadFailed: false, dirty: false, prefilled: Boolean(pendingDraft) }
       if (saveKey) patch.quickSaveKey = saveKey
       this.setData(patch, () => this.loadDefaults(pendingDraft))
     },
@@ -125,9 +128,9 @@ Component({
     async loadDefaults(pendingDraft: Partial<InventorySaveInput> | null = null) {
       try {
         const settings = await getSettings()
-        // attached 时 id 尚未到达而先走了默认值加载；等待期间编辑 id 已到并开始 loadItem，
-        // 此时跳过默认提醒天数回填，避免覆盖即将载入（或已载入）的物品数据。
-        if (this.data.itemId && !pendingDraft) return
+        // attached 时 id 尚未到达而先走了默认值加载；等待期间编辑 id 已到、或宿主已灌入草稿
+        // （applyPrefill），此时跳过默认提醒天数回填，避免覆盖已经写进表单的数据。
+        if (!pendingDraft && (this.data.itemId || this.data.prefilled)) return
         this.setData({
           reminderLeadDays: String(pendingDraft?.reminderLeadDays ?? settings.defaultReminderLeadDays),
         })
@@ -163,6 +166,7 @@ Component({
         saving: false,
         errorMessage: '',
         dirty: false,
+        prefilled: false,
         today: localTodayKey(),
         mode: 'direct',
         name: '',
