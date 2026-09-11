@@ -1,4 +1,4 @@
-<view class="quick-entry page-shell {{activeTab === 'quick' && quickTab === 'text' ? 'quick-entry--text' : ''}} {{activeTab === 'quick' && quickTab === 'recent' ? 'quick-entry--recent' : ''}}">
+<view class="quick-entry page-shell {{activeTab === 'quick' ? 'quick-entry--text' : ''}}">
   <view class="entry-tabs" role="tablist">
     <button
       class="entry-tabs__item {{activeTab === 'quick' ? 'entry-tabs__item--active' : ''}}"
@@ -14,44 +14,17 @@
     >完整录入</button>
   </view>
 
-  <block wx:if="{{activeTab === 'quick' && quickTab === 'recent'}}">
-    <view class="recent-page__head">
-      <text class="recent-page__title">从最近录入添加</text>
-      <button class="recent-page__close" bindtap="closeRecentList" aria-label="关闭最近录入">×</button>
-    </view>
-      <view wx:if="{{loading}}" class="quick-entry__loading">正在准备快速录入…</view>
-      <view wx:if="{{loadingError}}" class="quick-entry__notice" role="alert">
-        <text>{{loadingError}}</text>
-        <button class="notice-retry" bindtap="retryRecent">重试</button>
-      </view>
-
-      <block wx:if="{{!loading && features.recent}}">
-        <view wx:if="{{recentProfiles.length}}" class="recent-section">
-          <view class="recent-list">
-            <button wx:for="{{recentProfiles}}" wx:key="name" wx:for-item="profile" class="recent-item" data-index="{{index}}" bindtap="selectRecent" hover-class="recent-item--pressed">
-              <view class="recent-item__content">
-                <text class="recent-item__name">{{profile.name}}</text>
-                <text class="recent-item__meta">{{profile.quantity}}{{profile.unit}}<text wx:if="{{profile.storageLocation}}"> · {{profile.storageLocation}}</text></text>
-              </view>
-              <view class="line-icon line-icon--chevron-right recent-item__arrow" aria-hidden="true"></view>
-            </button>
-          </view>
-        </view>
-        <view wx:else class="quick-entry__empty">还没有录入记录，先用一句话或直接完整录入。</view>
-      </block>
-  </block>
-
   <view wx:if="{{fullMounted}}" style="display: {{activeTab === 'full' ? 'block' : 'none'}};">
     <item-form-sheet id="fullForm" source="quick-entry" bind:saved="handleFullFormSaved" />
   </view>
 
-  <view wx:if="{{activeTab === 'quick' && quickTab === 'text'}}" class="quick-stage">
+  <view wx:if="{{activeTab === 'quick'}}" class="quick-stage">
     <view class="quick-top">
       <form wx:if="{{features.text || features.voice || features.datePhoto}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
         <textarea class="quick-input" name="quickText" value="{{inputText}}" focus="{{quickInputFocused}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" disable-default-padding="{{true}}" bindfocus="handleQuickInputFocus" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="handleQuickInputBlur" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="quick-input-placeholder" bindinput="handleQuickTextInput" />
         <view class="quick-input-tools">
           <view class="quick-input-tools__group">
-            <button wx:if="{{features.recent}}" class="recent-entry-button" disabled="{{saving || recognitionState !== 'idle' || draftLimitReached}}" bindtap="openRecentList" hover-class="recent-entry-button--pressed">从最近录入添加</button>
+            <button wx:if="{{features.recent}}" class="recent-entry-button" disabled="{{saving || recognitionState !== 'idle' || draftLimitReached}}" bindtap="openRecentEntry" hover-class="recent-entry-button--pressed">从最近录入添加</button>
             <button wx:if="{{features.voice}}" class="tool-button {{voiceState === 'recording' ? 'tool-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
               <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
             </button>
@@ -156,7 +129,7 @@
     </scroll-view>
   </view>
 
-  <view wx:if="{{activeTab === 'quick' && quickTab === 'text' && drafts.length}}" class="quick-footer">
+  <view wx:if="{{activeTab === 'quick' && drafts.length}}" class="quick-footer">
     <view wx:if="{{pendingCount > 0}}" class="quick-footer__hint">{{pendingCount}} 条待补全或确认，补全后才会入库</view>
     <view class="quick-footer__row">
       <button class="quick-footer__more" hover-class="entry-sheet__button--pressed" disabled="{{saving}}" bindtap="focusQuickInput">继续添加</button>
@@ -171,7 +144,7 @@
     <view class="draft-editor__panel">
       <view class="draft-editor__head">
         <view class="draft-editor__handle" aria-hidden="true"></view>
-        <text class="draft-editor__title">{{editingRecentNew ? '确认物品信息' : '编辑物品信息'}}</text>
+        <text class="draft-editor__title">编辑物品信息</text>
         <button wx:if="{{features.datePhoto && capabilities.datePhoto}}" class="draft-editor__camera" disabled="{{saving}}" bindtap="chooseDraftPhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
         <button class="draft-editor__close" bindtap="requestCloseDraftEditor" aria-label="退出编辑">×</button>
       </view>
@@ -181,7 +154,7 @@
       </scroll-view>
       <view class="draft-editor__foot">
         <button class="draft-editor__cancel" hover-class="draft-editor__button--pressed" disabled="{{saving}}" bindtap="requestCloseDraftEditor">取消</button>
-        <button class="draft-editor__done" hover-class="draft-editor__button--pressed" disabled="{{saving}}" bindtap="confirmDraftEditor">{{editingRecentNew ? '确认添加' : '完成'}}</button>
+        <button class="draft-editor__done" hover-class="draft-editor__button--pressed" disabled="{{saving}}" bindtap="confirmDraftEditor">完成</button>
       </view>
     </view>
   </view>

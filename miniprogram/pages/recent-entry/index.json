@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "从最近录入添加",
+  "usingComponents": {
+    "item-form-sheet": "/components/item-form-sheet/index"
+  }
+}

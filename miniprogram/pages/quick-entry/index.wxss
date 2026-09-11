@@ -14,10 +14,6 @@
   padding-bottom: 0;
 }
 
-.quick-entry--recent {
-  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
-}
-
 .quick-stage {
   display: flex;
   min-height: 0;
@@ -43,14 +39,7 @@
   padding-bottom: calc(204rpx + env(safe-area-inset-bottom));
 }
 
-.quick-entry__loading {
-  padding: 260rpx 0;
-  color: #7d8984;
-  text-align: center;
-}
-
-.quick-entry__notice,
-.quick-entry__empty {
+.quick-entry__notice {
   margin: 20rpx 0;
   padding: 20rpx 24rpx;
   border-radius: 18rpx;
@@ -67,13 +56,6 @@
   color: #7a582d;
   font-size: 23rpx;
   line-height: 52rpx;
-}
-
-.quick-entry__empty {
-  padding: 80rpx 30rpx;
-  background: #ffffff;
-  color: #929c97;
-  text-align: center;
 }
 
 .quick-entry__tip {
@@ -301,105 +283,6 @@
   margin-top: 12rpx;
   color: #9aa7a1;
   font-size: 22rpx;
-}
-
-.notice-retry {
-  display: inline-block;
-  margin-left: 18rpx;
-  padding: 0 18rpx;
-  border: 2rpx solid #d5b77f;
-  border-radius: 10rpx;
-  background: transparent;
-  color: #7a582d;
-  font-size: 23rpx;
-  line-height: 52rpx;
-}
-
-.recent-page__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 4rpx 2rpx 22rpx;
-}
-
-.recent-page__title {
-  color: #173b31;
-  font-size: 32rpx;
-  font-weight: 650;
-}
-
-.recent-page__close {
-  display: flex;
-  width: 58rpx;
-  height: 58rpx;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0 0 5rpx;
-  border-radius: 50%;
-  background: #ecefec;
-  color: #6f7c76;
-  font-size: 40rpx;
-  font-weight: 300;
-  line-height: 1;
-}
-
-.recent-list {
-  overflow: hidden;
-  border: 2rpx solid #e6ebe8;
-  border-radius: 26rpx;
-  background: #ffffff;
-  box-shadow: 0 8rpx 28rpx rgba(40, 66, 56, 0.05);
-}
-
-.recent-item {
-  display: flex;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 112rpx;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24rpx;
-  margin: 0;
-  padding: 22rpx 26rpx;
-  border-bottom: 2rpx solid #edf0ee;
-  border-radius: 0;
-  background: #ffffff;
-  text-align: left;
-  line-height: 1.5;
-}
-
-.recent-item:last-child {
-  border-bottom: 0;
-}
-
-.recent-item--pressed {
-  background: #f2f6f3;
-}
-
-.recent-item__content {
-  min-width: 0;
-  flex: 1;
-}
-
-.recent-item__name {
-  display: block;
-  color: #173b31;
-  font-size: 28rpx;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.recent-item__meta {
-  display: block;
-  margin-top: 5rpx;
-  color: #8b9691;
-  font-size: 23rpx;
-}
-
-.recent-item__arrow {
-  flex-shrink: 0;
-  color: #95a19b;
 }
 
 .draft-area {

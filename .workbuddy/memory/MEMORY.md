@@ -40,8 +40,11 @@
   `if (!capabilities.x) return` 是第二道保险，静默。
 - 语音/拍日期不可用的根因：云端没配 `QUICK_ENTRY_TENCENT_SECRET_ID`/`_SECRET_KEY`（ASR 一句话识别 + OCR 高精度版），
   密钥只能进控制台。语音是**点击开始/点击结束**，`moveVoice`/`voiceBounds` 是死代码。
-- 最近使用：`listRecentProfiles` 未部署（`INVALID_ACTION`）时降级 `listInventory(sort:'created_desc')` +
-  `recentProfilesFromItems()`；区域不随草稿隐藏，点击是**追加**草稿。
+- 「从最近录入添加」是**独立页面** `pages/recent-entry/index`（原生导航栏返回 + 搜索 + 多选），
+  quick-entry 只 `navigateTo`，回传走 eventChannel `pickedDrafts` → `appendRecentDrafts()` 整批前插。
+  弹窗开关判独立的 `editorOpen`，别判 `editingIndex >= 0`（新选草稿还没进 picked，下标是 -1）。
+  quick-entry 保留 `recentProfiles` 仅为识别结果匹配分类/位置；`listRecentProfiles` 的
+  `INVALID_ACTION` 降级（`listInventory(sort:'created_desc')` + `recentProfilesFromItems()`）在 service 层。
 - `MAX_DRAFTS = 20` 是草稿条数上限（达到后「从最近录入添加」置灰）；云端「一次最多 5 条」是单次解析的输出上限，两码事。
 - 草稿编辑是**底部弹窗**（遮罩 + 82vh 面板），里面只复用 `item-form-sheet`（`purpose="draft"` 时组件不渲染自己的
   save-bar）；按钮由弹窗持有，点「完成」才经 `applyFormValuesToDraft` 回写草稿，带改动退出二次确认。

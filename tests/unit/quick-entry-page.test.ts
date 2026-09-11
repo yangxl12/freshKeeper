@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { applyFormValuesToDraft, createDraftFromParsed, parseQuickTextLocally, refreshDraftValidation } from '../../miniprogram/domain/quick-entry'
+import { applyFormValuesToDraft, createDraftFromParsed, createDraftFromRecent, parseQuickTextLocally, refreshDraftValidation } from '../../miniprogram/domain/quick-entry'
 
 import { CloudServiceError } from '../../miniprogram/services/cloud-client'
 
@@ -84,33 +84,61 @@ describe('quick entry page compatibility', () => {
     expect(page.data.quickInputFocused).toBe(true)
   })
 
-  it('opens and closes the recent list without losing the current text session', () => {
+  it('hands the recent list off to its own page with the remaining draft slots', () => {
     const page = pageInstance()
     const draft = completeDraft('牛奶')
     page.data.inputText = '牛奶明天到期'
     page.commitDrafts([draft])
 
-    page.openRecentList()
-    expect(page.data.quickTab).toBe('recent')
+    page.openRecentEntry()
+
+    // 不再整块换视图：只是跳页，本页的文字会话原样留着
+    expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/pages/recent-entry/index?slots=19',
+      events: expect.objectContaining({ pickedDrafts: expect.any(Function) }),
+    }))
     expect(page.data.quickInputFocused).toBe(false)
     expect(wx.hideKeyboard).toHaveBeenCalled()
-
-    page.closeRecentList()
-    expect(page.data.quickTab).toBe('text')
     expect(page.data.inputText).toBe('牛奶明天到期')
     expect(page.data.drafts).toEqual([draft])
   })
 
-  it('replaces the quick-entry subtabs with a recent-entry button and close control', () => {
+  it('refuses to open the recent page when the draft slots are used up', () => {
+    const page = pageInstance()
+    page.commitDrafts(Array.from({ length: 20 }, (_, index) => completeDraft(`物品${index}`)))
+    page.openRecentEntry()
+    expect(wx.navigateTo).not.toHaveBeenCalled()
+    expect(page.data.inputError).toContain('20')
+  })
+
+  it('appends the drafts handed back by the recent page and caps them at the limit', () => {
+    const page = pageInstance()
+    const existing = completeDraft('牛奶')
+    page.commitDrafts([existing])
+    page.appendRecentDrafts([completeDraft('面包'), completeDraft('酸奶')])
+    expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['面包', '酸奶', '牛奶'])
+    expect(page.data.selectableCount).toBe(3)
+
+    // 带回来的条数超过剩余名额时只收下装得下的，不越界
+    const full = pageInstance()
+    full.commitDrafts(Array.from({ length: 19 }, (_, index) => completeDraft(`物品${index}`)))
+    full.appendRecentDrafts([completeDraft('面包'), completeDraft('酸奶')])
+    expect(full.data.drafts).toHaveLength(20)
+    expect(full.data.drafts[0].fields.name).toBe('面包')
+  })
+
+  it('keeps the recent entry as a page jump instead of an in-page view swap', () => {
     const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
     const blockOpenCount = template.match(/<block\b/g)?.length || 0
     const blockCloseCount = template.match(/<\/block>/g)?.length || 0
     expect(blockOpenCount).toBe(blockCloseCount)
     expect(template).not.toContain('class="quick-tabs"')
     expect(template).toContain('class="recent-entry-button"')
-    expect(template).toContain('bindtap="openRecentList"')
-    expect(template).toContain('class="recent-page__close"')
-    expect(template).toContain('bindtap="closeRecentList"')
+    expect(template).toContain('bindtap="openRecentEntry"')
+    // 列表和关闭按钮都搬进独立页面了，本页不该再有伪页面残留
+    expect(template).not.toContain('recent-page__close')
+    expect(template).not.toContain('bindtap="closeRecentList"')
+    expect(template).not.toContain('bindtap="selectRecent"')
     // 「从最近录入添加」收进输入卡片左下角，和确认按钮同一行
     expect(template.indexOf('recent-entry-button')).toBeGreaterThan(template.indexOf('<form'))
     expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('class="quick-generate"'))
@@ -457,13 +485,11 @@ describe('quick entry page compatibility', () => {
     const page = pageInstance()
     const applied: unknown[][] = []
     page.selectComponent = () => ({ applyPrefill: (...args: unknown[]) => applied.push(args) })
-    page.data.popup = 'recent'
     page.commitDrafts([completeDraft('牛奶')])
     page.continueManual()
     expect(wx.navigateTo).not.toHaveBeenCalled()
     expect(page.data.activeTab).toBe('full')
     expect(page.data.fullMounted).toBe(true)
-    expect(page.data.popup).toBe('none')
     expect(page.data.drafts).toHaveLength(0)
     expect(applied[0][0]).toMatchObject({ name: '牛奶' })
     vi.mocked(wx.enableAlertBeforeUnload).mockClear()
@@ -492,42 +518,6 @@ describe('quick entry page compatibility', () => {
     expect(page.data.drafts).toHaveLength(1)
     expect(page.data.drafts[0].fields.expiryDate).toBe('2026-09-09')
     expect(page.data.recognitionState).toBe('idle')
-  })
-
-  it('opens the edit form for a recent item and keeps the text session', () => {
-    const page = pageInstance()
-    stubDraftForm(page)
-    page.data.inputText = '牛奶明天到期'
-    const draft = completeDraft('牛奶')
-    page.commitDrafts([draft])
-    page.openRecentList()
-    page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    // 点击列表项先进编辑表单：草稿暂存到列表最前，仍停留在最近列表视图，卡片尚未确认
-    expect(page.data.quickTab).toBe('recent')
-    expect(page.data.editingIndex).toBe(0)
-    expect(page.data.editingRecentNew).toBe(true)
-    expect(page.data.drafts.map((item: any) => item.fields.name)).toEqual(['面包', '牛奶'])
-    page.handleDraftFormSubmit({ detail: { ...page.data.drafts[0].fields } })
-    expect(page.data.quickTab).toBe('text')
-    expect(page.data.editingIndex).toBe(-1)
-    expect(page.data.drafts).toHaveLength(2)
-    expect(page.data.inputText).toBe('牛奶明天到期')
-  })
-
-  it('discards a recent draft when the edit form is cancelled', () => {
-    const page = pageInstance()
-    stubDraftForm(page)
-    page.openRecentList()
-    page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    expect(page.data.drafts).toHaveLength(1)
-    page.closeDraftEditor()
-    // 取消后不生成预览卡片，停留在最近列表继续选
-    expect(page.data.drafts).toHaveLength(0)
-    expect(page.data.editingIndex).toBe(-1)
-    expect(page.data.editingRecentNew).toBe(false)
-    expect(page.data.quickTab).toBe('recent')
   })
 
   it('generates through the tap handler and recovers from a cloud request that never completes', async () => {
@@ -571,7 +561,6 @@ describe('quick entry page compatibility', () => {
 
     expect(openManual).not.toHaveBeenCalled()
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
-      loading: false,
       features: { recent: true, text: true, voice: false, datePhoto: false, aiParse: true },
       capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
       defaultReminderLeadDays: 2,
@@ -633,9 +622,8 @@ describe('quick entry page compatibility', () => {
     expect(page.data.inputError).toBe('')
   })
 
-  it('turns a recent item into a savable draft after picking the expiry date in the shared form', async () => {
+  it('turns a draft handed back by the recent page into a savable item', async () => {
     const page = pageInstance()
-    stubDraftForm(page)
     listRecentProfilesMock.mockResolvedValue({ items: [{
       name: '鲜牛奶', quantity: 2, unit: '盒', category: 'food', storageLocation: '冰箱',
       reminderLeadDays: 1, expiryInputMode: 'direct', shelfLifeValue: null, shelfLifeUnit: null, invalidFields: [],
@@ -644,18 +632,18 @@ describe('quick entry page compatibility', () => {
     getSettingsMock.mockResolvedValue({ defaultReminderLeadDays: 1 })
 
     await page.preparePage()
-    expect(page.data.loading).toBe(false)
     expect(page.data.recentProfiles).toHaveLength(1)
 
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    expect(page.data.editingRecentNew).toBe(true)
-    expect(page.data.editingIndex).toBe(0)
+    // 最近录入页带回来的草稿没有到期日 → 待补全，回来后走本页同一套编辑表单
+    const picked = createDraftFromRecent(page.data.recentProfiles[0] as never, 1)
+    expect(picked.status).toBe('needs_input')
+    page.appendRecentDrafts([picked])
     expect(page.data.drafts).toHaveLength(1)
-    expect(page.data.drafts[0].status).toBe('needs_input')
 
+    stubDraftForm(page)
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
     // 完整表单里选好到期日再点「完成」，草稿此刻才变成可入库
     page.handleDraftFormSubmit({ detail: { ...page.data.drafts[0].fields, expiryInputMode: 'direct', expiryDate: '2026-09-20' } })
-    expect(page.data.quickTab).toBe('text')
     expect(page.data.editingIndex).toBe(-1)
     expect(page.data.drafts[0].status).toBe('savable')
     expect(page.data.drafts[0].selected).toBe(true)
@@ -682,22 +670,6 @@ describe('quick entry page compatibility', () => {
     expect(page.data.drafts[0].status).toBe('savable')
   })
 
-  it('keeps the recent list usable and prepends each added draft', () => {
-    const page = pageInstance()
-    stubDraftForm(page)
-    const milk = {
-      name: '鲜牛奶', quantity: 2, unit: '盒', category: 'food', storageLocation: '冰箱',
-      reminderLeadDays: 1, expiryInputMode: 'direct', shelfLifeValue: null, shelfLifeUnit: null, invalidFields: [],
-    }
-    const yogurt = { ...milk, name: '酸奶', quantity: 1, unit: '瓶', storageLocation: '' }
-    page.data.recentProfiles = [milk, yogurt]
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    page.handleDraftFormSubmit({ detail: { ...page.data.drafts[0].fields } })
-    page.selectRecent({ currentTarget: { dataset: { index: 1 } } })
-    page.handleDraftFormSubmit({ detail: { ...page.data.drafts[0].fields } })
-    expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['酸奶', '鲜牛奶'])
-  })
-
   it('flags a past expiry date instead of comparing the placeholder text', () => {
     const page = pageInstance()
     stubDraftForm(page)
@@ -710,23 +682,16 @@ describe('quick entry page compatibility', () => {
     expect(page.data.expiredFlags).toEqual([true])
   })
 
-  it('stays on quick entry and explains when the cloud function is outdated', async () => {
+  it('silently degrades when the recent records cannot be read on the entry page', async () => {
+    // 最近记录在本页只用来给识别结果补分类；拉不到也不该在正在录入的人面前弹提示。
     listRecentProfilesMock.mockRejectedValueOnce(
       new CloudServiceError('INVALID_ACTION', '不支持的库存操作'),
     )
     const setData = vi.fn()
-    const openManual = vi.fn()
 
-    await (quickEntryPage.loadRecentProfiles as () => Promise<void>).call({
-      setData,
-      openManual,
-    })
+    await (quickEntryPage.refreshRecentProfiles as () => Promise<void>).call({ setData })
 
-    expect(openManual).not.toHaveBeenCalled()
-    expect(setData).toHaveBeenCalledWith({
-      loading: false,
-      loadingError: '快速录入服务尚未更新，请先使用完整填写',
-    })
+    expect(setData).not.toHaveBeenCalled()
   })
 })
 

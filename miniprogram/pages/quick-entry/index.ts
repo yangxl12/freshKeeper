@@ -1,7 +1,6 @@
 import {
   applyFormValuesToDraft,
   createDraftFromParsed,
-  createDraftFromRecent,
   draftToFormPrefill,
   draftToInventoryInput,
   draftToManualFields,
@@ -169,17 +168,13 @@ Page({
     photoTargetId: '',
     photoStage: 'idle' as 'idle' | 'camera' | 'preview',
     cameraError: false,
-    loading: true,
-    loadingError: '',
     inputError: '',
     inputText: '',
     quickInputFocused: true,
     quickKeyboardHeight: 0,
     activeTab: 'quick' as 'quick' | 'full',
-    quickTab: 'text' as 'text' | 'recent',
     fullMounted: false,
-    popup: 'none' as 'none' | 'recent',
-    recentLimit: MAX_RECENT_PROFILES,
+    /** 只作识别结果的分类/存放位置匹配用，列表已搬到 pages/recent-entry。 */
     recentProfiles: [] as RecentItemProfile[],
     drafts: [] as QuickEntryDraft[],
     draftSummaries: [] as string[],
@@ -210,7 +205,6 @@ Page({
     draftLimitReached: false,
     maxDrafts: MAX_DRAFTS,
     editingIndex: -1,
-    editingRecentNew: false,
     /** 编辑表单顶部回显的日期照片，只在草稿带照片证据时有值。 */
     editingEvidence: '',
   },
@@ -284,6 +278,8 @@ Page({
       getQuickEntryCapabilities(),
       getSettings(),
     ])
+    // 最近记录在本页只用来给识别结果补分类和存放位置；列表交互已经搬到 pages/recent-entry，
+    // 所以这里拉失败就静默降级，不拿「最近物品不可用」去打扰正在录入的人。
     const recentProfiles = (recentResult.status === 'fulfilled' ? recentResult.value.items : []).slice(0, MAX_RECENT_PROFILES)
     const capabilityReady = capabilityResult.status === 'fulfilled'
     const capabilities = capabilityReady
@@ -293,43 +289,28 @@ Page({
     const defaultReminderLeadDays = settingsResult.status === 'fulfilled'
       ? settingsResult.value.defaultReminderLeadDays
       : 1
-    const loadingError = recentResult.status === 'rejected'
-      ? recentResult.reason instanceof CloudServiceError && recentResult.reason.code === 'INVALID_ACTION'
-        ? '快速录入服务尚未更新，请先使用完整填写'
-        : '最近物品暂时不可用，可重试或直接完整填写'
-      : ''
     const normalizedCapabilities = { ...capabilities, text: true, aiText: Boolean(capabilities.aiText) }
     this.setData({
-      loading: false,
       recentProfiles,
       features,
       capabilities: normalizedCapabilities,
       unavailableHints: unavailableHintsOf(normalizedCapabilities, capabilityReady),
       defaultReminderLeadDays,
-      loadingError,
     })
-    if (!recentProfiles.length && !features.text && !features.voice && !features.datePhoto && !loadingError) {
+    // 一路都没有可用的录入方式时直接落到完整录入，别让用户对着空白页发呆。
+    if (recentResult.status === 'fulfilled' && !recentProfiles.length
+      && !features.text && !features.voice && !features.datePhoto) {
       this.openFullTab()
     }
   },
 
-  async loadRecentProfiles() {
+  async refreshRecentProfiles() {
     try {
       const result = await listRecentProfiles(MAX_RECENT_PROFILES)
-      this.setData({ loading: false, recentProfiles: result.items.slice(0, MAX_RECENT_PROFILES), loadingError: '' })
-    } catch (error) {
-      this.setData({
-        loading: false,
-        loadingError: error instanceof CloudServiceError && error.code === 'INVALID_ACTION'
-          ? '快速录入服务尚未更新，请先使用完整填写'
-          : '最近物品暂时不可用，可重试或直接完整填写',
-      })
+      this.setData({ recentProfiles: result.items.slice(0, MAX_RECENT_PROFILES) })
+    } catch (_error) {
+      // 只影响识别结果的分类匹配，静默保留旧数据。
     }
-  },
-
-  retryRecent() {
-    this.setData({ loadingError: '' })
-    void this.loadRecentProfiles()
   },
 
   switchTab(event: WechatMiniprogram.BaseEvent) {
@@ -339,7 +320,7 @@ Page({
     if (tab === 'full') this.openFullTab()
     else {
       this.cancelVoice()
-      this.setData({ activeTab: 'quick', quickTab: 'text', quickInputFocused: true })
+      this.setData({ activeTab: 'quick', quickInputFocused: true })
     }
   },
 
@@ -379,17 +360,43 @@ Page({
     }, 40)
   },
 
-  openRecentList() {
-    if (this.data.saving || this.data.quickTab === 'recent') return
+  /**
+   * 「从最近录入添加」跳到独立页面完成选择：那边有原生返回、可搜索、能连续选多条，
+   * 不再把本页整块视图替换成一个没有导航栏的伪列表。
+   */
+  openRecentEntry() {
+    if (this.data.saving || this.data.recognitionState !== 'idle') return
+    const slots = MAX_DRAFTS - countUnfinished(this.data.drafts)
+    if (slots <= 0) {
+      this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先加入库存或删除已有卡片` })
+      return
+    }
     this.cancelVoice()
     this.cancelRecognition()
     this.blurQuickInput()
-    this.setData({ quickTab: 'recent', photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
+    this.setData({ photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false, inputError: '' })
+    track('recent_entry_open', { slots })
+    wx.navigateTo({
+      url: `/pages/recent-entry/index?slots=${slots}`,
+      events: {
+        // eventChannel 的 emit 是同步的，回到本页前草稿已经落进列表。
+        pickedDrafts: (payload: { drafts?: QuickEntryDraft[] }) => this.appendRecentDrafts(payload?.drafts),
+      },
+    })
   },
 
-  closeRecentList() {
-    if (this.data.saving || this.data.quickTab !== 'recent') return
-    this.setData({ quickTab: 'text', quickInputFocused: false })
+  /** 最近录入页带回来的草稿整批插到最前，批内保持用户在那边确认的顺序。 */
+  appendRecentDrafts(drafts?: QuickEntryDraft[]) {
+    if (!Array.isArray(drafts) || !drafts.length) return
+    const existing = this.data.drafts.filter((draft) => draft.status !== 'saved')
+    const accepted = drafts.slice(0, Math.max(0, MAX_DRAFTS - existing.length))
+    if (!accepted.length) {
+      this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
+      return
+    }
+    this.setData({ saveSummary: '', inputError: '' })
+    this.commitDrafts([...accepted, ...existing])
+    track('recent_item_select', { count: accepted.length })
   },
 
   /** 卡片任意位置都可进编辑；saving/saved/failed 的卡片没有可编辑状态，静默忽略。 */
@@ -398,19 +405,18 @@ Page({
     const draft = this.data.drafts[index]
     if (this.data.saving || !draft || ['saving', 'saved', 'failed'].includes(draft.status)) return
     this.blurQuickInput()
-    this.openDraftForm(index, false)
+    this.openDraftForm(index)
   },
 
   /**
    * 打开草稿编辑：把草稿灌进共用的完整录入表单。
    * 表单里的改动先留在表单里，只有点「完成」才回写草稿（handleDraftFormSubmit）。
    */
-  openDraftForm(index: number, isRecentNew: boolean) {
+  openDraftForm(index: number) {
     const draft = this.data.drafts[index]
     const evidence = draft?.evidence
     this.setData({
       editingIndex: index,
-      editingRecentNew: isRecentNew,
       editingEvidence: evidence?.kind === 'photo' ? (evidence.localPath || '') : '',
     }, () => {
       const target = this.data.drafts[index]
@@ -418,19 +424,13 @@ Page({
     })
   },
 
-  /** 关闭编辑表单；discard 为真时才丢弃「最近录入」里那条尚未确认的草稿。 */
-  dismissDraftEditor(discard: boolean) {
-    const { editingIndex, editingRecentNew } = this.data
-    this.setData({ editingIndex: -1, editingRecentNew: false, editingEvidence: '' })
-    if (discard && editingRecentNew && editingIndex >= 0 && this.data.drafts[editingIndex]) {
-      // 从最近录入暂存的草稿：取消即丢弃，不生成预览卡片。
-      this.commitDrafts(this.data.drafts.filter((_draft, index) => index !== editingIndex))
-    }
+  dismissDraftEditor() {
+    this.setData({ editingIndex: -1, editingEvidence: '' })
   },
 
   closeDraftEditor() {
     if (this.data.saving) return
-    this.dismissDraftEditor(true)
+    this.dismissDraftEditor()
   },
 
   /** 退出编辑表单前的二次提醒：动过表单才问一句，没动过直接退。 */
@@ -441,7 +441,7 @@ Page({
       return
     }
     wx.showModal({
-      title: this.data.editingRecentNew ? '放弃这条？' : '放弃修改？',
+      title: '放弃修改？',
       content: '改动还没点「完成」确定，退出不会保存。',
       confirmText: '放弃修改',
       cancelText: '继续编辑',
@@ -466,20 +466,16 @@ Page({
 
   /** 编辑表单点「完成」：表单值此刻才真正回写草稿。 */
   handleDraftFormSubmit(event: WechatMiniprogram.CustomEvent) {
-    const { editingIndex, editingRecentNew } = this.data
+    const { editingIndex } = this.data
     const draft = this.data.drafts[editingIndex]
     if (this.data.saving || editingIndex < 0 || !draft) {
-      this.dismissDraftEditor(false)
+      this.dismissDraftEditor()
       return
     }
     const drafts = [...this.data.drafts]
     drafts[editingIndex] = applyFormValuesToDraft(draft, event.detail as QuickEntryDraftFields)
     this.commitDrafts(drafts)
-    this.dismissDraftEditor(false)
-    if (editingRecentNew) {
-      // 新选的最近物品到这一步才成为预览卡片，切回录入视图让用户看见它。
-      this.setData({ quickTab: 'text', quickInputFocused: false, photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false })
-    }
+    this.dismissDraftEditor()
     track('draft_form_submit', { source: draft.source })
   },
 
@@ -487,7 +483,7 @@ Page({
   chooseDraftPhoto() {
     const index = this.data.editingIndex
     if (index < 0) return
-    if (this.isDraftFormDirty() && !this.data.editingRecentNew) {
+    if (this.isDraftFormDirty()) {
       wx.showModal({
         title: '先放弃当前修改？',
         content: '拍照识别会替换这一条草稿，没点「完成」的改动不会保留。',
@@ -684,24 +680,6 @@ Page({
     return { items: parseLocallySafely(text), parserVersion: 'rules-v3' }
   },
 
-  selectRecent(event: WechatMiniprogram.CustomEvent) {
-    if (this.data.saving || this.data.recognitionState !== 'idle') return
-    const profile = this.data.recentProfiles[Number(event.currentTarget.dataset.index)]
-    if (!profile) return
-    const pending = this.data.drafts.filter((draft) => draft.status !== 'saved')
-    if (pending.length >= MAX_DRAFTS) {
-      this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
-      return
-    }
-    const draft = createDraftFromRecent(profile, this.data.defaultReminderLeadDays)
-    track('recent_item_select')
-    // 点击列表项先开到编辑表单，点「完成」才生成预览卡片：草稿先暂存到列表最前，仍停留在最近视图。
-    this.setData({ saveSummary: '', inputError: '' }, () => {
-      this.commitDrafts([draft, ...this.data.drafts])
-      this.openDraftForm(0, true)
-    })
-  },
-
   updateDraft(index: number, mutator: (draft: QuickEntryDraft) => QuickEntryDraft) {
     const current = this.data.drafts[index]
     if (this.data.saving || !current || ['saving', 'saved', 'failed'].includes(current.status)) return
@@ -830,9 +808,8 @@ Page({
       this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
       return
     }
-    // 从编辑表单里发起拍日期时先收起表单，相机面板才可见；新选的最近物品视为已确认，切回录入视图。
-    const fromRecentNew = this.data.editingRecentNew
-    this.setData({ editingIndex: -1, editingRecentNew: false, editingEvidence: '', ...(fromRecentNew ? { quickTab: 'text' } : {}), photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
+    // 从编辑表单里发起拍日期时先收起表单，相机面板才可见。
+    this.setData({ editingIndex: -1, editingEvidence: '', photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
   },
 
   cameraFailed() {
@@ -932,7 +909,7 @@ Page({
     track('quick_entry_manual', { source: draft?.source || 'manual' })
     this.manualHandoff = true
     wx.disableAlertBeforeUnload?.()
-    this.setData({ activeTab: 'full', fullMounted: true, popup: 'none', inputText: '', photoPreview: '', photoStage: 'idle', inputError: '' }, () => {
+    this.setData({ activeTab: 'full', fullMounted: true, inputText: '', photoPreview: '', photoStage: 'idle', inputError: '' }, () => {
       this.withForm('#fullForm', (form) => form.applyPrefill(draft ? draftToManualFields(draft) : null, draft?.saveKey || ''))
       this.commitDrafts(this.data.drafts.filter(item => item.status === 'saved'))
       this.manualHandoff = false
@@ -1001,7 +978,7 @@ Page({
       wx.disableAlertBeforeUnload?.()
       wx.showToast({ title: '已加入库存', icon: 'success' })
       this.commitDrafts([])
-      void this.loadRecentProfiles()
+      void this.refreshRecentProfiles()
       this.exitToHome()
     }
   },
