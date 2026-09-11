@@ -3,6 +3,7 @@ import { getErrorMessage } from '../../services/cloud-client'
 import { listTrash, permanentlyDeleteItem } from '../../services/inventory-service'
 import { readReminderAuthorization } from '../../services/reminder-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
+import { deleteAccount } from '../../services/user-service'
 
 const REMINDER_DAY_OPTIONS = Array.from({ length: 31 }, (_, value) => ({
   value,
@@ -19,7 +20,7 @@ interface Profile {
   avatar: string
 }
 
-type EntryKey = 'settings' | 'trash' | 'feedback' | 'help' | 'about'
+type EntryKey = 'settings' | 'trash' | 'feedback' | 'help' | 'about' | 'account'
 
 let trashSearchTimer: number | undefined
 let trashRequestSequence = 0
@@ -59,6 +60,8 @@ Page({
     trashItems: [] as ReturnType<typeof toInventoryCardItem>[],
     trashNextCursor: null as string | null,
     feedbackText: '',
+    /** 注销中：锁住弹窗关闭与按钮，避免删一半被打断。 */
+    deletingAccount: false,
   },
 
   onShow() {
@@ -152,7 +155,7 @@ Page({
   },
 
   closeModal() {
-    if (this.data.settingsSaving) return
+    if (this.data.settingsSaving || this.data.deletingAccount) return
     this.setData({
       activeModal: '',
       settingsError: '',
@@ -308,5 +311,54 @@ Page({
     }
     this.setData({ feedbackText: '', activeModal: '' })
     wx.showToast({ title: '已收到，感谢反馈', icon: 'success' })
+  },
+
+  /* 账号注销（A2） */
+  async startDeleteAccount() {
+    if (this.data.deletingAccount) return
+
+    const first = await wx.showModal({
+      title: '注销账号？',
+      content: '将永久删除：全部物品、回收站、提醒任务、提醒设置和云端封面图。',
+      confirmText: '继续',
+      confirmColor: '#A33F32',
+    })
+    if (!first.confirm) return
+
+    const second = await wx.showModal({
+      title: '确认注销，无法恢复',
+      content: '注销后重新进入会是一个全新的空账号，已删除的数据找不回来。',
+      confirmText: '确认注销',
+      confirmColor: '#A33F32',
+    })
+    if (!second.confirm) return
+
+    this.setData({ deletingAccount: true })
+    wx.showLoading({ title: '正在删除…', mask: true })
+    try {
+      await deleteAccount()
+      wx.hideLoading()
+      try {
+        wx.clearStorageSync()
+      } catch (error) {
+        // 清不掉本地缓存也不影响云端已删除。
+      }
+      await wx.showModal({
+        title: '账号已注销',
+        content: '你的数据已全部删除，重新进入就是全新的空账号。',
+        showCancel: false,
+        confirmText: '知道了',
+      })
+      wx.reLaunch({ url: '/pages/home/index' })
+    } catch (error) {
+      wx.hideLoading()
+      this.setData({ deletingAccount: false })
+      await wx.showModal({
+        title: '注销未完成',
+        content: `${getErrorMessage(error)}\n可以再试一次，重试是安全的。`,
+        showCancel: false,
+        confirmText: '知道了',
+      })
+    }
   },
 })

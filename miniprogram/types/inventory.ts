@@ -106,6 +106,28 @@ export interface UserSettings {
   hasReminderJobs?: boolean
 }
 
+/** `users` 档案的对外形状；日期字段统一是 Asia/Shanghai 日期串，只用于展示。 */
+export interface UserProfile {
+  nickname: string | null
+  avatarFileId: string | null
+  createdAt: string | null
+  lastSeenAt: string | null
+}
+
+export interface UserTouchResult {
+  created: boolean
+  lastSeenAt: string
+}
+
+export interface DeleteAccountResult {
+  deleted: {
+    items: number
+    reminders: number
+    settings: number
+    files: number
+  }
+}
+
 export interface BatchItemReference {
   itemId: string
   version: number

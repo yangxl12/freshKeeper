@@ -16,6 +16,7 @@
 - `inventory_items`
 - `user_settings`
 - `reminder_jobs`
+- `users`（用户档案，`_id` 即 OPENID，A 档档案层；详见 `docs/user-account-plan.md`）
 
 为开发、生产环境分别创建并确认以下复合索引：
 
@@ -44,6 +45,7 @@
 - `dispatchReminders`
 - `cleanupTrash`
 - `quickEntryApi`
+- `userApi`
 
 编译或上传小程序不会同步更新云函数。只要 `cloudfunctions/` 有改动，发布对应客户端前必须单独部署相关函数；否则新客户端仍会调用旧接口。也可以使用开发者工具 CLI：
 
@@ -55,7 +57,22 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
 
 部署 `settingsApi` 后，应在“我的 → 提醒设置”中修改默认提醒天数并保存一次，确认云端只校验提醒天数；保存时会同时清除当前用户历史设置中的废弃默认存放位置字段。
 
-运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用 `inventoryApi`、`settingsApi`、`reminderApi` 和 `quickEntryApi`；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
+运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用 `inventoryApi`、`settingsApi`、`reminderApi`、`quickEntryApi` 和 `userApi`；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
+
+### 3.0 用户档案与账号注销（userApi）
+
+`userApi` 只做两件事：启动时 `touch` 一次活跃度（`users` 集合，`_id` = OPENID）、以及「我的 → 账号与数据 → 注销账号」
+清空该用户的全部数据。集合权限一律“无权限”，只有云函数能读写。
+
+- **必须先建集合再部署**：控制台建 `users`（权限设为无），否则首次 touch 会失败（埋点失败静默，症状是集合里没数据）。
+- **超时必须 60 秒**：`userApi/config.json` 已写 `"timeout": 60`，但 `timeout` 只在函数**首次创建**时写入云端，
+  所以要在首建前确认 config 正确；若已建过，去云开发控制台手动改（与 `quickEntryApi` 同一个坑，见 3.3 节）。
+  注销要分批删几百条物品 + 云存储封面图，3 秒必超时。
+- **注销顺序是硬要求**：先收集 `coverFileId` → 删云存储 → 删数据库（`inventory_items` / `reminder_jobs` /
+  `user_settings` / `users`）。删库在前就再也拿不到 fileID 了。删干净再调一次是空删，重试安全。
+- **不清理快录临时媒体**：`quick-entry/` 前缀的残留靠存储生命周期规则兜底，不为此新增列举逻辑。
+- **隐私指引**：「用户隐私保护指引」里必须写明删除/注销个人信息的路径（本项目为「我的 → 账号与数据」）。
+  这是审核项，代码代替不了后台提交。
 
 ### 3.1 快速录入识别服务
 
@@ -181,6 +198,8 @@ npm run check
 - 删除后记录进入回收站；重新编辑并入库后恢复为有效库存，旧提醒记录被清除。
 - 手动触发 `cleanupTrash`，验证旧 `discarded` 数据只迁移不删除；已满 30 天的 `deleted` 数据被彻底删除，未满 30 天和 `used_up` 数据保留。
 - 临时改为每分钟触发后连续运行两次，同一任务最多收到一条消息；验证完恢复每日 09:00。
+- 首次进入后 `users` 出现一条 `_id` = OPENID 的记录；同一天二次冷启动 `lastSeenAt` 不变，次日更新。
+- 注销账号后 4 个集合里该用户数据全部清空、封面图已删；再次进入是空数据并重新生成 `users` 记录；中途失败重试结果一致。
 - 函数日志不出现完整物品名称、OPENID 或微信订阅原始报文。
 
 真机必须完成：

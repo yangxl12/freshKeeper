@@ -203,12 +203,34 @@
   background: #1f5d49;
 }
 
+.entry__icon--account { background: #fdf1ef; }
+
+.entry__icon--account::before {
+  top: 14rpx;
+  left: 19rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #b84a3e;
+}
+
+.entry__icon--account::after {
+  top: 28rpx;
+  left: 15rpx;
+  width: 22rpx;
+  height: 12rpx;
+  border-radius: 11rpx 11rpx 0 0;
+  background: #b84a3e;
+}
+
 .entry__label {
   flex: 0 0 auto;
   color: #173b31;
   font-size: 29rpx;
   font-weight: 600;
 }
+
+.entry__label--danger { color: #b84a3e; }
 
 .entry__value {
   overflow: hidden;

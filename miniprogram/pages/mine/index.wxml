@@ -44,6 +44,12 @@
       <text class="entry__value">保质记</text>
       <view class="entry__chevron" aria-hidden="true"></view>
     </button>
+    <button class="entry" data-entry="account" bindtap="openEntry" hover-class="entry--pressed">
+      <view class="entry__icon entry__icon--account" aria-hidden="true"></view>
+      <text class="entry__label entry__label--danger">账号与数据</text>
+      <text class="entry__value">可注销并清空数据</text>
+      <view class="entry__chevron" aria-hidden="true"></view>
+    </button>
   </view>
 
   <!-- 资料设置 -->
@@ -215,6 +221,34 @@
         </view>
       </view>
       <button class="primary-button modal__button" bindtap="closeModal" hover-class="pressable--pressed">知道了</button>
+    </view>
+  </view>
+
+  <!-- 账号与数据 -->
+  <view wx:if="{{activeModal === 'account'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="账号与数据">
+      <text class="modal__title">账号与数据</text>
+      <text class="modal__subtitle">数据保存在微信云开发，按微信账号隔离，仅本人可见</text>
+      <view class="help-list">
+        <view class="help-item">
+          <text class="help-item__q">注销会删掉什么</text>
+          <text class="help-item__a">全部物品、回收站、提醒任务、提醒设置和云端封面图，都会永久删除。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">注销后还能用吗</text>
+          <text class="help-item__a">可以。重新进入会是一个全新的空账号，需要重新录入物品。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">中途失败怎么办</text>
+          <text class="help-item__a">直接再点一次注销即可，重复执行不会出错。</text>
+        </view>
+      </view>
+      <button
+        class="danger-button modal__button"
+        disabled="{{deletingAccount}}"
+        bindtap="startDeleteAccount"
+        hover-class="pressable--pressed"
+      >{{deletingAccount ? '正在删除…' : '注销账号'}}</button>
     </view>
   </view>
 
