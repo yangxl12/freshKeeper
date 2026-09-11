@@ -1,6 +1,7 @@
 import { toInventoryCardItem } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { listTrash, permanentlyDeleteItem } from '../../services/inventory-service'
+import { readReminderAuthorization } from '../../services/reminder-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
 
 const REMINDER_DAY_OPTIONS = Array.from({ length: 31 }, (_, value) => ({
@@ -48,7 +49,8 @@ Page({
     reminderDayIndex: 1,
     savedReminderDayIndex: 1,
     hasReminderJobs: false,
-    subscriptionMainSwitch: null as boolean | null,
+    /** 微信订阅消息授权状态；由 reminder-service 折算，与「完整录入」共用同一份判断。 */
+    subscriptionAuthorized: false,
     subscriptionSummary: '可在物品详情中逐件开启一次性提醒',
     trashLoading: false,
     trashLoadingMore: false,
@@ -62,8 +64,8 @@ Page({
   onShow() {
     this.syncTabBar()
     this.setData({ profile: readProfile() })
+    // loadSettings 结束后会接着读订阅授权：文案里要带上「是否已有提醒任务」，得等它先回来。
     void this.loadSettings()
-    this.readSubscriptionSetting()
   },
 
   onUnload() {
@@ -71,8 +73,7 @@ Page({
   },
 
   onPullDownRefresh() {
-    Promise.all([this.loadSettings()]).finally(() => wx.stopPullDownRefresh())
-    this.readSubscriptionSetting()
+    void this.loadSettings().finally(() => wx.stopPullDownRefresh())
   },
 
   syncTabBar() {
@@ -88,18 +89,16 @@ Page({
     this.setData({ settingsLoading: true, settingsError: '' })
     try {
       const settings = await getSettings()
-      this.setData(
-        {
-          reminderDayIndex: settings.defaultReminderLeadDays,
-          savedReminderDayIndex: settings.defaultReminderLeadDays,
-          hasReminderJobs: Boolean(settings.hasReminderJobs),
-          settingsLoading: false,
-        },
-        () => this.updateSubscriptionSummary(),
-      )
+      this.setData({
+        reminderDayIndex: settings.defaultReminderLeadDays,
+        savedReminderDayIndex: settings.defaultReminderLeadDays,
+        hasReminderJobs: Boolean(settings.hasReminderJobs),
+        settingsLoading: false,
+      })
     } catch (error) {
       this.setData({ settingsLoading: false, settingsError: getErrorMessage(error) })
     }
+    void this.readSubscriptionSetting()
   },
 
   /* 资料 */
@@ -189,36 +188,24 @@ Page({
     }
   },
 
-  readSubscriptionSetting() {
-    wx.getSetting({
-      withSubscriptions: true,
-      success: (result) => {
-        const subscriptions = result.subscriptionsSetting
-        this.setData({ subscriptionMainSwitch: subscriptions?.mainSwitch ?? null }, () =>
-          this.updateSubscriptionSummary(),
-        )
-      },
+  async readSubscriptionSetting() {
+    const authorization = await readReminderAuthorization()
+    this.setData({
+      subscriptionAuthorized: authorization.authorized,
+      // 授权已开启且已有提醒任务时，用更具体的说明覆盖通用文案。
+      subscriptionSummary:
+        authorization.authorized && this.data.hasReminderJobs
+          ? '通知已开启，已有物品保存了提醒任务'
+          : authorization.summary,
     })
-  },
-
-  updateSubscriptionSummary() {
-    let subscriptionSummary = this.data.hasReminderJobs
-      ? '已有物品保存了提醒任务'
-      : '可在物品详情中逐件开启一次性提醒'
-    if (this.data.subscriptionMainSwitch === false) {
-      subscriptionSummary = '微信通知总开关已关闭'
-    } else if (this.data.subscriptionMainSwitch === true) {
-      subscriptionSummary = this.data.hasReminderJobs
-        ? '通知已开启，已有物品保存了提醒任务'
-        : '通知已开启，每件物品仍需单独授权'
-    }
-    this.setData({ subscriptionSummary })
   },
 
   openNotificationSettings() {
     wx.openSetting({
       withSubscriptions: true,
-      complete: () => this.readSubscriptionSetting(),
+      complete: () => {
+        void this.readSubscriptionSetting()
+      },
     })
   },
 

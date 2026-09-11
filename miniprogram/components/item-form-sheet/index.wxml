@@ -114,7 +114,7 @@
             <switch
               wx:if="{{!authSwitchRebuilding}}"
               class="reminder-switch"
-              checked="{{subscriptionAuthorized === true}}"
+              checked="{{subscriptionAuthorized}}"
               color="#24684f"
               aria-label="微信临期提醒授权"
               bindchange="handleReminderAuthSwitch"
