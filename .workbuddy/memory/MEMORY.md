@@ -49,6 +49,9 @@
 - 草稿编辑是**底部弹窗**（遮罩 + 82vh 面板），里面只复用 `item-form-sheet`（`purpose="draft"` 时组件不渲染自己的
   save-bar）；按钮由弹窗持有，点「完成」才经 `applyFormValuesToDraft` 回写草稿，带改动退出二次确认。
   新草稿整批插到列表最前。
+- `item-form-sheet` 的「到期日期 ↔ 保质期计算」切换（`handleModeChange`）**只切 mode，不清另一侧字段**。
+  下游三处都按 mode 归一化（组件 `save()` / `collectDraftFields()`、云端 `inventoryApi/validation.js`），
+  清空纯属多余，只会让用户切回来发现白填。组件测试见 `tests/unit/item-form-sheet.test.ts`。
 - 「已过期」用 `expiredFlags`（`getExpirySummary()` 先过滤 `/^\d{4}-\d{2}-\d{2}$/` 再比），别拿中文占位「待补到期日」比大小。
 - `.quick-input` 开了 `hold-keyboard`，任何"输入完就干活"的分支都要 `blurQuickInput()`
   （`wx.hideKeyboard` + `quickInputFocused:false`）；**别给原生 textarea 设大 `line-height`**

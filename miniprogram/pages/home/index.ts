@@ -345,8 +345,9 @@ Page({
     try {
       const result = await updateQuantity(item, quantity)
       this.setData({ actionLoading: false })
+      // 成功不弹 toast：数字本身会跳一下（inventory-row 的 quantityFlash），
+      // 数量就在原地变化，再盖一层遮罩式提示反而碍事。
       this.patchItem(item._id, { quantity, version: result.version })
-      wx.showToast({ title: `数量已改为 ${quantity}${item.unit}`, icon: 'success' })
     } catch (error) {
       this.handleActionError(error)
     }
