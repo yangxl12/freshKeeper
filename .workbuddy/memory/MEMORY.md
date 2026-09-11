@@ -35,16 +35,36 @@
    `{"id":1,"script":"run_test_script","args":["--port","9420","--script","<探针>","--timeout","90"]}`。
 3. 探针 `module.exports = async (mp) => mp.evaluate(...)`；模板 `C:/Users/BYS/AppData/Local/Temp/wx-probe/`。
 4. 云函数回 `{ok, data, requestId}`，探针取值 `res.result.data.xxx`；`save` 的 `idempotencyKey` 须标准 UUID v4。
-5. automator 的 page node 会失效（截图全白），`miniProgram.evaluate` 仍可用，但
+5. automator 的 page node 会失效（截图全白）时，`miniProgram.evaluate` 仍可用，但
    `getCurrentPages()[i].data` 只有 `__webviewId__`，别用它断言页面数据。
-6. **怀疑平台 API 行为先探针实测**，别推理。
+   **`page.$` / `element.tap()` 有时是好的**（2026-09-11 验导出时可用）：`mp.currentPage()` →
+   `page.setData({...})` → `page.$('.selector')` → `await btn.tap()` → `await page.data('key')`。
+   验「必须 TAP 手势」的 API（`shareFileMessage` 等）只能靠真点，`evaluate` 不算点击；
+   页面代码没日志时在 `mp.evaluate` 里**先钩原生 API**（包一层 `fail` 抓 `errMsg`）再点。
+6. 探针**超时后会在后台继续跑**：立刻重跑会让两个探针操作同一账号、结果自相矛盾。
+   先等它跑完（或调大 `--timeout`）再重试。
+7. **怀疑平台 API 行为先探针实测**，别推理。
+8. 云函数`INTERNAL_ERROR` 吞掉了真堆栈（`normalizeError` 只留 code+message）。
+   临时在 `userApi/index.js` 的 catch 里加 `debug: String(error.stack).slice(0,400)`，
+   部署后跑探针即可看到真因，**用完必须撤掉并复核线上**（发个 `INVALID_ACTION` 探针确认无 `debug` 字段）。
+
+## 云数据库踩坑（wx-server-sdk）
+- **不能往 `null` 字段里创建子字段**：`update({data:{a:{b:1}}})` 在 `a` 当前为 `null` 时报
+  `Cannot create field 'b' in element {a: null}` 而整条失败（update 把对象值当嵌套路径写）。
+  → 多字段状态一律拆扁平字段；写 `null` 只用于**扁平标量**（`nickname:null` 一直安全）。
+- 删字段用 `db.command.remove()`，但那会污染注入式假 db，本项目一律用扁平字段 + `null` 绕开。
 
 ## 用户体系（A 档已落地 docs/user-account-plan.md；B 档 docs/user-profile-plan.md）
 - 集合 `users`（`_id`=OPENID + 冗余 `ownerId`，权限「无权限」）+ 云函数 `userApi`
   （`index.js`/`error.js`/`validation.js`/`date.js`/`account.js`）。
 - 核心逻辑在注入式 `account.js:createAccountService({ db, deleteFile, uploadFile })`，`index.js` 才 require
   `wx-server-sdk` —— 单测注入假 db，不加载真 SDK。
-- action：`touch`（同日双层节流）/ `get` / `updateProfile` / `createAvatarUpload` / `exportData` / `deleteAccount`。
+- action：`touch`（同日双层节流）/ `get` / `updateProfile` / `createAvatarUpload` / `exportData` /
+  `confirmExport` / `deleteAccount`。
+- **导出**（`docs/user-profile-plan.md` 7.6～7.8）：`wx.shareFileMessage` **只认 TAP 手势**，
+  调用栈里不能有 await → 按钮必须两步（先生成+下载，再点才同步转发）。额度计「交付成功」
+  （`exportDeliveredDate/Count`，3/天，`confirmExport` 才 +1），未交付的当天文件用
+  `exportPendingFileId/FileName/Date` 复用，旧 `exportCountDate/Count` 不再读。
 - 注销顺序：收集 coverFileId + 头像 fileID → `deleteFile`（50/批）→ remove 四个集合；20 轮上限抛
   `DELETE_INCOMPLETE`；重试幂等，不留墓碑。注销后重进 = 新用户。
 - 业务错误码**只在 `error.code`**，测试取 `error.code` 断言，别 `toThrow('CODE')`。
