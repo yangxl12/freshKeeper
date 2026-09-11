@@ -5,9 +5,18 @@
   `Cannot read properties of undefined (reading 'config')`）；package.json 不单独锁 vite。
 - 改完跑 `npm run check`（typecheck + test + check:project）→ commit → push
   `git@github.com:yangxl12/freshKeeper.git`；SSH 常被代理拦（127.0.0.1:7888 未监听），第一次 push 失败就只提交让用户代推。
-- **本机 bash 缺 coreutils**（`sed`/`head`/`wc` 都没有）→ 用 PowerShell；PowerShell 的 stdout 会被吞，
-  命令输出要 `Out-File` 落盘再 Read。
+- **本机 bash 几乎不可用**：`sed`/`head`/`wc`/`cat`/`ls`/`tail`/`rm` 全 `command not found`
+  （PortableGit 的 safe-bin 包装脚本自己就报 `dirname: command not found`）；
+  **`npm run check` 在 bash 里直接报 `/usr/bin/env: 'bash': No such file or directory`**。
+  → npm 脚本一律走 PowerShell（`$env:Path = "C:\Program Files\Volta;" + $env:Path` 后再 `npm`），
+  git 命令 bash / PowerShell 都能跑；PowerShell 的 stdout 会被吞，命令输出要 `Out-File` 落盘再 Read。
+- **删文件要 PowerShell + `dangerouslyDisableSandbox`**：平台有 safe-delete 机制（走回收站），
+  沙箱内 `Remove-Item` 静默失效（exit 0 但文件还在），沙箱外若 `genie-trash failed` 会
+  `SAFE_DELETE_FAIL_CLOSED` 拒绝删除。`git` 侧看不清删除是否真生效，**必须 `Test-Path` 复核**。
+- 项目**已有 `.gitignore`**（`node_modules/`、`*.log`、`coverage/`、`project.private.config.json` 等），
+  别以为没有——`check-output.log`/`test-new.log` 是被跟踪的历史文件，不受 `*.log` 影响。
 - **同一文件不要在一次消息里并行发多个 Edit**，会互相覆盖丢改动；顺序改。
+  写整个文件前要先 Read（Read 记录跨轮次会失效，Write 会报 `File has not been read yet`）。
 
 ## Git 踩坑
 - **绝不 `git stash push -- <path>`**：曾删空 `.git/refs`（git 报 not a repository、文件全变 A）。
@@ -108,3 +117,8 @@
   → isolated，app.wxss class 进不来，样式必须自带。
 - 图标 `miniprogram/assets/icons/*.svg`（32×32 圆角底 + 24 栅格线稿）；
   状态色：在库/编辑=绿、临期/提醒=琥珀、过期/删除=红、已用完=蓝。
+- 数量输入框（`inventory-row`）编辑态：**± 按钮收起让位**（`item-card__stepper--editing`），
+  输入框宽度由 `quantityInputWidth()` 按字数分档（56/76/96/116rpx）经 inline style 下发——
+  固定 flex 宽度在 4 位数下只剩一条缝。数量变化反馈 = 数字动效 + `wx.vibrateShort(light)`
+  + 隐藏 live 文本（`aria-live` 在微信端能否播报**未实测**，不确定时按"不播报"预期）。
+  **改这两处行为要同步 `tests/unit/inventory-row.test.ts`。**
