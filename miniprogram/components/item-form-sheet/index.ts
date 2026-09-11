@@ -215,14 +215,16 @@ Component({
       }
     },
 
+    /**
+     * 只切 mode，绝不动另一侧的输入：用户来回切换「到期日期 ↔ 保质期计算」时数据必须留住，
+     * 之前这里清空对侧字段，导致切回来发现填过的日期没了。
+     * 不会串味——save() / collectDraftFields() 都按当前 mode 取字段，未选中侧一律写 null。
+     * 切完重算预计到期，让保留的生产日期+保质期立刻恢复预览。
+     */
     handleModeChange(event: WechatMiniprogram.BaseEvent) {
       const mode = event.currentTarget.dataset.mode as ExpiryInputMode
       if (mode === this.data.mode) return
-      this.setData(
-        mode === 'direct'
-          ? { mode, productionDate: '', shelfLifeValue: '', expiryPreview: '', dirty: true }
-          : { mode, expiryDate: '', expiryPreview: '', dirty: true },
-      )
+      this.setData({ mode, dirty: true }, () => this.updateExpiryPreview())
     },
 
     handleTextInput(event: WechatMiniprogram.Input) {
