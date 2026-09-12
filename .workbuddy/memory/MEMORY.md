@@ -10,6 +10,10 @@
 ## Git 红线
 - **绝不 `git stash push -- <path>`**（曾删空 `.git/refs`）。恢复：`mkdir -p .git/refs/{heads,tags,remotes}` → `ls-remote` → `fetch` → `update-ref`。
 - `fatal: bad object HEAD` → 先 `git ls-remote origin`，远端有就 `git fetch origin`。
+- **「待推送 N 个」先别信**：`git ls-remote origin` 的 `refs/heads/<branch>` 若等于 `git rev-parse HEAD`，就是本地引用坏了，跟提交无关。
+  根因是 `.git/refs/remotes/origin/` 目录缺失 + `.git/packed-refs` 残留老值（两条会互相掩盖，`fetch` 也修不回来）。
+  2026-09-12 已清掉 packed-refs 那条过期记录（备份 `.git/packed-refs.bak-20260912`）；本环境实测 **git 建不了带斜杠的引用**
+  （`git branch a/b` 静默失败），两套 git 版本都复现，去你自己终端验证一次。
 
 ## 云函数（CLI `D:\微信web开发者工具\cli.bat`）
 - `config.json` 的 timeout/envVariables/triggers **只在首次创建**时写入云端，deploy 只更新代码 → 建完去控制台改超时（默认 3s，重函数 60s）。
