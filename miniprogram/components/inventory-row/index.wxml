@@ -1,4 +1,5 @@
 <view class="item-card item-card--{{item.isActive ? item.expiryTone : 'muted'}}" bindtap="handleTap" hover-class="item-card--pressed" role="button" aria-label="{{item.name}}，{{item.categoryLabel}}{{item.hasLocation ? '，' + item.locationText : ''}}，{{item.isActive ? item.remainingDaysText : '已用完'}}，数量 {{item.quantityText}}">
+  <text class="item-card__a11y" aria-live="polite">{{quantityA11yText}}</text>
   <image class="item-card__image" src="{{coverSrc}}" mode="aspectFit" binderror="handleCoverError" aria-hidden="true" />
   <view class="item-card__body">
     <text class="item-card__name">{{item.name}}</text>
@@ -15,8 +16,8 @@
   </view>
   <view class="item-card__side">
     <view class="item-card__remaining"><view class="clock-icon" aria-hidden="true"></view><text>{{item.isActive ? item.remainingDaysText : '已用完'}}</text></view>
-    <view wx:if="{{item.isActive}}" class="item-card__stepper">
-      <view class="item-card__step {{item.quantity <= 1 ? 'item-card__step--disabled' : ''}}" data-delta="-1" catchtap="handleQuantity" hover-class="item-card__step--pressed" role="button" aria-disabled="{{item.quantity <= 1}}" aria-label="减少数量">
+    <view wx:if="{{item.isActive}}" class="item-card__stepper {{editing ? 'item-card__stepper--editing' : ''}}">
+      <view wx:if="{{!editing}}" class="item-card__step {{item.quantity <= 1 ? 'item-card__step--disabled' : ''}}" data-delta="-1" catchtap="handleQuantity" hover-class="item-card__step--pressed" role="button" aria-disabled="{{item.quantity <= 1}}" aria-label="减少数量">
         <view class="item-card__disc" aria-hidden="true">
           <view class="item-card__disc-bar"></view>
         </view>
@@ -25,6 +26,7 @@
         <block wx:if="{{editing}}">
           <input
             class="item-card__quantity-input"
+            style="width: {{editInputWidth}}rpx"
             type="number"
             value="{{editValue}}"
             focus="{{editing}}"
@@ -37,11 +39,11 @@
           <text class="item-card__quantity-unit">{{item.unit}}</text>
         </block>
         <block wx:else>
-          <text class="item-card__quantity-value">{{item.quantity}}</text>
+          <text class="item-card__quantity-value {{quantityFlash}}">{{item.quantity}}</text>
           <text class="item-card__quantity-unit">{{item.unit}}</text>
         </block>
       </view>
-      <view class="item-card__step {{item.quantity >= 9999 ? 'item-card__step--disabled' : ''}}" data-delta="1" catchtap="handleQuantity" hover-class="item-card__step--pressed" role="button" aria-disabled="{{item.quantity >= 9999}}" aria-label="增加数量">
+      <view wx:if="{{!editing}}" class="item-card__step {{item.quantity >= 9999 ? 'item-card__step--disabled' : ''}}" data-delta="1" catchtap="handleQuantity" hover-class="item-card__step--pressed" role="button" aria-disabled="{{item.quantity >= 9999}}" aria-label="增加数量">
         <view class="item-card__disc" aria-hidden="true">
           <view class="item-card__disc-bar"></view>
           <view class="item-card__disc-bar item-card__disc-bar--vertical"></view>

@@ -1,5 +1,5 @@
 import { CATEGORY_OPTIONS, SHELF_LIFE_OPTIONS } from './inventory'
-import type { Category } from '../types/inventory'
+import type { Category, InventorySaveInput } from '../types/inventory'
 import type {
   QuickEntryDraft,
   QuickEntryDraftFields,
@@ -366,7 +366,9 @@ export function getDraftSummary(draft: QuickEntryDraft): string {
   const fields = draft.fields
   const quantity = fields.quantity == null ? '待补数量' : `${fields.quantity}${fields.unit || '件'}`
   const location = fields.storageLocation ? ` · ${fields.storageLocation}` : ''
-  return `${quantity} · ${categoryLabel(fields.category)}${location} · 提前${fields.reminderLeadDays ?? 1}天提醒`
+  // 到期提醒已经统一成「保存即自动推送」，草稿卡片只需说明提前量。
+  const reminder = `提前${fields.reminderLeadDays ?? 1}天提醒`
+  return `${quantity} · ${categoryLabel(fields.category)}${location} · ${reminder}`
 }
 
 export function getExpirySummary(draft: QuickEntryDraft): string {
@@ -402,6 +404,53 @@ export function draftToManualFields(draft: QuickEntryDraft): Partial<import('../
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(fields)) if (!blocked.has(key)) result[key] = value
   return result
+}
+
+/**
+ * 把草稿灌进共用的完整录入表单。
+ * 与 draftToManualFields 的区别：这里如实带上当前值（含冲突日期），不做「有问题就清空」的裁剪——
+ * 用户是进来看清楚再改的，把有疑问的日期藏起来只会让人无从下手。
+ */
+export function draftToFormPrefill(draft: QuickEntryDraft): Partial<InventorySaveInput> {
+  const fields = draft.fields
+  return {
+    name: fields.name,
+    quantity: fields.quantity ?? undefined,
+    unit: fields.unit,
+    category: fields.category ?? undefined,
+    storageLocation: fields.storageLocation,
+    expiryInputMode: fields.expiryInputMode,
+    expiryDate: fields.expiryDate,
+    productionDate: fields.productionDate,
+    shelfLifeValue: fields.shelfLifeValue,
+    shelfLifeUnit: fields.shelfLifeUnit,
+    reminderLeadDays: fields.reminderLeadDays ?? undefined,
+  }
+}
+
+/**
+ * 完整录入表单点「完成」后回写草稿。
+ * 用户逐项看过整张表单再点完成，所以数量/单位/分类这类待确认项就此结清；
+ * 日期类待确认项只在日期真的被改过时才结清——否则「没改就点完成」会静默吃掉日期冲突提示。
+ */
+export function applyFormValuesToDraft(draft: QuickEntryDraft, fields: QuickEntryDraftFields): QuickEntryDraft {
+  const before = draft.fields
+  const dateTouched =
+    fields.expiryInputMode !== before.expiryInputMode ||
+    fields.expiryDate !== before.expiryDate ||
+    fields.productionDate !== before.productionDate ||
+    fields.shelfLifeValue !== before.shelfLifeValue ||
+    fields.shelfLifeUnit !== before.shelfLifeUnit
+  const confirmationFields = (draft.confirmationFields || [])
+    .filter(field => field.startsWith('date:') && !dateTouched)
+  return refreshDraftValidation({
+    ...draft,
+    fields,
+    confirmationFields,
+    dateConflict: dateTouched ? undefined : draft.dateConflict,
+    dateInvalid: dateTouched ? false : draft.dateInvalid,
+    aiMissingFields: [],
+  })
 }
 
 export function categoryLabel(category: Category | null): string {

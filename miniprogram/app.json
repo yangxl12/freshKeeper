@@ -2,6 +2,7 @@
   "pages": [
     "pages/home/index",
     "pages/quick-entry/index",
+    "pages/recent-entry/index",
     "pages/item-form/index",
     "pages/item-detail/index",
     "pages/batch-operation/index",

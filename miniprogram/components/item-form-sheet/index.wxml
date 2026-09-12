@@ -1,4 +1,4 @@
-<view class="form-sheet-page">
+<view class="form-sheet-page {{purpose === 'draft' ? 'form-sheet-page--inline' : ''}}">
   <view wx:if="{{errorMessage}}" class="feedback-error" role="alert">
     <text>{{errorMessage}}</text>
     <button wx:if="{{loadFailed}}" class="inline-retry" bindtap="retryLoad">重新加载</button>
@@ -93,27 +93,25 @@
         </block>
 
         <view class="form-row">
-          <text class="form-row__label">提前提醒 <text class="required-mark">*</text></text>
-          <view class="number-suffix-control {{reminderEnabled ? '' : 'number-suffix-control--disabled'}}">
+          <text class="form-row__label">到期前提醒 <text class="required-mark">*</text></text>
+          <view class="number-suffix-control">
             <input
               class="number-suffix-control__input"
               value="{{reminderLeadDays}}"
               type="number"
               maxlength="2"
-              disabled="{{!reminderEnabled}}"
               data-field="reminderLeadDays"
               bindinput="handleTextInput"
             />
             <text class="number-suffix-control__suffix">天</text>
           </view>
-          <switch
-            class="reminder-switch"
-            checked="{{reminderEnabled}}"
-            color="#24684f"
-            aria-label="开启或关闭提醒"
-            bindchange="handleReminderSwitch"
-          />
         </view>
+
+        <view class="form-row form-row--preview">
+          <text class="form-row__label">提醒时间</text>
+          <text class="reminder-at {{reminderAtText ? 'reminder-at--ready' : ''}} {{reminderMissed ? 'reminder-at--missed' : ''}}">{{reminderAtText || '填写到期日期后自动计算'}}</text>
+        </view>
+        <text wx:if="{{reminderAtText && reminderMissed}}" class="form-hint form-hint--warn">提醒时刻已过，这件物品不会再收到推送</text>
 
         <view class="form-row">
           <text class="form-row__label">数量 <text class="required-mark">*</text></text>
@@ -160,47 +158,12 @@
           />
         </view>
       </view>
-
-      <text class="form-hint">保存后可在物品详情中单独开启微信提醒</text>
     </view>
 
-    <view class="save-bar">
+    <view wx:if="{{purpose !== 'draft'}}" class="save-bar">
       <button class="primary-button save-button" disabled="{{saving}}" bindtap="save" hover-class="pressable--pressed">
         {{saving ? '正在保存…' : (restoring ? '确认重新入库' : (itemId ? '保存修改' : '加入库存'))}}
       </button>
     </view>
   </block>
-
-  <!-- 提醒设置弹窗（与「我的—提醒设置」同款） -->
-  <view wx:if="{{reminderSettingsVisible}}" class="modal-mask" bindtap="closeReminderSettings" catchtouchmove="noop">
-    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
-      <text class="modal__title">提醒设置</text>
-      <text class="modal__subtitle">用于新增物品和微信通知</text>
-
-      <picker
-        disabled="{{reminderSaving}}"
-        mode="selector"
-        range="{{reminderDayOptions}}"
-        range-key="label"
-        value="{{reminderDayIndex}}"
-        bindchange="handleReminderDaysChange"
-      >
-        <view class="modal-setting-row">
-          <view>
-            <text class="modal-setting-row__label">默认提前提醒</text>
-            <text class="modal-setting-row__description">新增物品时自动带入</text>
-          </view>
-          <view class="modal-setting-row__value">
-            <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
-            <view class="line-icon line-icon--chevron-right modal-setting-row__chevron" aria-hidden="true"></view>
-          </view>
-        </view>
-      </picker>
-
-      <view class="modal__actions">
-        <button class="secondary-button modal__button" disabled="{{reminderSaving}}" bindtap="closeReminderSettings" hover-class="pressable--pressed">取消</button>
-        <button class="primary-button modal__button" disabled="{{reminderSaving}}" bindtap="saveReminderSettings" hover-class="pressable--pressed">{{reminderSaving ? '保存中…' : '保存'}}</button>
-      </view>
-    </view>
-  </view>
 </view>

@@ -5,54 +5,43 @@ import {
   getItem,
   permanentlyDeleteItem,
 } from '../../services/inventory-service'
-import {
-  armReminder,
-  cancelReminder,
-  requestReminderAuthorization,
-} from '../../services/reminder-service'
-import type { InventoryItem, ReminderStatus } from '../../types/inventory'
+import { resolveReminderTime } from '../../domain/reminder-time'
+import type { InventoryItem } from '../../types/inventory'
 import { track } from '../../utils/analytics'
 
-const REMINDER_COPY: Record<Exclude<ReminderStatus, null>, string> = {
-  scheduled: '本次提醒已开启，将在计划日期发送一次。',
-  sending: '本次提醒正在发送，请勿重复开启。',
-  sent: '本次临期提醒已经发送。',
-  failed: '上次提醒未能发送，可重新授权开启。',
-  unknown: '发送结果暂不确定，为避免重复提醒不再重试。',
-  cancelled: '本次提醒已取消，可重新授权开启。',
-}
-
+/**
+ * 把物品折算成「提醒时间 + 一句状态」。
+ *
+ * 提醒时间完全由「到期日期 - 提前天数（到点 09:30）」推出来，不落库、不可编辑。
+ * 微信一次性订阅的事实：额度用完就结束，所以已推送/推送中不再给任何操作入口，
+ * 也没有「取消提醒」——取消的语义已经被「删物品 / 标记已用完」覆盖。
+ */
 function decorateItem(item: InventoryItem) {
   const shelfLifeText = item.shelfLifeValue
     ? `${item.shelfLifeValue}${
         item.shelfLifeUnit === 'day' ? '天' : item.shelfLifeUnit === 'month' ? '个月' : '年'
       }`
     : ''
+  const reminder = resolveReminderTime({
+    expiryDate: item.expiryDate,
+    reminderLeadDays: item.reminderLeadDays,
+  })
   const reminderStatus = item.reminderStatus || null
+
+  let reminderAtNote = ''
+  if (!reminder) reminderAtNote = ''
+  else if (item.inventoryStatus !== 'active') reminderAtNote = '已停止'
+  else if (reminderStatus === 'sent') reminderAtNote = '已推送'
+  else if (reminderStatus === 'sending') reminderAtNote = '推送中'
+  else if (reminderStatus === 'unknown') reminderAtNote = '结果未确定'
+  else if (reminder.missed) reminderAtNote = '已错过'
+  else reminderAtNote = '到点自动推送'
+
   return {
     ...item,
     shelfLifeText,
-    reminderStatus,
-    reminderCopy: reminderStatus ? REMINDER_COPY[reminderStatus] : '尚未开启微信订阅提醒。',
-    reminderActionText:
-      reminderStatus === 'scheduled'
-        ? '提醒已开启'
-        : reminderStatus === 'sent'
-          ? '提醒已发送'
-          : reminderStatus === 'sending' || reminderStatus === 'unknown'
-            ? '无需重复开启'
-            : '开启本次提醒',
-    reminderActionDisabled: ['scheduled', 'sending', 'sent', 'unknown'].includes(
-      reminderStatus || '',
-    ),
-    reminderStateText:
-      reminderStatus === 'scheduled'
-        ? '已开启'
-        : reminderStatus === 'sent'
-          ? '已发送'
-          : reminderStatus
-            ? '未开启'
-            : '未开启',
+    reminderAtText: reminder?.text || '',
+    reminderAtNote,
   }
 }
 
@@ -63,7 +52,6 @@ Page({
     actionLoading: false,
     errorMessage: '',
     item: null as ReturnType<typeof decorateItem> | null,
-    reminderSheetVisible: false,
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -94,47 +82,6 @@ Page({
 
   restoreItem() {
     wx.navigateTo({ url: `/pages/item-form/index?id=${this.data.itemId}&restore=1` })
-  },
-
-  openReminder() {
-    this.setData({ reminderSheetVisible: true })
-  },
-
-  closeReminder() {
-    this.setData({ reminderSheetVisible: false })
-  },
-
-  async requestReminder() {
-    const item = this.data.item
-    if (!item || this.data.actionLoading || item.reminderActionDisabled) return
-    if (item.expiryStatus === 'expired') {
-      wx.showToast({ title: '已过期，无需提醒', icon: 'none' })
-      return
-    }
-    const accepted = await requestReminderAuthorization()
-    if (!accepted) return
-    this.setData({ actionLoading: true })
-    try {
-      await armReminder(this.data.itemId)
-      this.setData({ actionLoading: false })
-      wx.showToast({ title: '提醒已开启', icon: 'success' })
-      await this.loadItem()
-    } catch (error) {
-      this.handleActionError(error)
-    }
-  },
-
-  async cancelReminder() {
-    if (this.data.actionLoading) return
-    this.setData({ actionLoading: true })
-    try {
-      await cancelReminder(this.data.itemId)
-      this.setData({ actionLoading: false })
-      wx.showToast({ title: '提醒已取消', icon: 'success' })
-      await this.loadItem()
-    } catch (error) {
-      this.handleActionError(error)
-    }
   },
 
   async confirmComplete() {
@@ -217,6 +164,4 @@ Page({
   backHome() {
     wx.switchTab({ url: '/pages/home/index' })
   },
-
-  noop() {},
 })

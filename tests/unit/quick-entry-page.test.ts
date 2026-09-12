@@ -1,15 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { createDraftFromParsed, parseQuickTextLocally } from '../../miniprogram/domain/quick-entry'
+import { applyFormValuesToDraft, createDraftFromParsed, createDraftFromRecent, parseQuickTextLocally, refreshDraftValidation } from '../../miniprogram/domain/quick-entry'
 
 import { CloudServiceError } from '../../miniprogram/services/cloud-client'
 
-const { getQuickEntryCapabilitiesMock, getSettingsMock, listRecentProfilesMock, parseMock, photoMock, uploadMock, saveMock } = vi.hoisted(() => ({
+const { getQuickEntryCapabilitiesMock, getSettingsMock, listRecentProfilesMock, parseMock, photoMock, uploadMock, saveMock, requestReminderAuthorizationMock, armReminderMock } = vi.hoisted(() => ({
   getQuickEntryCapabilitiesMock: vi.fn(),
   getSettingsMock: vi.fn(),
   listRecentProfilesMock: vi.fn(),
   parseMock: vi.fn(), photoMock: vi.fn(), uploadMock: vi.fn(), saveMock: vi.fn(),
+  requestReminderAuthorizationMock: vi.fn(), armReminderMock: vi.fn(),
 }))
 
 vi.mock('../../miniprogram/services/quick-entry-service', () => ({
@@ -19,6 +20,10 @@ vi.mock('../../miniprogram/services/quick-entry-service', () => ({
   removeMedia: vi.fn(),
 }))
 vi.mock('../../miniprogram/services/inventory-service', () => ({ saveItem: saveMock }))
+vi.mock('../../miniprogram/services/reminder-service', () => ({
+  requestReminderAuthorization: () => requestReminderAuthorizationMock(),
+  armReminder: (...args: unknown[]) => armReminderMock(...(args as [])),
+}))
 
 vi.mock('../../miniprogram/services/settings-service', () => ({
   getSettings: getSettingsMock,
@@ -29,6 +34,8 @@ let quickEntryPage: Record<string, unknown>
 const originalWx = globalThis.wx
 beforeEach(() => {
   vi.clearAllMocks()
+  requestReminderAuthorizationMock.mockResolvedValue(true)
+  armReminderMock.mockResolvedValue({ status: 'scheduled', remindDate: '2026-09-09' })
   globalThis.wx = {
     setNavigationBarTitle: vi.fn(),
     pageScrollTo: vi.fn(),
@@ -65,6 +72,18 @@ function pageInstance() {
 function completeDraft(name: string) {
   return createDraftFromParsed(parseQuickTextLocally(`${name}明天到期`, '2026-09-08').items[0], 'text')
 }
+/** 把共用的完整录入表单替换成一个记录调用的替身，用来断言「灌进去什么」和「退出要不要拦」。 */
+function stubDraftForm(page: any, dirty = false, onSubmit?: () => void) {
+  const applied: unknown[][] = []
+  page.selectComponent = (selector: string) => selector === '#draftForm'
+    ? {
+        applyPrefill: (...args: unknown[]) => applied.push(args),
+        isDirty: () => dirty,
+        save: () => { onSubmit?.() },
+      }
+    : null
+  return applied
+}
 
 describe('quick entry page compatibility', () => {
   it('focuses the quick text input as soon as the add page is rendered', () => {
@@ -72,33 +91,61 @@ describe('quick entry page compatibility', () => {
     expect(page.data.quickInputFocused).toBe(true)
   })
 
-  it('opens and closes the recent list without losing the current text session', () => {
+  it('hands the recent list off to its own page with the remaining draft slots', () => {
     const page = pageInstance()
     const draft = completeDraft('牛奶')
     page.data.inputText = '牛奶明天到期'
     page.commitDrafts([draft])
 
-    page.openRecentList()
-    expect(page.data.quickTab).toBe('recent')
+    page.openRecentEntry()
+
+    // 不再整块换视图：只是跳页，本页的文字会话原样留着
+    expect(wx.navigateTo).toHaveBeenCalledWith(expect.objectContaining({
+      url: '/pages/recent-entry/index?slots=19',
+      events: expect.objectContaining({ pickedDrafts: expect.any(Function) }),
+    }))
     expect(page.data.quickInputFocused).toBe(false)
     expect(wx.hideKeyboard).toHaveBeenCalled()
-
-    page.closeRecentList()
-    expect(page.data.quickTab).toBe('text')
     expect(page.data.inputText).toBe('牛奶明天到期')
     expect(page.data.drafts).toEqual([draft])
   })
 
-  it('replaces the quick-entry subtabs with a recent-entry button and close control', () => {
+  it('refuses to open the recent page when the draft slots are used up', () => {
+    const page = pageInstance()
+    page.commitDrafts(Array.from({ length: 20 }, (_, index) => completeDraft(`物品${index}`)))
+    page.openRecentEntry()
+    expect(wx.navigateTo).not.toHaveBeenCalled()
+    expect(page.data.inputError).toContain('20')
+  })
+
+  it('appends the drafts handed back by the recent page and caps them at the limit', () => {
+    const page = pageInstance()
+    const existing = completeDraft('牛奶')
+    page.commitDrafts([existing])
+    page.appendRecentDrafts([completeDraft('面包'), completeDraft('酸奶')])
+    expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['面包', '酸奶', '牛奶'])
+    expect(page.data.selectableCount).toBe(3)
+
+    // 带回来的条数超过剩余名额时只收下装得下的，不越界
+    const full = pageInstance()
+    full.commitDrafts(Array.from({ length: 19 }, (_, index) => completeDraft(`物品${index}`)))
+    full.appendRecentDrafts([completeDraft('面包'), completeDraft('酸奶')])
+    expect(full.data.drafts).toHaveLength(20)
+    expect(full.data.drafts[0].fields.name).toBe('面包')
+  })
+
+  it('keeps the recent entry as a page jump instead of an in-page view swap', () => {
     const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
     const blockOpenCount = template.match(/<block\b/g)?.length || 0
     const blockCloseCount = template.match(/<\/block>/g)?.length || 0
     expect(blockOpenCount).toBe(blockCloseCount)
     expect(template).not.toContain('class="quick-tabs"')
     expect(template).toContain('class="recent-entry-button"')
-    expect(template).toContain('bindtap="openRecentList"')
-    expect(template).toContain('class="recent-page__close"')
-    expect(template).toContain('bindtap="closeRecentList"')
+    expect(template).toContain('bindtap="openRecentEntry"')
+    // 列表和关闭按钮都搬进独立页面了，本页不该再有伪页面残留
+    expect(template).not.toContain('recent-page__close')
+    expect(template).not.toContain('bindtap="closeRecentList"')
+    expect(template).not.toContain('bindtap="selectRecent"')
     // 「从最近录入添加」收进输入卡片左下角，和确认按钮同一行
     expect(template.indexOf('recent-entry-button')).toBeGreaterThan(template.indexOf('<form'))
     expect(template.indexOf('recent-entry-button')).toBeLessThan(template.indexOf('class="quick-generate"'))
@@ -154,19 +201,48 @@ describe('quick entry page compatibility', () => {
     }
   })
 
-  it('opens the edit sheet for editable drafts and keeps edits after closing', () => {
+  it('opens the shared full-entry form from anywhere on the card and applies edits only on 完成', () => {
     const page = pageInstance()
-    page.commitDrafts([completeDraft('牛奶')])
+    const applied = stubDraftForm(page)
+    const draft = completeDraft('牛奶')
+    page.commitDrafts([draft])
+
     page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
     expect(page.data.editingIndex).toBe(0)
     expect(page.data.quickInputFocused).toBe(false)
-    // 假 setData 不支持 drafts[0] 路径 key，编辑结果通过捕获 patch 验证
-    const patches: Record<string, unknown>[] = []
-    const originalSetData = page.setData
-    page.setData = (patch: Record<string, unknown>, callback?: () => void) => { patches.push(patch); originalSetData(patch, callback) }
-    page.handleTextInput({ currentTarget: { dataset: { index: 0, field: 'name' } }, detail: { value: '鲜牛奶' } })
-    expect(patches).toContainEqual(expect.objectContaining({ 'drafts[0]': expect.objectContaining({ fields: expect.objectContaining({ name: '鲜牛奶' }) }) }))
-    page.closeDraftEditor()
+    // 草稿值直接灌进完整录入表单，且带上当前日期冲突值而不是清空
+    expect(applied[0][0]).toMatchObject({ name: '牛奶', expiryDate: draft.fields.expiryDate })
+
+    // 表单里的改动不回写草稿：只有点「完成」才生效
+    expect(page.data.drafts[0].fields.name).toBe('牛奶')
+    page.handleDraftFormSubmit({ detail: { ...draft.fields, name: '鲜牛奶', quantity: 2 } })
+    expect(page.data.editingIndex).toBe(-1)
+    expect(page.data.drafts[0].fields).toMatchObject({ name: '鲜牛奶', quantity: 2 })
+  })
+
+  it('asks again before leaving an edited form and keeps the draft untouched on 放弃', () => {
+    const page = pageInstance()
+    stubDraftForm(page, true)
+    page.commitDrafts([completeDraft('牛奶')])
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+
+    page.requestCloseDraftEditor()
+    expect(wx.showModal).toHaveBeenCalledTimes(1)
+    expect(page.data.editingIndex).toBe(0)
+
+    const modal = vi.mocked(wx.showModal).mock.calls[0][0] as unknown as { success: (result: { confirm: boolean }) => void }
+    modal.success({ confirm: true })
+    expect(page.data.editingIndex).toBe(-1)
+    expect(page.data.drafts).toHaveLength(1)
+  })
+
+  it('leaves the form without asking when nothing was touched', () => {
+    const page = pageInstance()
+    stubDraftForm(page, false)
+    page.commitDrafts([completeDraft('牛奶')])
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    page.requestCloseDraftEditor()
+    expect(wx.showModal).not.toHaveBeenCalled()
     expect(page.data.editingIndex).toBe(-1)
   })
 
@@ -192,6 +268,82 @@ describe('quick entry page compatibility', () => {
     const previewArea = template.slice(template.indexOf('class="draft-area"'), template.indexOf('class="quick-footer"'))
     expect(previewArea).not.toContain('<picker')
     expect(previewArea).not.toContain('mode-switch')
+  })
+
+  it('keeps the bottom-sheet chrome and reuses only the full-entry form inside it', () => {
+    const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
+    const editor = template.slice(template.indexOf('class="draft-editor"'))
+    // 弹窗外壳：遮罩 + 底部面板 + 弹窗自己的取消/完成
+    expect(editor).toContain('class="draft-editor__mask"')
+    expect(editor).toContain('class="draft-editor__panel"')
+    expect(editor).toContain('class="draft-editor__cancel"')
+    expect(editor).toContain('bindtap="confirmDraftEditor"')
+    // 弹窗里只放共用的完整录入表单，且按钮由弹窗持有（表单自己的 save-bar 关掉）
+    expect(editor).toContain('<item-form-sheet id="draftForm" purpose="draft"')
+    expect(editor).toContain('bind:draftsubmit="handleDraftFormSubmit"')
+    const formTemplate = readFileSync(resolve(process.cwd(), 'miniprogram/components/item-form-sheet/index.wxml'), 'utf8')
+    // purpose="draft" 时表单不渲染自己的 save-bar，避免和弹窗的取消/完成叠成两排按钮
+    expect(formTemplate).toContain(`<view wx:if="{{purpose !== 'draft'}}" class="save-bar">`)
+    // 编辑弹窗自己不再重写一份表单：整页里没有草稿专用的 picker/输入行
+    expect(template).not.toContain('class="qe-row')
+    expect(template).not.toContain('class="mode-switch"')
+    // 卡片任意位置都能进编辑，卡内的删除/重试不能把点击带成「进编辑」
+    expect(template).toContain('bindtap="openDraftEditor"')
+    expect(template).toContain('catchtap="removeDraft"')
+  })
+
+  it('submits the shared form when the sheet 完成 is tapped', () => {
+    const page = pageInstance()
+    let submits = 0
+    stubDraftForm(page, true, () => { submits += 1 })
+    page.commitDrafts([completeDraft('牛奶')])
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    page.confirmDraftEditor()
+    expect(submits).toBe(1)
+    // 弹窗没关：真正的回写由表单的 draftsubmit 事件触发
+    expect(page.data.editingIndex).toBe(0)
+    // 弹窗已关时点「完成」不再触发表单
+    page.dismissDraftEditor(false)
+    page.confirmDraftEditor()
+    expect(submits).toBe(1)
+  })
+
+  it('caps the preview cards at 20 and greys out the recent-add button at the limit', () => {
+    const page = pageInstance()
+    const drafts = Array.from({ length: 20 }, (_, index) => completeDraft(`物品${index}`))
+    page.commitDrafts(drafts)
+    expect(page.data.draftLimitReached).toBe(true)
+    // 已入库的卡片不占名额
+    drafts[0].status = 'saved'
+    page.commitDrafts([...drafts])
+    expect(page.data.draftLimitReached).toBe(false)
+
+    const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
+    expect(template).toContain(`disabled="{{saving || recognitionState !== 'idle' || draftLimitReached}}"`)
+    expect(template).toContain('{{maxDrafts}}')
+  })
+
+  it('puts the newest draft first and leaves room for the fixed footer', async () => {
+    const page = pageInstance()
+    stubDraftForm(page)
+    const first = '牛奶2盒明天到期，酸奶4杯后天到期'
+    parseMock.mockResolvedValueOnce(parseQuickTextLocally(first, '2026-09-08'))
+    page.data.inputText = first
+    await page.generateDrafts()
+    // 同一批内保持原文顺序
+    expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['牛奶', '酸奶'])
+
+    parseMock.mockResolvedValueOnce(parseQuickTextLocally('面包后天到期', '2026-09-08'))
+    page.data.inputText = '面包后天到期'
+    await page.generateDrafts()
+    // 后添加的整批插到最前
+    expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['面包', '牛奶', '酸奶'])
+
+    const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
+    const styles = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxss'), 'utf8')
+    // 最后一张卡片不能被固定底部条压住
+    expect(template).toContain("quick-body {{drafts.length ? 'quick-body--with-footer' : ''}}")
+    expect(styles).toContain('.quick-body--with-footer')
   })
 
   it('renders a freshness badge and status label on the confirmation card', () => {
@@ -319,27 +471,89 @@ describe('quick entry page compatibility', () => {
     expect(page.data.drafts[2].status).toBe('saved')
     expect(wx.navigateBack).not.toHaveBeenCalled()
   })
-  it('manual date correction resolves ambiguity without keeping old production date', () => {
-    const page = pageInstance()
+
+  /**
+   * 微信一次性订阅「一次授权换一条额度」，所以批量保存只能一件一件申请。
+   * 这几条守住：谁该申请、谁该跳过、拒绝之后不再连弹。
+   */
+  describe('quick entry 保存后预约到期提醒', () => {
+    it('对每条保存成功的草稿依次申请授权并挂提醒', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-08' })
+      page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' }).mockResolvedValueOnce({ itemId: 'yogurt' })
+
+      await page.saveDrafts()
+
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(2)
+      expect(armReminderMock.mock.calls.map((call) => call[0])).toEqual(['milk', 'yogurt'])
+    })
+
+    it('用户拒绝授权后停止，不再对后面几条连弹', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-08' })
+      page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' }).mockResolvedValueOnce({ itemId: 'yogurt' })
+      requestReminderAuthorizationMock.mockResolvedValueOnce(false)
+
+      await page.saveDrafts()
+
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+      expect(armReminderMock).not.toHaveBeenCalled()
+    })
+
+    it('提醒日已经过去的草稿不申请授权，与完整录入保持一致', async () => {
+      const page = pageInstance()
+      // 草稿到期 2026-09-09、提前 1 天 → 提醒日 2026-09-08，已经过去。
+      page.setData({ today: '2026-09-10' })
+      page.commitDrafts([completeDraft('牛奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' })
+
+      await page.saveDrafts()
+
+      expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
+      expect(armReminderMock).not.toHaveBeenCalled()
+    })
+
+    it('挂提醒失败不影响保存结果', async () => {
+      const page = pageInstance()
+      page.setData({ today: '2026-09-08' })
+      page.commitDrafts([completeDraft('牛奶')])
+      saveMock.mockResolvedValueOnce({ itemId: 'milk' })
+      armReminderMock.mockRejectedValueOnce(new Error('REMINDER_NOT_CONFIGURED'))
+
+      await page.saveDrafts()
+
+      expect(page.data.drafts).toHaveLength(0)
+      expect(wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '已加入库存' }))
+    })
+  })
+  it('resolves an ambiguous date conflict only when the form actually changed the dates', () => {
     const item = completeDraft('牛奶')
     item.confirmationFields = ['date:0']
     item.dateConflict = '日期有冲突'
-    page.commitDrafts([item])
-    page.handleDateChange({ currentTarget: { dataset: { index: 0, field: 'expiryDate' } }, detail: { value: '2027-01-01' } })
-    expect(page.data.drafts[0].status).toBe('savable')
-    expect(page.data.drafts[0].confirmationFields).toEqual([])
+
+    // 日期没动就点「完成」：冲突提示必须留着，不能被静默吃掉
+    const untouched = applyFormValuesToDraft(item, { ...item.fields })
+    expect(untouched.confirmationFields).toEqual(['date:0'])
+    expect(untouched.dateConflict).toBe('日期有冲突')
+
+    // 手动改成新到期日：歧义与冲突一并结清，也不留旧的生产日期
+    const fixed = applyFormValuesToDraft(item, { ...item.fields, expiryInputMode: 'direct', expiryDate: '2027-01-01', productionDate: null })
+    expect(fixed.status).toBe('savable')
+    expect(fixed.confirmationFields).toEqual([])
+    expect(fixed.dateConflict).toBeUndefined()
+    expect(fixed.fields.productionDate).toBeNull()
   })
   it('switches to the full form tab instead of leaving the page during manual handoff', () => {
     const page = pageInstance()
     const applied: unknown[][] = []
     page.selectComponent = () => ({ applyPrefill: (...args: unknown[]) => applied.push(args) })
-    page.data.popup = 'recent'
     page.commitDrafts([completeDraft('牛奶')])
     page.continueManual()
     expect(wx.navigateTo).not.toHaveBeenCalled()
     expect(page.data.activeTab).toBe('full')
     expect(page.data.fullMounted).toBe(true)
-    expect(page.data.popup).toBe('none')
     expect(page.data.drafts).toHaveLength(0)
     expect(applied[0][0]).toMatchObject({ name: '牛奶' })
     vi.mocked(wx.enableAlertBeforeUnload).mockClear()
@@ -368,41 +582,6 @@ describe('quick entry page compatibility', () => {
     expect(page.data.drafts).toHaveLength(1)
     expect(page.data.drafts[0].fields.expiryDate).toBe('2026-09-09')
     expect(page.data.recognitionState).toBe('idle')
-  })
-
-  it('appends a recent item to the preview list and keeps the text session', () => {
-    const page = pageInstance()
-    page.data.inputText = '牛奶明天到期'
-    const draft = completeDraft('牛奶')
-    page.commitDrafts([draft])
-    page.openRecentList()
-    page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    // 点击列表项先弹编辑弹窗：草稿暂存，仍停留在最近列表视图，卡片尚未展示
-    expect(page.data.quickTab).toBe('recent')
-    expect(page.data.editingIndex).toBe(1)
-    expect(page.data.editingRecentNew).toBe(true)
-    expect(page.data.drafts.map((item: any) => item.fields.name)).toEqual(['牛奶', '面包'])
-    page.confirmDraftEditor()
-    expect(page.data.quickTab).toBe('text')
-    expect(page.data.editingIndex).toBe(-1)
-    page.closeRecentList()
-    expect(page.data.quickTab).toBe('text')
-    expect(page.data.inputText).toBe('牛奶明天到期')
-  })
-
-  it('discards a recent draft when the edit sheet is cancelled', () => {
-    const page = pageInstance()
-    page.openRecentList()
-    page.data.recentProfiles = [{ name: '面包', quantity: 1, unit: '袋', category: 'food' }]
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    expect(page.data.drafts).toHaveLength(1)
-    page.closeDraftEditor()
-    // 取消后不生成预览卡片，停留在最近列表继续选
-    expect(page.data.drafts).toHaveLength(0)
-    expect(page.data.editingIndex).toBe(-1)
-    expect(page.data.editingRecentNew).toBe(false)
-    expect(page.data.quickTab).toBe('recent')
   })
 
   it('generates through the tap handler and recovers from a cloud request that never completes', async () => {
@@ -446,7 +625,6 @@ describe('quick entry page compatibility', () => {
 
     expect(openManual).not.toHaveBeenCalled()
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
-      loading: false,
       features: { recent: true, text: true, voice: false, datePhoto: false, aiParse: true },
       capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
       defaultReminderLeadDays: 2,
@@ -485,7 +663,7 @@ describe('quick entry page compatibility', () => {
     // 按钮不能「看着能点、点了没反应」：置灰必须绑到云端能力，说明文字必须有一处渲染。
     expect(template).toContain(`disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}"`)
     expect(template).toContain(`disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}"`)
-    expect(template).toContain("features.datePhoto && capabilities.datePhoto && draft.status !== 'saving'")
+    expect(template).toContain('{{features.datePhoto && capabilities.datePhoto}}')
     expect(template).toContain('wx:for="{{unavailableHints}}"')
   })
 
@@ -508,7 +686,7 @@ describe('quick entry page compatibility', () => {
     expect(page.data.inputError).toBe('')
   })
 
-  it('turns a recent item into a savable draft after picking the expiry date', async () => {
+  it('turns a draft handed back by the recent page into a savable item', async () => {
     const page = pageInstance()
     listRecentProfilesMock.mockResolvedValue({ items: [{
       name: '鲜牛奶', quantity: 2, unit: '盒', category: 'food', storageLocation: '冰箱',
@@ -518,17 +696,19 @@ describe('quick entry page compatibility', () => {
     getSettingsMock.mockResolvedValue({ defaultReminderLeadDays: 1 })
 
     await page.preparePage()
-    expect(page.data.loading).toBe(false)
     expect(page.data.recentProfiles).toHaveLength(1)
 
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    expect(page.data.editingRecentNew).toBe(true)
-    page.confirmDraftEditor()
-    expect(page.data.quickTab).toBe('text')
+    // 最近录入页带回来的草稿没有到期日 → 待补全，回来后走本页同一套编辑表单
+    const picked = createDraftFromRecent(page.data.recentProfiles[0] as never, 1)
+    expect(picked.status).toBe('needs_input')
+    page.appendRecentDrafts([picked])
     expect(page.data.drafts).toHaveLength(1)
-    expect(page.data.drafts[0].status).toBe('needs_input')
 
-    page.handleDateChange({ currentTarget: { dataset: { index: 0, field: 'expiryDate' } }, detail: { value: '2026-09-20' } })
+    stubDraftForm(page)
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    // 完整表单里选好到期日再点「完成」，草稿此刻才变成可入库
+    page.handleDraftFormSubmit({ detail: { ...page.data.drafts[0].fields, expiryInputMode: 'direct', expiryDate: '2026-09-20' } })
+    expect(page.data.editingIndex).toBe(-1)
     expect(page.data.drafts[0].status).toBe('savable')
     expect(page.data.drafts[0].selected).toBe(true)
     expect(page.data.selectableCount).toBe(1)
@@ -543,58 +723,39 @@ describe('quick entry page compatibility', () => {
     expect(wx.navigateBack).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the chosen expiry date when toggling between expiry modes', () => {
+  it('does not touch the draft when the form switches expiry modes before 完成', () => {
     const page = pageInstance()
+    stubDraftForm(page)
     const draft = completeDraft('牛奶')
     page.commitDrafts([draft])
-    page.handleModeChange({ currentTarget: { dataset: { index: 0, mode: 'shelf_life' } } })
-    page.handleModeChange({ currentTarget: { dataset: { index: 0, mode: 'direct' } } })
-    expect(page.data.drafts[0].fields.expiryDate).toBe(draft.fields.expiryDate)
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    // 表单里怎么切模式都只改表单，草稿保持原样，直到点「完成」
+    expect(page.data.drafts[0]).toEqual(draft)
     expect(page.data.drafts[0].status).toBe('savable')
-  })
-
-  it('keeps the recent list usable and appends drafts instead of replacing them', () => {
-    const page = pageInstance()
-    const milk = {
-      name: '鲜牛奶', quantity: 2, unit: '盒', category: 'food', storageLocation: '冰箱',
-      reminderLeadDays: 1, expiryInputMode: 'direct', shelfLifeValue: null, shelfLifeUnit: null, invalidFields: [],
-    }
-    const yogurt = { ...milk, name: '酸奶', quantity: 1, unit: '瓶', storageLocation: '' }
-    page.data.recentProfiles = [milk, yogurt]
-    page.selectRecent({ currentTarget: { dataset: { index: 0 } } })
-    page.confirmDraftEditor()
-    page.selectRecent({ currentTarget: { dataset: { index: 1 } } })
-    page.confirmDraftEditor()
-    expect(page.data.drafts.map((draft: any) => draft.fields.name)).toEqual(['鲜牛奶', '酸奶'])
   })
 
   it('flags a past expiry date instead of comparing the placeholder text', () => {
     const page = pageInstance()
+    stubDraftForm(page)
     const draft = completeDraft('牛奶')
     page.data.today = '2026-09-09'
     page.commitDrafts([draft])
     expect(page.data.expiredFlags).toEqual([false])
-    page.handleDateChange({ currentTarget: { dataset: { index: 0, field: 'expiryDate' } }, detail: { value: '2026-09-01' } })
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    page.handleDraftFormSubmit({ detail: { ...draft.fields, expiryDate: '2026-09-01' } })
     expect(page.data.expiredFlags).toEqual([true])
   })
 
-  it('stays on quick entry and explains when the cloud function is outdated', async () => {
+  it('silently degrades when the recent records cannot be read on the entry page', async () => {
+    // 最近记录在本页只用来给识别结果补分类；拉不到也不该在正在录入的人面前弹提示。
     listRecentProfilesMock.mockRejectedValueOnce(
       new CloudServiceError('INVALID_ACTION', '不支持的库存操作'),
     )
     const setData = vi.fn()
-    const openManual = vi.fn()
 
-    await (quickEntryPage.loadRecentProfiles as () => Promise<void>).call({
-      setData,
-      openManual,
-    })
+    await (quickEntryPage.refreshRecentProfiles as () => Promise<void>).call({ setData })
 
-    expect(openManual).not.toHaveBeenCalled()
-    expect(setData).toHaveBeenCalledWith({
-      loading: false,
-      loadingError: '快速录入服务尚未更新，请先使用完整填写',
-    })
+    expect(setData).not.toHaveBeenCalled()
   })
 })
 
@@ -643,18 +804,17 @@ describe('quick entry AI presentation', () => {
     ])
   })
 
-  it('clears the hint once the user edits the field', () => {
+  it('clears the AI hints once the whole form is confirmed', () => {
     const page = pageInstance()
-    const patches: Record<string, unknown>[] = []
-    page.setData = (patch: Record<string, unknown>, callback?: () => void) => { patches.push(patch); callback?.() }
-    page.data.drafts = [createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1')]
-    page.data.aiMissingHints = ['AI 没在原文里找到数量和单位，已按默认值填上，请核对']
+    stubDraftForm(page)
+    const draft = createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1')
+    draft.fields.expiryDate = '2026-09-20'
+    page.commitDrafts([refreshDraftValidation(draft)])
+    expect(page.data.aiMissingHints[0]).toBe('AI 没在原文里找到数量和单位，已按默认值填上，请核对')
 
-    page.handleTextInput({ currentTarget: { dataset: { index: 0, field: 'quantity' } }, detail: { value: '2' } })
+    page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
+    page.handleDraftFormSubmit({ detail: { ...page.data.drafts[0].fields, quantity: 2, unit: '盒' } })
 
-    expect(patches).toContainEqual(expect.objectContaining({
-      'drafts[0]': expect.objectContaining({ aiMissingFields: ['unit'] }),
-      'aiMissingHints[0]': 'AI 没在原文里找到单位，已按默认值填上，请核对',
-    }))
+    expect(page.data.aiMissingHints).toEqual([''])
   })
 })

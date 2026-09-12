@@ -1,113 +1,47 @@
-# freshKeeper 项目长期记忆
+# freshKeeper 长期记忆
 
-## 技术栈与约定
-- 微信小程序（原生 TS + WXSS），云开发 cloudfunctions，测试 vitest **必须 3.2.7**（4.x/5.x 在本机全部报
-  `Cannot read properties of undefined (reading 'config')`，根因是版本不是缓存）；package.json 不要单独锁 vite。
-- 改动后必跑 `npm run check`（typecheck + test + check:project），再 commit + push 到 `git@github.com:yangxl12/freshKeeper.git`。
-  SSH 偶尔被代理拦截（127.0.0.1:7888 未监听），先试直连，失败就只提交让用户代推。
+## 环境
+- 原生小程序 TS + WXSS + 云开发；vitest 锁 **3.2.7**（4/5.x 报 config undefined）。bash 不可用（ls/cat command not found）。
+- npm 脚本必须走：`& 'C:\Users\BYS\AppData\Local\Programs\PowerShell\7\pwsh.exe' -NoProfile -Command '...'`（禁 powershell.exe；stdout 会被吞，先 Out-File 再 Read）。
+- 删文件只认 `git clean -fx -- <明确路径>`（Remove-Item 静默失效）。
+- 同文件别并行 Edit（互相覆盖）；Write 前先 Read。
+- 流程：`npm run check` → commit → push `git@github.com:yangxl12/freshKeeper.git`（SSH 常被代理拦，第一次失败就只提交、让用户代推）。
 
-## Git 仓库（踩过的坑）
-- **绝对不要 `git stash push -- <path>`**：曾把 `.git/refs` 删空，git 报 `fatal: not a git repository`，
-  `git status` 把全部文件显示成 `A`。恢复：`mkdir -p .git/refs/{heads,tags,remotes}` → `git ls-remote origin` 取 sha
-  → `git fetch origin` 拉回对象 → `git update-ref refs/heads/<branch> <sha>`。
-  要对比改动前基线用 `git show HEAD:<path> > /tmp/orig`，别用 stash。
-- `fatal: bad object HEAD` / 大批对象丢失：先 `git ls-remote origin`，远端若已含这些提交，`git fetch origin` 即可拉回。
+## Git 红线
+- **绝不 `git stash push -- <path>`**（曾删空 `.git/refs`）。恢复：`mkdir -p .git/refs/{heads,tags,remotes}` → `ls-remote` → `fetch` → `update-ref`。
+- `fatal: bad object HEAD` → 先 `git ls-remote origin`，远端有就 `git fetch origin`。
+- **「待推送 N 个」先别信**：`git ls-remote origin` 的 `refs/heads/<branch>` 若等于 `git rev-parse HEAD`，就是本地引用坏了，跟提交无关。
+  根因是 `.git/refs/remotes/origin/` 目录缺失 + `.git/packed-refs` 残留老值（两条会互相掩盖，`fetch` 也修不回来）。
+  2026-09-12 已清掉 packed-refs 那条过期记录（备份 `.git/packed-refs.bak-20260912`）；本环境实测 **git 建不了带斜杠的引用**
+  （`git branch a/b` 静默失败），两套 git 版本都复现，去你自己终端验证一次。
 
-## 云函数部署（踩过的坑）
-- `config.json` 的 `timeout`/`envVariables`/`triggers` **只在函数首次创建时写入云端**；之后 deploy（CLI 与开发者工具）
-  只更新代码。改超时/环境变量必须去**云开发控制台 → 云函数 → 配置**（或删函数重建，慎用）。CLI 没有改配置的命令。
-- 微信云函数默认超时 3 秒，任何调 LLM 的函数上线第一件事就是改 60s。
-  查线上配置：`/d/微信web开发者工具/cli.bat cloud functions info --env cloud1-d0gkh66ce94b1be08 --names <fn> --project D:/myProject/freshKeeper`。
-- 开发者工具的「云函数本地调试」没有云开发网关注入，`cloud.ai()` 必 404（日志 `AI_PARSE_DEGRADED` + `reason:"404"` 后降级）；
-  `ai-client.js` 用 `TENCENTCLOUD_RUNENV === 'WX_LOCAL_SCF'` 识别该形态并默认跳过 AI，逃生门 `QUICK_ENTRY_AI_LOCAL_DEBUG=true`。
-  验证 AI 只能走云端（关本地调试 + 模拟器/真机）。
+## 云函数（CLI `D:\微信web开发者工具\cli.bat`）
+- `config.json` 的 timeout/envVariables/triggers **只在首次创建**时写入云端，deploy 只更新代码 → 建完去控制台改超时（默认 3s，重函数 60s）。
+- 首建偶发 `Creating 状态` 报错 → 等 45s 重跑。
+- `cli.bat cloud functions deploy --env cloud1-d0gkh66ce94b1be08 --names <fn> --project D:/myProject/freshKeeper [--remote-npm-install]`。
+- 本地调试无网关注入，`cloud.ai()` 必 404；`ai-client.js` 用 `TENCENTCLOUD_RUNENV==='WX_LOCAL_SCF'` 跳过（逃生门 `QUICK_ENTRY_AI_LOCAL_DEBUG=true`）。
+- `INTERNAL_ERROR` 吞真堆栈：临时在 catch 加 `debug:String(error.stack)` 定位，**用完必须撤掉**。
 
-## 模拟器里真调云函数（验收手段，可复用）
-1. `/d/微信web开发者工具/cli.bat auto --project "D:/myProject/freshKeeper" --auto-port 9420 --trust-project`（约 3s 返回）。
-2. 起 `~/AppData/Local/uv/cache/archive-v0/<hash>/wechat_devtools_mcp/scripts/dist/daemon.bundle.js`（cwd 设同目录 scripts/），
-   它先输出 `{"ready":true}`，再发 NDJSON `{"id":1,"script":"run_test_script","args":["--port","9420","--script","<探针绝对路径>","--timeout","90"]}`。
-3. 探针格式：`module.exports = async function (miniProgram) { return await miniProgram.evaluate(...) }`，
-   内部可 `new Promise(r => wx.cloud.callFunction({...}))`。driver 示例见 `C:/Users/BYS/AppData/Local/Temp/wx-probe/`
-   （`probe-cover.js` + `run-cover.mjs` 是排查封面用的现成模板，改函数名即可复用）。
-4. **云函数返回结构是 `{ok, data, requestId}`，探针里取字段必须 `res.result.data.xxx`**；
-   写成 `res.result.itemId` 会静默拿到 undefined，看起来像"功能没返回"。`save` 的 `idempotencyKey` 必须是
-   标准 UUID v4，随便编字符串会 `INVALID_ARGUMENT: 快速录入请求编号不正确`。
-5. **automator 的 page node 会失效**：`page node not found` / `createSelectorQuery` 超时 / 截图全白，
-   但 `miniProgram.evaluate` 仍正常（能读 route、能 `wx.switchTab`）。该形态下
-   `getCurrentPages()[i].data` 只暴露 `__webviewId__`，**读不到业务字段，别用它断言页面数据**。
-   验收渲染只能靠用户在模拟器里看，别在截图/节点查询上反复消耗时间。
+## 模拟器验收（真调云函数）
+- `cli.bat auto --auto-port 9420 --trust-project`；起 `wechat_devtools_mcp` daemon，发 NDJSON `run_test_script`。
+- 探针取 `res.result.data.xxx`；`save` 的 `idempotencyKey` 须标准 UUID v4。
+- `page.$` / `element.tap()` 可用；**必须 TAP 手势的 API（shareFileMessage）只能真点**，`evaluate` 不算点击。
+- 探针超时后仍在后台跑，立刻重跑会自相矛盾。怀疑平台 API 行为先实测，别推理。
 
-## 快速录入：能力三档开关
-- ① `QUICK_ENTRY_FEATURES`（`config/runtime.ts`）决定按钮**显不显示**；
-  ② 云端 `getCapabilities()` 回 `voice`/`datePhoto`/`aiText` 决定**能不能用**；
-  ③ `QUICK_ENTRY_AI_ENABLED`（默认开，取值 false/0/off/no 才关）是云函数急停。
-- **按钮必须置灰并给静态说明**，否则「看着能点、点了没反应」会被当成坏了（2026-09-10 修复）：
-  `disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}"`；
-  说明行 `wx:for="{{unavailableHints}}"`（在 `preparePage` 里按能力/探测结果生成，文案见 `unavailableHintsOf`）。
-  **不要弹 toast**：微信 `wx.showToast` 标题超 7 个汉字会被截断，被用户吐槽过。
-- `startVoice` / `chooseDatePhoto` 开头的 `if (!capabilities.x) return` 是第二道保险，静默、不 toast。
-- **语音/拍日期不可用的根因**：云端没配 `QUICK_ENTRY_TENCENT_SECRET_ID` / `QUICK_ENTRY_TENCENT_SECRET_KEY`
-  （腾讯云 ASR「一句话识别」+ OCR「通用文字识别（高精度版）」），`tencent-provider.configured()` 为假 → 能力下发 false。
-  2026-09-10 实测线上返回 `{text:true, voice:false, datePhoto:false, aiText:true}`。密钥只能进控制台，不能进仓库/聊天。
-- 语音交互是**点击开始 / 点击结束**（不是按住说话）：wxml 没绑任何 touch 事件，`moveVoice` / `voiceBounds` 是死代码。
+## 云数据库
+- **不能往 `null` 字段创建子字段**（update 把对象当嵌套路径，整条失败）→ 多字段状态一律拆**扁平字段**。
+- `db.command.remove()` 污染注入式假 db → 本项目一律扁平字段 + `null`。
 
-## 快速录入：其他约定
-- 最近使用：云端 `listRecentProfiles` 未部署（`INVALID_ACTION`）时降级 `listInventory(sort:'created_desc')` +
-  `recentProfilesFromItems()`（与 `batchDelete`/`listTrash` 同一套路）；区域不随草稿出现而隐藏，点击是**追加**草稿（上限 `MAX_DRAFTS = 5`）。
-- 「已过期」用 `expiredFlags`（`getExpirySummary()` 过 `/^\d{4}-\d{2}-\d{2}$/` 再比），别拿中文占位「待补到期日」和 today 比大小。
-- 输入法：`.quick-input` 开了 `hold-keyboard`，任何"输入完就干活"的分支都要 `blurQuickInput()`
-  （`wx.hideKeyboard` + `quickInputFocused:false` + `quickKeyboardHeight:0`）；不要用 `focus` 自动聚焦草稿名称框
-  （会重弹键盘），用 `nameMissingFlags` 做高亮。
+## 模块要点
+- **用户体系**：`users`(`_id`=OPENID) + `userApi`；核心在注入式 `account.js`；action：touch/get/updateProfile/createAvatarUpload/exportData/confirmExport/deleteAccount。导出 `wx.shareFileMessage` 必须两步按钮，额度 3/天计「交付成功」。业务错误码**只在 `error.code`**。同日节流在 `app.ts:touchUserOnceToday()`。
+- **批量操作**：入口靠 `globalData.pendingBatchIntent`，`?source=trash|home|inventory`；云端上限 **20/批**，客户端 `CHUNK_SIZE=20` 必须对齐；`mine` 回收站是弹窗，返回要在 `onShow` 重拉。
+- **快录**：`config/runtime.ts:QUICK_ENTRY_FEATURES` → 云端 `getCapabilities()` → 急停 `QUICK_ENTRY_AI_ENABLED`。不可用按钮置灰别 toast。`MAX_DRAFTS=20` ≠ 云端一次 5 条。语音/拍日期不可用 = 云端没配密钥。草稿编辑用 `item-form-sheet`（`purpose="draft"`）。
+- **AI 解析**：`cloud.ai()` provider 必须 `hunyuan-v3`／模型 `hy3`，名字只准在 `ai-client.js`。铁律：① 不让模型算日期（只出 `dateFacts`，`date-facts.js` 归一化）；② 证据回链防幻觉。降级 AI→自定义→`rules-v3`；AI 超时 6000ms < 前端 8s `Promise.race`。
+- **封面生图**：model `HY-Image-3.0-Plus-4090-Tob-v1.0`，必须显式 `revise/enable_thinking=false`。落 `coverFileId` **不 bump version**；保存后 fire-and-forget；回填走 `onItemCoverReady()` 广播，首页 onShow 订阅 / onHide 退订。
+- **提醒**：手机端全去开关化。提醒时间 = 到期日 − 提前天数，**当天 09:30** 推；纯函数 `domain/reminder-time.ts`。授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前。前端拦截只看日期。`reminderApi` 只有 arm；`dispatchReminders` 触发器 09:30 只处理 `remindDate===today`。模板字段映射写死在代码里（三处必改：`config/runtime.ts`、`reminderApi/index.js`、`dispatchReminders/template.js`），模板 ID 仍是占位。坑：`Number(null)===0`。未来时刻测试用例用 **2099 年**。
 
-## 快速录入：AI 解析
-- 云函数端用 `wx-server-sdk`（本项目 4.0.2）的 `cloud.ai()`，**provider 必须是 `hunyuan-v3`**，不是 `cloudbase`
-  （后者仅资源点套餐可用且需控制台开 hy3 开关；`hunyuan-v3` 两种套餐都行、只耗免费额度）；模型用 `hy3`（`hy3-preview` 将下线）。
-  provider / 模型名只准出现在 `ai-client.js` 一处。
-- 两个核心设计别丢：① **不让模型算日期**（只输出 `dateFacts`，换算交 `date-facts.js:normalizeFacts()`）；
-  ② **证据回链防幻觉**（每个字段带 `evidence`，服务端校验确实出现在原文，对不上置 null 走 `confirmationFields`，绝不静默入库）。
-- 降级链 AI → 自定义 provider → 本地 `rules-v3`；`hunyuan-v3` 免费额度耗尽**直接报错**，单环境仅 5 并发
-  （`EXCEED_CONCURRENT_REQUEST_LIMIT` 退避 300ms 重试一次）。AI 超时 `QUICK_ENTRY_AI_TIMEOUT_MS`
-  （默认 6000，必须 < 前端 `recognizeTextItems` 的 8s `Promise.race`）。
-- 文件分工：`ai-client.js`（唯一知道 provider/模型/返回结构，顶层不 require SDK，用时 lazy require 否则单测会加载真 SDK）、
-  `ai-prompt.js`、`ai-parse.js`（宽容清洗 → `normalizeTextResult` 严格兜底）、`ai-quota.js`（结果缓存 + 每日 50 次，内存不落库）。
-  `createModel('hunyuan-v3')` 不在 `@cloudbase/ai` 的 MODELS 表内 → 走 DefaultSimpleModel，
-  URL `…/v1/ai/hunyuan-v3/chat/completions`，正常路径不是 bug。
-- `domain/quick-entry.ts:createDraftFromParsed` 第 6 参是 `parserVersion`，另有 `aiMissingFields`；
-  AI 缺失字段**故意不写进 `confirmationFields`**（会把 savable 变成「待确认」，破坏 acceptance 测试契约）；
-  `recognizeTextItems` 返回 `{ items, parserVersion }` 而不是裸 items。
-- 页面测试的假 setData 是 `Object.assign`，不认 `drafts[0]` 这类路径 key，验证路径 setData 要自己捕获 patch。
-- 文档：计划 `docs/ai-parse-plan.md`；`docs/ai-parse-research.md` 结论已过时（node-sdk 说法作废）。
-- 真机/后台待办：`quickEntryApi` 超时 60s（已确认线上是 60）、隐私指引补「输入发送至大模型」、
-  `quick-entry/` 存储生命周期清理、ASR/OCR 密钥与腾讯云计费、复核 `AI_*` 日志。
-
-## 物品封面：AI 生图（inventoryApi generateCover）
-- 通道：`cloud.ai().createImageModel('hunyuan-image')` → `generateImage({model,prompt,size,n,revise,enable_thinking})`
-  → `data[0].url`（临时 URL，必须下载转存云存储）。provider/模型名只在 `cloudfunctions/inventoryApi/image-cover.js`。
-- **model 必须传 `HY-Image-3.0-Plus-4090-Tob-v1.0`**：`hunyuan-image` 作为 model 已于 2026-07-15 下线
-  （provider 名仍叫 `hunyuan-image`）。且**必须显式 `revise:{value:false}` / `enable_thinking:{value:false}`**，
-  否则 +10s 到 +60s 必撞超时。
-- **prompt 不能写"贴纸风格"**：模型会理解成带白边和灰底板的实体贴纸，出图是灰底方块，贴白卡片上很脏。
-  正确写法是"背景是纯白色，主体周围不要阴影"。出图约 5.8s。
-- **扩展名必须按文件头魔数嗅探**（`sniffExtension`）：生图返回的字节实测是 JPEG，
-  但 URL 无后缀、Content-Type 也谎报 `image/png`，按后两者命名会把 JPEG 存成 `.png`。
-- `cloud.init({ timeout: 45000 })` 是 SDK 单次 HTTP 超时（默认约 15s），不是云函数超时，写代码里生效。
-- 物品落 `coverFileId`（cloud://，image 组件原生支持），**不 bump version**（展示数据，避免并发编辑 CONFLICT）。
-  同名物品复用封面；急停 `COVER_IMAGE_ENABLED`；生图 30s/下载 10s 独立超时（函数需 60s）。
-- 触发：保存成功后前端 fire-and-forget（快录批量串行、表单单条），失败静默 → 卡片用默认占位图。
-  `inventory-row` data 记 `coverFor/coverError`，封面 ID 变化才重试，失败回退 `/assets/inventory-placeholder.svg`。
-- **封面回填**：生图异步落库，首页 onShow 拉取常早于生图完成 → 卡片停在占位图且不自愈。
-  `inventory-service.ts` 暴露 `onItemCoverReady(listener)`，`generateItemCover` 成功后广播 `{itemId,coverFileId}`；
-  首页 onShow 订阅 / onHide 退订，收到直接 `patchItem`。别退回轮询或"延迟二次刷新"。
-- 待办：编辑改名不重新生成；item-detail 页仍用默认图；线上 inventoryApi 超时需 60s（见部署章节）。
-
-## UI / 工程约定
-- 自定义 tabBar（`app.json` `tabBar.custom: true`，z-index 900）遮罩盖不住时**别硬提 z-index**（层叠上下文不可靠）；
-  给 tabBar 加 `hidden` 态：`getTabBar()?.setData({hidden:true})` + `opacity + translateY(120%) + pointer-events:none`。
-- **WXSS 不支持通用选择器 `*`**（如 `.field-row > *`），会导致编译中断整个页面渲染；用显式 BEM 类名。
-- 图标用 `miniprogram/assets/icons/*.svg`（32×32 圆角底 + 24 栅格线稿，`<image mode="aspectFit">`）；
-  状态色：在库/编辑=绿、临期/提醒=琥珀、过期/删除=红、已用完=蓝。
-
-## 目录速记
-- `miniprogram/pages/quick-entry/`：AI 快速录入页（草稿卡、日期/保质期模式切换）。
-- `miniprogram/pages/item-form/`：手动录入表单页，`.field` 等样式在此页 wxss 局部定义，未全局化。
-- `docs/quick-entry-acceptance.md`（验收现状，含"未开通"能力结论）、`docs/cloud-deployment.md`（部署与密钥配置）。
+## UI / 工程
+- 自定义 tabBar `z-index:900`；遮不住时加 `hidden` 态（`getTabBar()?.setData({hidden:true})`）。
+- **WXSS 不支持通用选择器 `*`**（会中断编译整页白屏）→ 显式 BEM 类名。
+- 图标 `miniprogram/assets/icons/*.svg`；状态色：在库/编辑=绿、临期/提醒=琥珀、过期/删除=红、已用完=蓝。
+- 页面测试的假 setData 是 `Object.assign`，不认 `drafts[0]` 路径 key。

@@ -17,7 +17,7 @@
     <button class="entry" data-entry="settings" bindtap="openEntry" hover-class="entry--pressed">
       <view class="entry__icon entry__icon--bell" aria-hidden="true"></view>
       <text class="entry__label">提醒设置</text>
-      <text class="entry__value">默认提前 {{savedReminderDayIndex}} 天</text>
+      <text class="entry__value">{{savedReminderDayValue === 0 ? '到期当天 09:30' : '到期前 ' + savedReminderDayValue + ' 天 09:30'}}</text>
       <view class="entry__chevron" aria-hidden="true"></view>
     </button>
     <button class="entry" data-entry="trash" bindtap="openEntry" hover-class="entry--pressed">
@@ -44,6 +44,12 @@
       <text class="entry__value">保质记</text>
       <view class="entry__chevron" aria-hidden="true"></view>
     </button>
+    <button class="entry" data-entry="account" bindtap="openEntry" hover-class="entry--pressed">
+      <view class="entry__icon entry__icon--account" aria-hidden="true"></view>
+      <text class="entry__label entry__label--danger">账号与数据</text>
+      <text class="entry__value">可注销并清空数据</text>
+      <view class="entry__chevron" aria-hidden="true"></view>
+    </button>
   </view>
 
   <!-- 资料设置 -->
@@ -53,14 +59,20 @@
       <text class="modal__subtitle">可以使用微信昵称，也可以自己输入</text>
 
       <view class="profile-editor">
-        <button class="profile-editor__avatar" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" hover-class="profile-editor__avatar--pressed">
+        <button
+          class="profile-editor__avatar"
+          open-type="chooseAvatar"
+          bindchooseavatar="chooseAvatar"
+          disabled="{{avatarUploading}}"
+          hover-class="profile-editor__avatar--pressed"
+        >
           <image wx:if="{{profile.avatar}}" class="profile-editor__image" src="{{profile.avatar}}" mode="aspectFill" />
           <view wx:else class="profile-editor__placeholder">
             <view class="profile__avatar-head"></view>
             <view class="profile__avatar-body"></view>
           </view>
         </button>
-        <text class="profile-editor__tip">使用微信头像</text>
+        <text class="profile-editor__tip">{{avatarUploading ? '正在上传头像…' : '使用微信头像'}}</text>
       </view>
 
       <text class="field-label">昵称</text>
@@ -75,8 +87,8 @@
       />
 
       <view class="modal__actions">
-        <button class="secondary-button modal__button" bindtap="closeProfile" hover-class="pressable--pressed">取消</button>
-        <button class="primary-button modal__button" bindtap="saveProfile" hover-class="pressable--pressed">保存</button>
+        <button class="secondary-button modal__button" disabled="{{profileSaving || avatarUploading}}" bindtap="closeProfile" hover-class="pressable--pressed">取消</button>
+        <button class="primary-button modal__button" disabled="{{profileSaving || avatarUploading}}" bindtap="saveProfile" hover-class="pressable--pressed">{{profileSaving ? '保存中…' : '保存'}}</button>
       </view>
     </view>
   </view>
@@ -85,7 +97,7 @@
   <view wx:if="{{activeModal === 'settings'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
     <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="提醒设置">
       <text class="modal__title">提醒设置</text>
-      <text class="modal__subtitle">用于新增物品和微信通知</text>
+      <text class="modal__subtitle">新增物品的默认提前天数，单件可在录入时单独调整。到期提醒统一在当天 09:30 推送，无需逐件开启。</text>
 
       <view wx:if="{{settingsError}}" class="compact-error">
         <text>{{settingsError}}</text>
@@ -103,8 +115,8 @@
         >
           <view class="setting-row">
             <view>
-              <text class="setting-row__label">默认提前提醒</text>
-              <text class="setting-row__description">新增物品时自动带入</text>
+              <text class="setting-row__label">默认提醒时间</text>
+              <text class="setting-row__description">只影响之后新增的物品</text>
             </view>
             <view class="setting-row__value">
               <text>{{reminderDayOptions[reminderDayIndex].label}}</text>
@@ -112,12 +124,13 @@
             </view>
           </view>
         </picker>
-        <view class="setting-row setting-row--notification">
-          <view class="setting-row__notification-copy">
-            <text class="setting-row__label">提醒授权</text>
-            <text class="setting-row__description">{{subscriptionSummary}}</text>
+
+        <view class="setting-row setting-row--static">
+          <view class="setting-row__main">
+            <text class="setting-row__label">微信通知</text>
+            <text class="setting-row__description">{{notificationSummary}}</text>
           </view>
-          <button class="setting-row__link" bindtap="openNotificationSettings" hover-class="pressable--pressed">查看设置</button>
+          <button class="setting-row__action" bindtap="openNotificationSettings" hover-class="pressable--pressed">去微信设置</button>
         </view>
       </block>
 
@@ -169,6 +182,16 @@
         </block>
         <view wx:else class="trash-tip">回收站是空的</view>
       </scroll-view>
+
+      <view wx:if="{{trashItems.length}}" class="trash-foot">
+        <text class="trash-foot__hint">可多选或全选后一次性彻底删除</text>
+        <button
+          class="trash-foot__batch"
+          disabled="{{trashLoading}}"
+          bindtap="openTrashBatch"
+          hover-class="pressable--pressed"
+        >批量管理</button>
+      </view>
     </view>
   </view>
 
@@ -215,6 +238,45 @@
         </view>
       </view>
       <button class="primary-button modal__button" bindtap="closeModal" hover-class="pressable--pressed">知道了</button>
+    </view>
+  </view>
+
+  <!-- 账号与数据 -->
+  <view wx:if="{{activeModal === 'account'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
+    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="账号与数据">
+      <text class="modal__title">账号与数据</text>
+      <text class="modal__subtitle">数据保存在微信云开发，按微信账号隔离，仅本人可见</text>
+      <view class="help-list">
+        <view class="help-item">
+          <text class="help-item__q">注销会删掉什么</text>
+          <text class="help-item__a">全部物品、回收站、提醒任务、提醒设置和云端封面图，都会永久删除。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">注销后还能用吗</text>
+          <text class="help-item__a">可以。重新进入会是一个全新的空账号，需要重新录入物品。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">中途失败怎么办</text>
+          <text class="help-item__a">直接再点一次注销即可，重复执行不会出错。</text>
+        </view>
+        <view class="help-item">
+          <text class="help-item__q">能导出自己的数据吗</text>
+          <text class="help-item__a">可以。点「导出我的数据」生成文件，再点一次「转发到微信」，建议选「文件传输助手」，电脑上也能打开。</text>
+        </view>
+      </view>
+      <text wx:if="{{exportReady}}" class="modal__hint">文件已生成，再点一次按钮即可转发到微信</text>
+      <button
+        class="secondary-button modal__button"
+        disabled="{{exporting || deletingAccount}}"
+        bindtap="startExport"
+        hover-class="pressable--pressed"
+      >{{exporting ? '正在导出…' : exportReady ? '转发到微信' : '导出我的数据'}}</button>
+      <button
+        class="danger-button modal__button modal__button--stacked"
+        disabled="{{exporting || deletingAccount}}"
+        bindtap="startDeleteAccount"
+        hover-class="pressable--pressed"
+      >{{deletingAccount ? '正在删除…' : '注销账号'}}</button>
     </view>
   </view>
 

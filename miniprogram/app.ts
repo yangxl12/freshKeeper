@@ -1,4 +1,5 @@
 import { CLOUD_ENV_ID } from './config/runtime'
+import { touchUserOnceToday } from './services/user-service'
 
 App<IAppOption>({
   globalData: {
@@ -20,6 +21,10 @@ App<IAppOption>({
       env: CLOUD_ENV_ID || undefined,
       traceUser: true,
     })
+
+    // 用户活跃埋点：同一天只调一次，失败静默。只放 onLaunch——
+    // onShow 会因为频繁前后台切换被反复触发。
+    touchUserOnceToday()
   },
   onShow() {
     try {

@@ -12,6 +12,8 @@
 .batch-toolbar__filters { display: flex; align-items: center; gap: 10rpx; margin: 0; }
 .batch-filter { padding: 8rpx 12rpx; border: 2rpx solid #d8e5de; border-radius: 999rpx; background: #f5faf7; color: #39715d; font-size: 21rpx; white-space: nowrap; }
 .batch-filter--status { border-color: #dce2e0; background: #f8faf9; color: #64746d; }
+/* 回收站来源：只显示搜索词 + 件数，关键词可能很长，超出用省略号截断。 */
+.batch-filter--trash { max-width: 430rpx; overflow: hidden; text-overflow: ellipsis; }
 
 .select-all {
   min-width: 120rpx;

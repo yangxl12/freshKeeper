@@ -1,0 +1,76 @@
+<!-- 「从最近录入添加」独立页面：原生导航栏返回，列表里多选，底部一次性把草稿交回录入页。 -->
+<view class="recent-entry page-shell">
+  <view class="recent-entry__intro">
+    <text class="recent-entry__intro-title">最近买过什么？</text>
+    <text class="recent-entry__intro-text">{{introText}}</text>
+  </view>
+
+  <view wx:if="{{profiles.length}}" class="recent-search">
+    <input
+      class="recent-search__input"
+      value="{{keyword}}"
+      bindinput="handleKeywordInput"
+      placeholder="搜索物品名称"
+      placeholder-class="recent-search__placeholder"
+      confirm-type="search"
+    />
+    <button wx:if="{{keyword}}" class="recent-search__clear" bindtap="clearKeyword" aria-label="清空搜索"><view class="line-icon line-icon--close" aria-hidden="true"></view></button>
+  </view>
+
+  <view wx:if="{{limitNotice}}" class="recent-entry__notice" role="alert">{{limitNotice}}</view>
+
+  <view wx:if="{{loading}}" class="recent-entry__state">正在读取最近记录…</view>
+
+  <view wx:elif="{{loadingError}}" class="recent-entry__state">
+    <text>{{loadingError}}</text>
+    <button class="recent-entry__retry" bindtap="retryLoad">重试</button>
+  </view>
+
+  <scroll-view wx:else class="recent-body {{picked.length ? 'recent-body--with-footer' : ''}}" scroll-y>
+    <view wx:if="{{filteredProfiles.length}}" class="recent-list">
+      <view wx:for="{{filteredProfiles}}" wx:key="key" wx:for-item="profile" class="recent-item {{profile.picked ? 'recent-item--picked' : ''}}">
+        <button class="recent-item__hit" data-key="{{profile.key}}" bindtap="pickProfile" hover-class="recent-item__hit--pressed">
+          <view class="recent-item__content">
+            <text class="recent-item__name">{{profile.name}}</text>
+            <text class="recent-item__meta">{{profile.quantity}}{{profile.unit}}<text wx:if="{{profile.storageLocation}}"> · {{profile.storageLocation}}</text></text>
+          </view>
+          <text wx:if="{{profile.picked}}" class="recent-item__badge">已选</text>
+          <view wx:else class="line-icon line-icon--chevron-right recent-item__arrow" aria-hidden="true"></view>
+        </button>
+      </view>
+    </view>
+    <view wx:elif="{{keyword}}" class="recent-entry__state">没有名字里带「{{keyword}}」的记录</view>
+    <view wx:else class="recent-entry__state">还没有录入记录，先用一句话或完整录入建立记录。</view>
+  </scroll-view>
+
+  <view wx:if="{{picked.length}}" class="recent-footer">
+    <view class="recent-footer__hint">
+      <text>已选 {{picked.length}} 条</text>
+      <text wx:if="{{pendingCount}}" class="recent-footer__warn">· {{pendingCount}} 条还差到期日期，回去补上才能入库</text>
+    </view>
+    <view class="recent-footer__row">
+      <button class="recent-footer__clear" hover-class="pressable--pressed" bindtap="clearPicked">清空</button>
+      <button class="primary-button recent-footer__submit" hover-class="pressable--pressed" bindtap="confirmPicked">添加到录入（{{picked.length}}）</button>
+    </view>
+  </view>
+
+  <!-- 编辑弹窗：复用完整录入表单，点「加入已选」才把表单值写成草稿。 -->
+  <view wx:if="{{editorOpen}}" class="recent-editor">
+    <view class="recent-editor__mask" bindtap="requestCloseEditor" catchtouchmove="noop" />
+    <view class="recent-editor__panel">
+      <view class="recent-editor__head">
+        <view class="recent-editor__handle" aria-hidden="true"></view>
+        <text class="recent-editor__title">{{editingPicked ? '调整已选物品' : '确认物品信息'}}</text>
+        <button class="recent-editor__close" bindtap="requestCloseEditor" aria-label="退出编辑">×</button>
+      </view>
+      <scroll-view class="recent-editor__body" scroll-y>
+        <item-form-sheet id="recentForm" purpose="draft" bind:draftsubmit="handleFormSubmit" />
+      </scroll-view>
+      <view class="recent-editor__foot">
+        <button wx:if="{{editingPicked}}" class="recent-editor__remove" hover-class="pressable--pressed" bindtap="removePicked">移出已选</button>
+        <button wx:else class="recent-editor__cancel" hover-class="pressable--pressed" bindtap="requestCloseEditor">取消</button>
+        <button class="recent-editor__done" hover-class="pressable--pressed" bindtap="confirmEditor">{{editingPicked ? '完成' : '加入已选'}}</button>
+      </view>
+    </view>
+  </view>
+</view>

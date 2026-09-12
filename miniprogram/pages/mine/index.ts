@@ -1,27 +1,51 @@
 import { toInventoryCardItem } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { listTrash, permanentlyDeleteItem } from '../../services/inventory-service'
+import { readReminderAuthorization } from '../../services/reminder-service'
 import { getSettings, updateSettings } from '../../services/settings-service'
+import {
+  confirmExport,
+  deleteAccount,
+  discardLocalExport,
+  getUserProfile,
+  prepareExport,
+  sharePreparedExport,
+  updateProfile,
+  uploadAvatarFile,
+} from '../../services/user-service'
+import { normalizeNickname } from '../../utils/nickname'
+import { shouldMigrateProfile } from '../../utils/profile-migration'
+import type { UserProfile, UserProfileUpdateInput } from '../../types/inventory'
 
 const REMINDER_DAY_OPTIONS = Array.from({ length: 31 }, (_, value) => ({
   value,
-  label: value === 0 ? '到期当天' : `提前 ${value} 天`,
+  label: value === 0 ? '到期当天提醒' : `到期前 ${value} 天`,
 }))
 
+/** 天数不等于选项下标：picker 只认下标，一律显式换算，别拿天数当索引传。 */
+function reminderDayIndexOf(value: number): number {
+  const index = REMINDER_DAY_OPTIONS.findIndex((option) => option.value === value)
+  return index >= 0 ? index : 1
+}
+
 const PROFILE_STORAGE_KEY = 'mine_profile'
+const PROFILE_MIGRATED_KEY = 'profile_migrated'
 const FEEDBACK_STORAGE_KEY = 'mine_feedback'
 
 const DEFAULT_NICKNAME = '保质记用户'
+/** 资料读取节流：60s 内重复 onShow 不再请求云端。 */
+const PROFILE_READ_TTL_MS = 60_000
 
 interface Profile {
   nickname: string
   avatar: string
 }
 
-type EntryKey = 'settings' | 'trash' | 'feedback' | 'help' | 'about'
+type EntryKey = 'settings' | 'trash' | 'feedback' | 'help' | 'about' | 'account'
 
 let trashSearchTimer: number | undefined
 let trashRequestSequence = 0
+let profileReadAt = 0
 
 function readProfile(): Profile {
   try {
@@ -35,21 +59,50 @@ function readProfile(): Profile {
   return { nickname: DEFAULT_NICKNAME, avatar: '' }
 }
 
+/** 本地存储从「唯一数据源」降级为缓存：云端回来的内容顺手回写，离线时还能兜底渲染。 */
+function writeProfileCache(profile: Profile): void {
+  try {
+    wx.setStorageSync(PROFILE_STORAGE_KEY, profile)
+  } catch (error) {
+    // 缓存写不进去不影响展示
+  }
+}
+
+function profileFromRemote(remote: UserProfile): Profile {
+  return { nickname: remote.nickname || DEFAULT_NICKNAME, avatar: remote.avatarFileId || '' }
+}
+
+function isMigrated(): boolean {
+  try {
+    return Boolean(wx.getStorageSync(PROFILE_MIGRATED_KEY))
+  } catch (error) {
+    return false
+  }
+}
+
 Page({
   data: {
     profile: { nickname: DEFAULT_NICKNAME, avatar: '' } as Profile,
     profileVisible: false,
     profileNickname: DEFAULT_NICKNAME,
+    /** 云端档案：判断存量迁移要靠它，不参与渲染。 */
+    remoteProfile: null as UserProfile | null,
+    profileSaving: false,
+    avatarUploading: false,
+    exporting: false,
+    /** 已生成并下载到本地的导出文件，等着用户再点一次转发。 */
+    exportReady: null as { tempFilePath: string; fileName: string } | null,
     activeModal: '' as EntryKey | '',
     settingsLoading: true,
     settingsSaving: false,
     settingsError: '',
     reminderDayOptions: REMINDER_DAY_OPTIONS,
-    reminderDayIndex: 1,
-    savedReminderDayIndex: 1,
-    hasReminderJobs: false,
-    subscriptionMainSwitch: null as boolean | null,
-    subscriptionSummary: '可在物品详情中逐件开启一次性提醒',
+    /** picker 选中项的下标。 */
+    reminderDayIndex: reminderDayIndexOf(1),
+    /** 已保存的默认提醒天数（真实天数，不是下标）。 */
+    savedReminderDayValue: 1,
+    /** 微信订阅消息的授权状态说明；提醒已全部走订阅消息，这里是唯一的「为什么没收到」排查入口。 */
+    notificationSummary: '',
     trashLoading: false,
     trashLoadingMore: false,
     trashError: '',
@@ -57,13 +110,17 @@ Page({
     trashItems: [] as ReturnType<typeof toInventoryCardItem>[],
     trashNextCursor: null as string | null,
     feedbackText: '',
+    /** 注销中：锁住弹窗关闭与按钮，避免删一半被打断。 */
+    deletingAccount: false,
   },
 
   onShow() {
     this.syncTabBar()
     this.setData({ profile: readProfile() })
-    void this.loadSettings()
-    this.readSubscriptionSetting()
+    // 资料与设置并发读：资料读失败静默降级，不该拖慢设置。
+    void Promise.all([this.loadSettings(), this.loadProfile()])
+    // 去「批量管理」彻底删完再回来时回收站还开着，必须重拉，否则残留已删除的物品。
+    if (this.data.activeModal === 'trash') void this.loadTrash(true)
   },
 
   onUnload() {
@@ -71,8 +128,7 @@ Page({
   },
 
   onPullDownRefresh() {
-    Promise.all([this.loadSettings()]).finally(() => wx.stopPullDownRefresh())
-    this.readSubscriptionSetting()
+    void this.loadSettings().finally(() => wx.stopPullDownRefresh())
   },
 
   syncTabBar() {
@@ -88,21 +144,95 @@ Page({
     this.setData({ settingsLoading: true, settingsError: '' })
     try {
       const settings = await getSettings()
-      this.setData(
-        {
-          reminderDayIndex: settings.defaultReminderLeadDays,
-          savedReminderDayIndex: settings.defaultReminderLeadDays,
-          hasReminderJobs: Boolean(settings.hasReminderJobs),
-          settingsLoading: false,
-        },
-        () => this.updateSubscriptionSummary(),
-      )
+      this.setData({
+        reminderDayIndex: reminderDayIndexOf(settings.defaultReminderLeadDays),
+        savedReminderDayValue: settings.defaultReminderLeadDays,
+        settingsLoading: false,
+      })
     } catch (error) {
       this.setData({ settingsLoading: false, settingsError: getErrorMessage(error) })
     }
+    // 授权状态是本机系统状态，读失败不影响默认天数的展示。
+    const authorization = await readReminderAuthorization()
+    this.setData({ notificationSummary: authorization.summary })
+  },
+
+  /** 系统级订阅状态只能跳到微信设置页改，小程序侧的任何控件都只是镜像。 */
+  openNotificationSettings() {
+    wx.openSetting({ withSubscriptions: true })
   },
 
   /* 资料 */
+  async loadProfile(force = false) {
+    const now = Date.now()
+    if (!force && profileReadAt && now - profileReadAt < PROFILE_READ_TTL_MS) return
+    profileReadAt = now
+    try {
+      const remote = await getUserProfile()
+      profileReadAt = Date.now()
+      this.applyRemoteProfile(remote)
+    } catch (error) {
+      // 静默降级：本地缓存已经渲染出来了，资料读不到不影响任何核心操作。
+      return
+    }
+  },
+
+  /** 云端为准；云端还没资料的存量用户先沿用本地，迁移跑完自然被覆盖。 */
+  applyRemoteProfile(remote: UserProfile) {
+    const next = profileFromRemote(remote)
+    const local = readProfile()
+    const merged: Profile = {
+      nickname: remote.nickname ? next.nickname : local.nickname,
+      avatar: remote.avatarFileId ? next.avatar : local.avatar,
+    }
+    this.setData({ profile: merged, remoteProfile: remote })
+    writeProfileCache(merged)
+    if (!isMigrated() && shouldMigrateProfile(local, remote, DEFAULT_NICKNAME)) {
+      void this.migrateLocalProfile(local)
+    }
+  },
+
+  applyProfile(remote: UserProfile) {
+    const profile = profileFromRemote(remote)
+    this.setData({ profile, remoteProfile: remote })
+    writeProfileCache(profile)
+    // 刚写完云端，重置节流窗口，避免下次 onShow 立刻又读一次。
+    profileReadAt = Date.now()
+  },
+
+  /** 存量迁移：本地资料推上云，头像传不动就只迁昵称，绝不因为头像失败整体失败。 */
+  async migrateLocalProfile(local: Profile) {
+    try {
+      let avatarFileId: string | null = null
+      if (local.avatar && !local.avatar.startsWith('cloud://')) {
+        try {
+          avatarFileId = await uploadAvatarFile(local.avatar)
+        } catch (error) {
+          avatarFileId = null
+        }
+      }
+      const nickname = local.nickname === DEFAULT_NICKNAME ? null : normalizeNickname(local.nickname)
+      // 头像只在真的传上去时才写：没传就一定不能把云端已有的头像清掉。
+      const payload: UserProfileUpdateInput = { nickname }
+      if (avatarFileId) payload.avatarFileId = avatarFileId
+      await updateProfile(payload)
+      try {
+        wx.setStorageSync(PROFILE_MIGRATED_KEY, true)
+      } catch (error) {
+        // 标记写不进去最多导致重复迁移一次，可容忍。
+      }
+      // 头像没迁上去说明本地文件已经失效，清掉缓存里的死路径，避免图片一直加载失败。
+      if (local.avatar && !avatarFileId && !local.avatar.startsWith('cloud://')) {
+        writeProfileCache({ nickname: local.nickname, avatar: '' })
+        this.setData({ 'profile.avatar': '' })
+      }
+      profileReadAt = 0
+      void this.loadProfile(true)
+    } catch (error) {
+      // 迁移失败不打扰用户，下次还会再试。
+    }
+  },
+
   openProfile() {
     this.setData({
       profileVisible: true,
@@ -111,6 +241,7 @@ Page({
   },
 
   closeProfile() {
+    if (this.data.profileSaving || this.data.avatarUploading) return
     this.setData({ profileVisible: false })
   },
 
@@ -118,30 +249,48 @@ Page({
     this.setData({ profileNickname: event.detail.value })
   },
 
-  chooseAvatar(event: WechatMiniprogram.CustomEvent) {
+  /** 头像即选即传：压缩 → 取 cloudPath → 上传 → 写档案，不跟随「保存」按钮。 */
+  async chooseAvatar(event: WechatMiniprogram.CustomEvent) {
     const avatarUrl = (event.detail as { avatarUrl?: string }).avatarUrl
-    if (!avatarUrl) return
-    let saved = avatarUrl
+    if (!avatarUrl || this.data.avatarUploading) return
+    this.setData({ avatarUploading: true })
+    wx.showLoading({ title: '正在上传头像', mask: true })
     try {
-      const target = `${wx.env.USER_DATA_PATH}/mine-avatar.png`
-      wx.getFileSystemManager().saveFileSync(avatarUrl, target)
-      saved = target
+      const fileID = await uploadAvatarFile(avatarUrl)
+      const updated = await updateProfile({ avatarFileId: fileID })
+      wx.hideLoading()
+      this.applyProfile(updated)
     } catch (error) {
-      // 保存失败时直接使用临时地址
+      wx.hideLoading()
+      await this.showError('头像没有保存成功', error)
+    } finally {
+      this.setData({ avatarUploading: false })
     }
-    this.setData({ 'profile.avatar': saved })
   },
 
-  saveProfile() {
-    const nickname = this.data.profileNickname.trim().slice(0, 20) || DEFAULT_NICKNAME
-    const profile: Profile = { nickname, avatar: this.data.profile.avatar }
+  async saveProfile() {
+    if (this.data.profileSaving) return
+    const nickname = normalizeNickname(this.data.profileNickname)
+    this.setData({ profileSaving: true })
     try {
-      wx.setStorageSync(PROFILE_STORAGE_KEY, profile)
+      const updated = await updateProfile({ nickname })
+      this.applyProfile(updated)
+      this.setData({ profileVisible: false, profileSaving: false })
+      wx.showToast({ title: '资料已保存', icon: 'success' })
     } catch (error) {
-      // 存储失败时仍展示本次修改
+      this.setData({ profileSaving: false })
+      await this.showError('资料没有保存成功', error)
     }
-    this.setData({ profile, profileVisible: false })
-    wx.showToast({ title: '资料已保存', icon: 'success' })
+  },
+
+  /** 结果提示一律用 modal：微信 toast 超过 7 个汉字会被截断。 */
+  async showError(title: string, error: unknown) {
+    await wx.showModal({
+      title,
+      content: getErrorMessage(error),
+      showCancel: false,
+      confirmText: '知道了',
+    })
   },
 
   /* 入口弹窗 */
@@ -153,11 +302,11 @@ Page({
   },
 
   closeModal() {
-    if (this.data.settingsSaving) return
+    if (this.data.settingsSaving || this.data.deletingAccount || this.data.exporting) return
     this.setData({
       activeModal: '',
       settingsError: '',
-      reminderDayIndex: this.data.savedReminderDayIndex,
+      reminderDayIndex: reminderDayIndexOf(this.data.savedReminderDayValue),
     })
   },
 
@@ -178,8 +327,8 @@ Page({
         defaultReminderLeadDays: REMINDER_DAY_OPTIONS[this.data.reminderDayIndex].value,
       })
       this.setData({
-        reminderDayIndex: settings.defaultReminderLeadDays,
-        savedReminderDayIndex: settings.defaultReminderLeadDays,
+        reminderDayIndex: reminderDayIndexOf(settings.defaultReminderLeadDays),
+        savedReminderDayValue: settings.defaultReminderLeadDays,
         settingsSaving: false,
         activeModal: '',
       })
@@ -187,39 +336,6 @@ Page({
     } catch (error) {
       this.setData({ settingsSaving: false, settingsError: getErrorMessage(error) })
     }
-  },
-
-  readSubscriptionSetting() {
-    wx.getSetting({
-      withSubscriptions: true,
-      success: (result) => {
-        const subscriptions = result.subscriptionsSetting
-        this.setData({ subscriptionMainSwitch: subscriptions?.mainSwitch ?? null }, () =>
-          this.updateSubscriptionSummary(),
-        )
-      },
-    })
-  },
-
-  updateSubscriptionSummary() {
-    let subscriptionSummary = this.data.hasReminderJobs
-      ? '已有物品保存了提醒任务'
-      : '可在物品详情中逐件开启一次性提醒'
-    if (this.data.subscriptionMainSwitch === false) {
-      subscriptionSummary = '微信通知总开关已关闭'
-    } else if (this.data.subscriptionMainSwitch === true) {
-      subscriptionSummary = this.data.hasReminderJobs
-        ? '通知已开启，已有物品保存了提醒任务'
-        : '通知已开启，每件物品仍需单独授权'
-    }
-    this.setData({ subscriptionSummary })
-  },
-
-  openNotificationSettings() {
-    wx.openSetting({
-      withSubscriptions: true,
-      complete: () => this.readSubscriptionSetting(),
-    })
   },
 
   retrySettings() {
@@ -298,6 +414,17 @@ Page({
     void this.loadTrash(false)
   },
 
+  /**
+   * 批量管理：跳到批量操作页复用「多选 / 全选 / 分块彻底删除」，不在弹窗里再实现一套选择逻辑。
+   * 当前搜索词一并带过去，否则用户搜完再批量会看到整个回收站，选中范围和预期不符。
+   */
+  openTrashBatch() {
+    if (this.data.trashLoading || !this.data.trashItems.length) return
+    const app = getApp<IAppOption>()
+    app.globalData.pendingBatchIntent = { source: 'trash', search: this.data.trashSearch }
+    wx.navigateTo({ url: '/pages/batch-operation/index?source=trash' })
+  },
+
   retryTrash() {
     void this.loadTrash(true)
   },
@@ -321,5 +448,107 @@ Page({
     }
     this.setData({ feedbackText: '', activeModal: '' })
     wx.showToast({ title: '已收到，感谢反馈', icon: 'success' })
+  },
+
+  /* 数据导出（B2） */
+  /**
+   * 导出按钮的唯一入口，故意做成两步：
+   * `wx.shareFileMessage` 只认 TAP 手势，而生成 + 下载必然是异步的，
+   * 所以第一次点只负责把文件拿到本地（异步），第二次点才有资格转发（同步调用）。
+   */
+  startExport() {
+    if (this.data.exportReady) {
+      this.shareReadyExport()
+      return
+    }
+    void this.prepareExport()
+  },
+
+  async prepareExport() {
+    if (this.data.exporting) return
+    this.setData({ exporting: true })
+    wx.showLoading({ title: '正在导出…', mask: true })
+    try {
+      const prepared = await prepareExport()
+      wx.hideLoading()
+      this.setData({
+        exporting: false,
+        exportReady: { tempFilePath: prepared.tempFilePath, fileName: prepared.fileName },
+      })
+    } catch (error) {
+      wx.hideLoading()
+      this.setData({ exporting: false })
+      await this.showError('导出没有完成', error)
+    }
+  },
+
+  /** 转发：调用链里**不能出现 await**，否则微信会判定不是用户点击触发的。 */
+  shareReadyExport() {
+    const ready = this.data.exportReady
+    if (!ready) return
+    void sharePreparedExport(ready.tempFilePath, ready.fileName)
+      .then((shared) => {
+        // 用户取消：本地文件还在，按钮保持「转发到微信」，可以再点。
+        if (!shared) return
+        this.setData({ exportReady: null })
+        discardLocalExport(ready.tempFilePath)
+        confirmExport()
+        wx.showToast({ title: '已转发', icon: 'success' })
+      })
+      .catch(async (error: unknown) => {
+        // 其它失败（比如临时文件被系统回收）丢掉这次准备好的文件，让用户重新点一次生成。
+        this.setData({ exportReady: null })
+        discardLocalExport(ready.tempFilePath)
+        await this.showError('转发没有完成', error)
+      })
+  },
+
+  /* 账号注销（A2） */
+  async startDeleteAccount() {
+    if (this.data.deletingAccount) return
+
+    const first = await wx.showModal({
+      title: '注销账号？',
+      content: '将永久删除：全部物品、回收站、提醒任务、提醒设置和云端封面图。',
+      confirmText: '继续',
+      confirmColor: '#A33F32',
+    })
+    if (!first.confirm) return
+
+    const second = await wx.showModal({
+      title: '确认注销，无法恢复',
+      content: '注销后重新进入会是一个全新的空账号，已删除的数据找不回来。',
+      confirmText: '确认注销',
+      confirmColor: '#A33F32',
+    })
+    if (!second.confirm) return
+
+    this.setData({ deletingAccount: true })
+    wx.showLoading({ title: '正在删除…', mask: true })
+    try {
+      await deleteAccount()
+      wx.hideLoading()
+      try {
+        wx.clearStorageSync()
+      } catch (error) {
+        // 清不掉本地缓存也不影响云端已删除。
+      }
+      await wx.showModal({
+        title: '账号已注销',
+        content: '你的数据已全部删除，重新进入就是全新的空账号。',
+        showCancel: false,
+        confirmText: '知道了',
+      })
+      wx.reLaunch({ url: '/pages/home/index' })
+    } catch (error) {
+      wx.hideLoading()
+      this.setData({ deletingAccount: false })
+      await wx.showModal({
+        title: '注销未完成',
+        content: `${getErrorMessage(error)}\n可以再试一次，重试是安全的。`,
+        showCancel: false,
+        confirmText: '知道了',
+      })
+    }
   },
 })

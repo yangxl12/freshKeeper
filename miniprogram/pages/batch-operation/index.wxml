@@ -1,8 +1,11 @@
 <view class="batch-page page-shell">
   <view class="batch-toolbar">
     <view class="batch-toolbar__filters">
-      <text class="batch-filter">种类：{{categoryLabel}}</text>
-      <text class="batch-filter batch-filter--status">状态：{{statusLabel}}</text>
+      <text wx:if="{{source === 'trash'}}" class="batch-filter batch-filter--trash">{{scopeLabel}}</text>
+      <block wx:else>
+        <text class="batch-filter">种类：{{categoryLabel}}</text>
+        <text class="batch-filter batch-filter--status">状态：{{statusLabel}}</text>
+      </block>
     </view>
     <button class="select-all" disabled="{{loading || !items.length}}" bindtap="toggleAll" hover-class="pressable--pressed">
       {{allSelected ? '取消全选' : '全选'}}
@@ -40,11 +43,11 @@
     </view>
   </view>
 
-  <view wx:elif="{{!loading && !errorMessage}}" class="batch-empty">暂无可操作的数据</view>
+  <view wx:elif="{{!loading && !errorMessage}}" class="batch-empty">{{source === 'trash' ? '回收站里没有可清理的物品' : '暂无可操作的数据'}}</view>
 
   <view class="batch-bottom {{source === 'trash' ? 'batch-bottom--trash' : ''}}">
     <button class="batch-bottom__cancel" disabled="{{operating}}" bindtap="cancel" hover-class="pressable--pressed">取消</button>
     <button wx:if="{{source !== 'trash'}}" class="batch-bottom__complete" disabled="{{operating || !selectedCount || !canComplete}}" bindtap="completeSelected" hover-class="pressable--pressed">标记为已用完</button>
-    <button class="batch-bottom__delete" disabled="{{operating || !selectedCount}}" bindtap="deleteSelected" hover-class="pressable--pressed">{{source === 'trash' ? '彻底删除' : '删除'}}</button>
+    <button class="batch-bottom__delete" disabled="{{operating || !selectedCount}}" bindtap="deleteSelected" hover-class="pressable--pressed">{{source === 'trash' ? '彻底删除' : '删除'}}{{selectedCount ? '（' + selectedCount + '）' : ''}}</button>
   </view>
 </view>

@@ -72,6 +72,12 @@ input:focus {
   color: #1f5d49;
 }
 
+.secondary-button[disabled] {
+  border-color: #e3ebe7;
+  background: #f7f9f9;
+  color: #a9b5b0;
+}
+
 .danger-button {
   border: 2rpx solid #dfb9b3;
   background: transparent;

@@ -1,17 +1,10 @@
 'use strict'
 
+/** 发出去就结束的状态：不再重开、也不再重试，避免重复推送。 */
 const TERMINAL_STATUSES = new Set(['sending', 'sent', 'unknown'])
-
-function canArmReminder(status) {
-  return !status || ['failed', 'cancelled'].includes(status)
-}
 
 function isTerminalReminderStatus(status) {
   return TERMINAL_STATUSES.has(status)
 }
 
-function canCancelReminder(status) {
-  return ['scheduled', 'failed', 'cancelled'].includes(status)
-}
-
-module.exports = { canArmReminder, canCancelReminder, isTerminalReminderStatus }
+module.exports = { isTerminalReminderStatus }

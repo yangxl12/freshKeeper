@@ -293,13 +293,26 @@ inventory_items: ownerId ASC, inventoryStatus ASC, updatedAt DESC
 
 直接到期模式的草稿在日期区域显示空的到期日期；保质期模式只保留保质期数值和单位，生产日期为空。旧日期不能以 placeholder、折叠值或默认值出现。
 
-点击后立即把焦点或滚动位置放到日期区域。用户选择日期后，草稿才从 `needs_input` 变为 `savable`。
+点击后在最近录入页的底部弹窗里确认：用户补上日期并点「加入已选」，草稿才从 `needs_input` 变为 `savable`；不补就带回去，也只会作为「待补全」草稿卡片躺在录入页。
 
-### 6.4 无最近项与旧服务端兼容
+### 6.4 从最近录入添加是独立页面
+
+最近列表不再作为快速录入页内的“伪页面”整块替换视图（进去只能点右上角 × 退出、选一条要叠一层底部弹窗、连选多条要来回跳）。现在：
+
+- `/pages/quick-entry/index` 的「从最近录入添加」按钮只负责 `wx.navigateTo('/pages/recent-entry/index?slots=N')`，`N = 20 - 当前未完成草稿数`；名额为 0 时按钮已置灰，函数里再挡一次。
+- `/pages/recent-entry/index` 是注册在 `app.json` 的正式页面，用原生导航栏返回，页面内提供名称搜索、可连续多选。
+- 点列表项 → 页内底部弹窗编辑（复用 `item-form-sheet purpose="draft"`）→ 点「加入已选」才生成草稿；已选项再点开是修改，「移出已选」单独移除。
+- 底部固定条「添加到录入（N）」→ `getOpenerEventChannel().emit('pickedDrafts', { drafts })` → `wx.navigateBack()`。`emit` 是同步的，回到录入页时草稿已经落进列表；不带草稿返回则录入页状态不变。
+- 回传的草稿由 `quickEntryPage.appendRecentDrafts()` 整批插到列表最前，并按剩余名额二次截断。
+- 打开编辑的判据是独立的 `editorOpen`，不能只看 `editingIndex`：新选的草稿还没进 `picked`，下标就是 `-1`。
+
+快速录入页仍会在 `preparePage` 拉一次 `listRecentProfiles`，但只用于给识别结果匹配分类和存放位置；拉失败静默降级，不再在录入页展示「最近物品不可用」。
+
+### 6.5 无最近项与旧服务端兼容
 
 - P0 只有最近复用能力时：最近列表为空，直接 `redirectTo` 当前 `item-form`，不展示只有“完整填写”按钮的中间页。
-- P1 任一智能入口开放后：始终展示快速录入页，最近区域为空时隐藏该区域。
-- `listRecentProfiles` 尚未部署或返回 `INVALID_ACTION` 时，隐藏最近区域并保留完整填写；不能阻塞手动新增。
+- P1 任一智能入口开放后：始终展示快速录入页；最近页为空时展示空态文案。
+- `listRecentProfiles` 尚未部署或返回 `INVALID_ACTION` 时，由 `quick-entry-service` 降级到 `listInventory(sort: 'created_desc')` 本地归并，不阻塞手动新增。
 - 详情编辑和回收站重新入库仍直接进入 `item-form`，不能经过快速录入页。
 
 ## 7. 快速录入页和草稿交互
@@ -308,9 +321,7 @@ inventory_items: ownerId ASC, inventoryStatus ASC, updatedAt DESC
 
 ```ts
 {
-  loadingRecent: boolean
-  recentProfiles: RecentItemProfile[]
-  recentError: string
+  recentProfiles: RecentItemProfile[] // 仅用于匹配识别结果的分类/位置
   text: string
   recognitionState: 'idle' | 'parsing' | 'transcribing' | 'recognizing_photo'
   voiceState: 'idle' | 'recording' | 'cancelling' | 'uploading'
