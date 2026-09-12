@@ -6,6 +6,10 @@
 - 删文件只认 `git clean -fx -- <明确路径>`（Remove-Item 静默失效）。
 - 同文件别并行 Edit（互相覆盖）；Write 前先 Read。
 - 流程：`npm run check` → commit → push `git@github.com:yangxl12/freshKeeper.git`（SSH 常被代理拦，第一次失败就只提交、让用户代推）。
+- **push 失败诊断**：`git push origin <branch> 2> .err.txt` + `$env:GIT_CURL_VERBOSE=1`（直接 `2>&1 | Out-String` 拿不到错误文本，只给 128）。
+  2026-09-12 实测 **HTTP 401 + `www-authenticate: Basic realm="GitHub"`** = GCM 拿不出凭据（认证问题，非网络），
+  代理隧道是好的（CONNECT 200 / TLS1.3 / edge=japaneast）。需龙哥触发一次 GCM OAuth 授权。
+- 临时文件统一 `.xxx.txt` 落盘再 Read（stdout 常被吞）；**读中文测试输出会乱码，断言定位靠 ASCII 关键字**。
 
 ## Git 红线
 - **绝不 `git stash push -- <path>`**（曾删空 `.git/refs`）。恢复：`mkdir -p .git/refs/{heads,tags,remotes}` → `ls-remote` → `fetch` → `update-ref`。
@@ -38,7 +42,19 @@
 - **快录**：`config/runtime.ts:QUICK_ENTRY_FEATURES` → 云端 `getCapabilities()` → 急停 `QUICK_ENTRY_AI_ENABLED`。不可用按钮置灰别 toast。`MAX_DRAFTS=20` ≠ 云端一次 5 条。语音/拍日期不可用 = 云端没配密钥。草稿编辑用 `item-form-sheet`（`purpose="draft"`）。
 - **AI 解析**：`cloud.ai()` provider 必须 `hunyuan-v3`／模型 `hy3`，名字只准在 `ai-client.js`。铁律：① 不让模型算日期（只出 `dateFacts`，`date-facts.js` 归一化）；② 证据回链防幻觉。降级 AI→自定义→`rules-v3`；AI 超时 6000ms < 前端 8s `Promise.race`。
 - **封面生图**：model `HY-Image-3.0-Plus-4090-Tob-v1.0`，必须显式 `revise/enable_thinking=false`。落 `coverFileId` **不 bump version**；保存后 fire-and-forget；回填走 `onItemCoverReady()` 广播，首页 onShow 订阅 / onHide 退订。
+  **列表用缩略图**：`domain/inventory.ts:coverThumbUrl()` 拼 `?imageView2/2/w/200/h/200/format/webp/q/80` 落到卡片 `coverThumb`；
+  `inventory-row` 的 observer **封面身份判据仍是原图 `coverFileId`**（`coverFor`），别改成比 `coverThumb`。详情页用原图。
+- **列表加载上限**：`MAX_LIST_ITEMS = 200` + `canLoadMoreItems()`，首页/回收站到顶后 `nextCursor` 置 null 并出提示。
+- **首页概览缓存**：`pages/home/index.ts` 的 `home_overview_cache` + `overviewDirty` 脏标记 + SWR。
+  写操作（数量/完成/删除）必须调 `invalidateOverview()`。**跨日失效靠比 `shanghaiTodayKey()`，不靠 setTimeout**
+  （切后台 5 分钟 JS 挂起，`scheduleMidnightRefresh` 基本不会准时触发）。
+- **批量页下发**：`batch-operation/index.ts:loadAll` 先累积、每 `EMIT_BATCH_SIZE(100)` 条才 setData（原来每页一次 = O(N²)）。
 - **提醒**：手机端全去开关化。提醒时间 = 到期日 − 提前天数，**当天 09:30** 推；纯函数 `domain/reminder-time.ts`。授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前。前端拦截只看日期。`reminderApi` 只有 arm；`dispatchReminders` 触发器 09:30 只处理 `remindDate===today`。模板字段映射写死在代码里（三处必改：`config/runtime.ts`、`reminderApi/index.js`、`dispatchReminders/template.js`），模板 ID 仍是占位。坑：`Number(null)===0`。未来时刻测试用例用 **2099 年**。
+  **派发已并发化**：`dispatchReminders/index.js:JOB_CONCURRENCY = 8`（原逐条串行 ≈250s 必超 60s 超时 → 现在 ~32s）。
+  claim 用条件更新保证幂等，所以并发安全。日志新增 `remaining` 字段。
+- **写操作不再有事务外预读**：`inventoryApi/index.js` 的 save/transition/moveToTrash/removePermanently/restore
+  只有事务内那一次读（`getTransactionOwnedDoc` + assert），错误码语义不变，别再加回 `await getOwnedItem`。
+  `processBatch` 是 `BATCH_CONCURRENCY = 5` 受控分批（不是一次 20 路并发事务）。
 
 ## UI / 工程
 - 自定义 tabBar `z-index:900`；遮不住时加 `hidden` 态（`getTabBar()?.setData({hidden:true})`）。
