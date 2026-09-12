@@ -27,7 +27,7 @@ import type {
   InventorySort,
   InventoryViewStatus,
 } from '../../types/inventory'
-import { track } from '../../utils/analytics'
+import { track, trackDuration } from '../../utils/analytics'
 import { shanghaiTodayKey, millisecondsUntilShanghaiTomorrow } from '../../utils/shanghai-time'
 
 interface MoreSheet {
@@ -131,7 +131,11 @@ Page({
     moreSheet: emptyMoreSheet(),
   },
 
+  /** 首屏计时的起点（onLoad → 首屏列表到位）；首屏成功渲染后清零。 */
+  firstScreenAt: 0,
+
   onLoad() {
+    this.firstScreenAt = Date.now()
     const windowInfo = wx.getWindowInfo()
     const capsule = wx.getMenuButtonBoundingClientRect()
     this.setData({
@@ -280,6 +284,7 @@ Page({
 
   async refresh(reset: boolean, clearExisting: boolean) {
     const requestSequence = ++listRequestSequence
+    const startedAt = Date.now()
     const query = {
       search: this.data.search,
       category: this.data.category,
@@ -331,9 +336,11 @@ Page({
           query.viewStatus,
         ),
       })
+      this.reportListTiming(reset, startedAt, pageItems.length, 'success')
     } catch (error) {
       if (requestSequence !== listRequestSequence) return
       const message = getErrorMessage(error)
+      this.reportListTiming(reset, startedAt, 0, 'failed')
       if (!reset) {
         this.setData({ loadingMore: false, loadMoreError: `后续物品加载失败：${message}` })
         return
@@ -346,6 +353,21 @@ Page({
       // 列表挂了不代表概览也拿不到：概览是首页顶部四张卡，能单独救回来就救。
       if (!this.data.overview) void this.refreshOverview({ force: true })
     }
+  },
+
+  /**
+   * 列表耗时埋点。首屏单独一个事件 —— 它是「优化前后对比」的主指标，
+   * 和翻页/下拉刷新混在一个事件里会被低频的长尾拉偏。
+   */
+  reportListTiming(reset: boolean, startedAt: number, count: number, result: string) {
+    if (reset && this.firstScreenAt) {
+      const from = this.firstScreenAt
+      // 首屏失败不清零：下一次成功的刷新仍然是「用户第一次看到列表」。
+      if (result === 'success') this.firstScreenAt = 0
+      trackDuration('home_first_screen', from, { count, result })
+      return
+    }
+    trackDuration(reset ? 'home_list_refresh' : 'home_list_more', startedAt, { count, result })
   },
 
   applyFilters() {

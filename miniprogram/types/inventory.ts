@@ -101,7 +101,6 @@ export interface InventorySaveInput {
 
 export interface UserSettings {
   defaultReminderLeadDays: number
-  hasReminderJobs?: boolean
 }
 
 /** `users` 档案的对外形状；日期字段统一是 Asia/Shanghai 日期串，只用于展示。 */

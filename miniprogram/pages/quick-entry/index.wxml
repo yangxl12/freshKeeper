@@ -78,15 +78,15 @@
           wx:key="draftId"
           wx:for-item="draft"
           wx:for-index="draftIndex"
-          class="draft-card draft-card--{{draft.status}} draft-card--tone-{{statusTones[draftIndex]}}"
+          class="draft-card draft-card--{{draft.status}} draft-card--tone-{{draft.view.statusTone}}"
           data-index="{{draftIndex}}"
           bindtap="openDraftEditor"
           hover-class="{{draft.status === 'saving' || draft.status === 'saved' || draft.status === 'failed' ? 'none' : 'draft-card--pressed'}}"
         >
           <view class="draft-card__head">
-            <text class="draft-card__status draft-card__status--{{statusTones[draftIndex]}}">{{statusLabels[draftIndex]}}</text>
-            <text wx:if="{{aiFlags[draftIndex]}}" class="draft-card__ai">AI</text>
-            <text class="draft-card__source">{{sourceLabels[draftIndex]}}</text>
+            <text class="draft-card__status draft-card__status--{{draft.view.statusTone}}">{{draft.view.statusLabel}}</text>
+            <text wx:if="{{draft.view.aiFlag}}" class="draft-card__ai">AI</text>
+            <text class="draft-card__source">{{draft.view.sourceLabel}}</text>
             <view class="draft-card__ops">
               <button wx:if="{{draft.status !== 'saving' && draft.status !== 'saved'}}" class="draft-card__edit" data-index="{{draftIndex}}" catchtap="openDraftEditor" aria-label="编辑物品" hover-class="draft-card__remove--pressed">
                 <view class="line-icon line-icon--edit" aria-hidden="true"></view>
@@ -98,18 +98,18 @@
 
           <view class="draft-card__body">
             <view class="draft-card__name-row">
-              <text class="draft-card__name {{nameMissingFlags[draftIndex] ? 'draft-card__name--missing' : ''}}">{{draft.fields.name || '待命名'}}</text>
+              <text class="draft-card__name {{draft.view.nameMissing ? 'draft-card__name--missing' : ''}}">{{draft.fields.name || '待命名'}}</text>
               <text wx:if="{{draft.fields.quantity}}" class="draft-card__qty">{{draft.fields.quantity}}{{draft.fields.unit}}</text>
             </view>
             <view class="draft-card__expiry">
-              <text class="draft-card__expiry-date {{expiryTones[draftIndex] === 'empty' ? 'draft-card__expiry-date--empty' : ''}}">{{expirySummaries[draftIndex]}}</text>
-              <text class="draft-card__badge draft-card__badge--{{expiryTones[draftIndex]}}">{{expiryBadges[draftIndex]}}</text>
+              <text class="draft-card__expiry-date {{draft.view.expiryTone === 'empty' ? 'draft-card__expiry-date--empty' : ''}}">{{draft.view.expirySummary}}</text>
+              <text class="draft-card__badge draft-card__badge--{{draft.view.expiryTone}}">{{draft.view.expiryBadge}}</text>
             </view>
             <text wx:if="{{draft.fields.storageLocation}}" class="draft-card__loc">{{draft.fields.storageLocation}}</text>
           </view>
 
-          <view wx:if="{{aiMissingHints[draftIndex] && draft.status !== 'saved'}}" class="draft-card__hint">{{aiMissingHints[draftIndex]}}</view>
-          <view wx:if="{{expiredFlags[draftIndex] && draft.status !== 'saved'}}" class="draft-card__error">该物品已过期，请确认日期</view>
+          <view wx:if="{{draft.view.aiMissingHint && draft.status !== 'saved'}}" class="draft-card__hint">{{draft.view.aiMissingHint}}</view>
+          <view wx:if="{{draft.view.expired && draft.status !== 'saved'}}" class="draft-card__error">该物品已过期，请确认日期</view>
           <view wx:if="{{draft.errorMessage}}" class="draft-card__error" role="alert">{{draft.errorMessage}}</view>
           <button wx:if="{{draft.status === 'failed'}}" class="draft-card__retry" disabled="{{saving}}" data-index="{{draftIndex}}" catchtap="retryDraft">重试这条草稿</button>
           <view wx:if="{{draft.issues.length && draft.status !== 'saved'}}" class="draft-card__issues">

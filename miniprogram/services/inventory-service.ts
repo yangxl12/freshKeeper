@@ -12,6 +12,7 @@ import type {
 } from '../types/inventory'
 import { toInventorySaveInput } from '../domain/inventory'
 import { CloudServiceError, callCloud } from './cloud-client'
+import { trackDuration } from '../utils/analytics'
 
 export function getOverview(): Promise<InventoryOverviewResult> {
   return callCloud('inventoryApi', { action: 'getOverview' })
@@ -43,26 +44,39 @@ export function getItem(itemId: string): Promise<InventoryItem> {
   return callCloud('inventoryApi', { action: 'get', itemId })
 }
 
+/**
+ * 所有写入（新增 / 编辑 / 改数量 / 重新入库）都收口在这里，所以耗时埋点也放这。
+ *
+ * `reason` 用来区分场景：改数量是首页的高频动作，和真正的「保存物品」混在一起
+ * 会把保存耗时的分布拉偏。
+ */
 export function saveItem(
   input: InventorySaveInput,
-  options: { idempotencyKey?: string } = {},
+  options: { idempotencyKey?: string; reason?: string } = {},
 ): Promise<{
   itemId: string
   version: number
   expiryDate: string
 }> {
-  return callCloud('inventoryApi', {
+  const startedAt = Date.now()
+  const reason = options.reason || 'save'
+  const request = callCloud<{ itemId: string; version: number; expiryDate: string }>('inventoryApi', {
     action: 'save',
     ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
     data: input,
   })
+  request.then(
+    () => trackDuration('item_save_result', startedAt, { result: 'success', reason }),
+    () => trackDuration('item_save_result', startedAt, { result: 'failed', reason }),
+  )
+  return request
 }
 
 export function updateQuantity(
   item: InventoryItem,
   quantity: number,
 ): Promise<{ itemId: string; version: number; expiryDate: string }> {
-  return saveItem({ ...toInventorySaveInput(item), quantity })
+  return saveItem({ ...toInventorySaveInput(item), quantity }, { reason: 'quantity' })
 }
 
 export function decrementItem(

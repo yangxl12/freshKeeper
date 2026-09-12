@@ -87,7 +87,7 @@ flowchart LR
 | 小程序页面层 | 展示、表单交互、搜索筛选条件、加载/空/错误状态 |
 | 小程序 service 层 | 封装云函数调用、统一响应和错误映射，不包含业务状态转换 |
 | `inventoryApi` | 库存查询、详情、保存、减量、完成、丢弃、删除和历史记录 |
-| `settingsApi` | 获取与修改默认提醒天数 |
+| `userApi` | 账号档案、注销，以及默认提醒天数的读写（`getSettings` / `updateSettings`，原 `settingsApi` 已合并） |
 | `reminderApi` | 在订阅授权成功后登记提醒，或主动取消未发送提醒 |
 | `dispatchReminders` | 定时领取到期任务、发送订阅消息、落发送结果 |
 | 云数据库 | 保存库存、设置和提醒任务；不允许小程序端直接读写 |
@@ -129,7 +129,6 @@ freshKeeper/
 │  └─ types/
 ├─ cloudfunctions/
 │  ├─ inventoryApi/
-│  ├─ settingsApi/
 │  ├─ reminderApi/
 │  └─ dispatchReminders/
 ├─ tests/
@@ -287,12 +286,12 @@ type ApiResult<T> =
 
 概览统计始终表示该用户的全部有效库存，不随当前搜索词和筛选条件变化；搜索和筛选只影响下方列表，避免用户误把筛选结果当成总体库存。
 
-### 8.2 `settingsApi`
+### 8.2 默认提醒天数（原 `settingsApi`，已并入 `userApi`）
 
 | action | 行为 |
 | --- | --- |
-| `get` | 返回已保存设置或服务端默认值 |
-| `update` | 仅允许更新默认提醒天数 |
+| `getSettings` | 返回已保存设置或服务端默认值 |
+| `updateSettings` | 仅允许更新默认提醒天数 |
 
 “提醒授权状态”不能简单保存成永久布尔值。页面应展示：平台设置入口说明，以及当前物品是否存在 `scheduled/sent` 任务；真正能否发送最终由微信订阅额度决定。
 

@@ -8,7 +8,7 @@
 
 ## 0. 实施进度（2026-09-12）
 
-第一批（低成本高收益）与部分第三批、第四批已落地，`npm run check` 全绿（421 用例 / 30 文件）。
+第一批（低成本高收益）与第二批、第三批、第四批、第五批已落地，`npm run check` 全绿（447 用例 / 33 文件）。
 
 | # | 动作 | 状态 | 落点 |
 | --- | --- | --- | --- |
@@ -46,12 +46,60 @@
 - **13 复合游标**：payload 加 `v:2` 版本号，旧版 offset 游标会被判为 `INVALID_CURSOR` 要求刷新。
   `querySignature` 机制保留（防翻页途中改筛选串页）。`listHistory` / `listTrash` 仍用 offset 游标，
   它们的排序键是 `completedAt` 且总量小，暂不改造。
-| 14 | 批量操作去事务化 | ⏳ 待做 | 见 4.3 |
-| 15 | `settingsApi` 合并进 `userApi` | ⏳ 待做 | 见 4.6 |
-| 16 | 快录页派生值合并进草稿对象 | ⏳ 待做 | 见 5.1 |
-| 17 | 前端首屏/翻页/保存耗时埋点 | ⏳ 待做 | 见 5.5 |
+| 14 | 批量操作去事务化 | ✅ | `inventoryApi/writes.js`（新增，注入式可单测） |
+| 15 | `settingsApi` 合并进 `userApi` | ✅ | `userApi/settings.js`（新增）；`settingsApi` 目录已删 |
+| 16 | 快录页派生值合并进草稿对象 | ✅ | `quick-entry/index.ts:withDraftViews` + `types/quick-entry.ts:QuickEntryDraftView` |
+| 17 | 前端首屏/翻页/保存耗时埋点 | ✅ | `utils/analytics.ts:trackDuration` |
+| 18 | `cleanupTrash` 并发 100 → 10（含 `migrateLegacyTrash`） | ✅ | `cleanupTrash/index.js:runInBatches` |
+| 19 | 详情页 `get` 两次串行查询改并行 | ✅ | `inventoryApi/index.js:get`（`Promise.all`） |
+| 20 | 云函数依赖核对 | ✅ | 5 个函数仅 `wx-server-sdk`；`quickEntryApi` 多 2 个腾讯云 SDK（STT/OCR 必需），无冗余 |
+
+**第三批落地说明（2026-09-12）**
+
+- **14 去事务化**：`transition` / `moveToTrash` / `removePermanently` / `restore` 从
+  `db.runTransaction` 改成「读一次 + 带 `version` 的条件更新」。`version` 放在 `where` 里就是乐观锁，
+  `updatedCount !== 1` 即冲突，与事务等价。
+  - **读不能省**：`NOT_FOUND` / `INVALID_STATE` / `CONFLICT` 三个错误码靠它区分。
+    4.3 建议的「全并成 CONFLICT」会让批量结果里的失败原因失真（已删除的会被说成「刷新重试」），所以没采纳。
+  - **取消提醒挪出事务**：它容忍最终一致 —— `dispatchReminders` 发送前会重新校验物品状态，
+    漏掉的任务会被判成 `ITEM_NOT_ELIGIBLE` 取消，不会误发。
+  - `save` / `saveIdempotent` 保持事务：它们要保护「物品 + 提醒改期」和幂等键，且是单条低频写入。
+  - 新增 `tests/unit/inventory-writes.test.ts`（12 用例）覆盖错误码不退化、乐观锁、越权读写。
+- **15 合并云函数**：前端 `settings-service.ts` 与 `userApi` 必须一起发布，否则会打到不存在的 action。
+  顺手删掉 `getSettings` 里的 `hasReminderJobs` —— 那是一次 `reminder_jobs` 的 count，全项目没人渲染。
+- **16 派生值入草稿**：11 个平行数组合并成 `draft.view`，`commitDrafts` 从 14 个 key 降到 4 个，
+  顺带修掉「平行数组与 drafts 索引错位」的隐患。原本还在算的 `draftSummaries` 没有任何渲染方，一并删掉。
+- **17 埋点**：`trackDuration` 统一补 `durationMs`。三个新事件
+  `home_first_screen` / `home_list_refresh` / `home_list_more` / `item_save_result`。
+  `wx.reportAnalytics` 已被官方废弃（基础库 2.31.1 起改用 `wx.reportEvent`），所以只走新接口。
+  微信分析是「先登记后上报」，没登记的事件会被静默丢弃。
+  完整清单（含全部 25 个已有事件）见 **`docs/analytics-events.md`**。
 
 **缓存相关的一个坑已处理**：`scheduleMidnightRefresh` 的 `setTimeout` 在小程序切后台 5 分钟后会被挂起，基本不会准时触发，所以跨日失效没有依赖它，而是由 `overviewCache.dateKey !== shanghaiTodayKey()` 在每次 `onShow` 时判断（见 3.2 方案 4）。
+
+**第五批（2026-09-13）**：核对进度表时发现的漏项，都是纯代码、低风险。
+
+- **18 `cleanupTrash` 限流**：原来 `migrateLegacyTrash` 与删除循环都是 `BATCH_SIZE(100)` 条一次性 `Promise.all`，
+  其中删除还是 **100 路并发事务**，同集合上很容易撞事务冲突重试甚至限流。新增 `runInBatches`（thunk 数组 + `CONCURRENCY = 10`），
+  分批 `Promise.allSettled` —— 语义与原来的 `allSettled` 一致（单条失败不中断整批）。
+- **19 详情页并行**：`get` 的物品查询与提醒查询互不依赖，`Promise.all` 省一次串行 RTT。
+  **没做** 4.4 提的「`reminderStatus` 冗余进物品文档」——那要 `reminderApi.arm` 与 `dispatchReminders` 两处写入点同步维护，
+  收益只是一次 RTT，性价比不够。
+- **20 依赖核对**：无冗余，不需要精简。
+- **4.6 方案 2（`touch` 与 `getOverview` 合并）已作废**：第 12 项落地后首页 `onShow` 不再单独调 `getOverview`
+  （只有列表失败兜底时才调），首页已无第二次可合并的调用。
+
+---
+
+## 0.1 剩余未做项（需人工操作或需拍板）
+
+| 项 | 说明 | 卡在哪 |
+| --- | --- | --- |
+| 索引 9 / 9b | `ownerId+inventoryStatus+name`、`ownerId+updatedAt DESC` | **只能在云控制台建**，代码侧已写进 `docs/cloud-deployment.md`。没建之前第 10 项的单次查询会退化成全量扫描 |
+| 4.1 搜索前缀锚定 | 正则改 `^keyword` + 建索引 `ownerId+inventoryStatus+searchName` | **改搜索语义**（包含 → 前缀匹配），需产品拍板；且索引表里还没这条，没索引改了也不生效 |
+| 4.6 方案 3 预热 | `ping` action + 5 分钟定时触发器 | `config.json` 的 triggers **只在首次创建时写入云端**，已存在的函数必须在控制台加触发器；且要评估预留实例成本 |
+| 3.6 方案 3 降生图分辨率 | `IMAGE_SIZE` 1024² → 512² | 列表已用 200px 缩略图，降分辨率只省存储/CDN，生图是 fire-and-forget 用户不感知；代价是详情页画质下降。**建议不做** |
+| 5.5 AI 限次持久化 | 内存 `Map` → 云数据库集合 | 多实例/冷启动会让 50 次/天的限额放大成 50×N。上限成本可控（0.001 元/次），但要在 AI 主链路上引入新集合依赖，需 try/catch 兜底。**建议等真出现刷量再做** |
 
 ---
 
@@ -91,7 +139,7 @@
 | 首页 `onShow` | `inventoryApi.listInventory` (1) | 1 次分页查询 | 同上函数，实例可复用 |
 | 进快录页 | `quickEntryApi.getCapabilities` (1) | 0 | 独立冷启动 |
 | 进快录页 | `inventoryApi.listRecentProfiles` (1) | **最多 24 次查询** | 见 3.1 |
-| 进快录页 | `settingsApi.get` (1) | 1 读 | 独立冷启动 |
+| 进快录页 | `userApi.getSettings` (1)（原 `settingsApi.get`，已合并） | 1 读 | 与 `userApi` 共用实例 |
 | 保存 1 件 | `inventoryApi.save` (1) | 2 读 + 1 事务 | 见 3.7 |
 | 保存后生图 | `inventoryApi.generateCover` (1) | 2 读 + 1 写 + 生图 5.8s | fire-and-forget |
 | 保存后挂提醒 | `reminderApi.arm` (1) | 1~2 读 + 1 写 | 串行等待，阻塞跳转 |
@@ -404,7 +452,7 @@ await Promise.all(items.map(async (item) => {
 - 更彻底的做法：把 `moveToTrash` / `complete` 这类「读-校验-条件写」操作改成**无事务的条件更新**（`where({_id, ownerId, version, inventoryStatus:'active'}).update()` + `updatedCount !== 1 → CONFLICT`），就像 `decrement` 那样。这样批量操作可以放心并发，也省掉了事务里那次读。`cancelPendingReminder` 需要单独处理（它可以容忍最终一致，改为事务外调用）。
 - `cleanupTrash` 的并发降到 10-20，或直接用 `where(...).remove()` 批量删除（云开发支持条件删除，一次删多条）+ 单独清理关联的 `reminder_jobs`。
 
-### 4.4 详情页 2 次查询
+### 4.4 详情页 2 次查询 ✅（已改并行，2026-09-13）
 
 **位置**：`inventoryApi/index.js:315-326`
 
@@ -436,7 +484,7 @@ const sameName = await db.collection(ITEMS)
 
 **修复方案（按性价比）**：
 
-1. **合并 `settingsApi` 到 `userApi`**：`settingsApi/index.js` 只有 123 行、单集合读写，没有独立存在的必要。少一个函数＝少一个冷启动。
+1. **合并 `settingsApi` 到 `userApi`**（已落地，见第 0 节）：`settingsApi/index.js` 只有 123 行、单集合读写，没有独立存在的必要。少一个函数＝少一个冷启动。
 2. **`touch` 与 `getOverview` 合并**：两者都是「进首页时必调一次」，可以合成一次调用（`app.onLaunch` 的 touch 结果也可以顺带在首页带回来）。
 3. **预留实例 / 预热**：给 `inventoryApi` 配一个 5 分钟一次的定时触发器做空调用（`getOverview` 或专门的健康检查 action）。云开发的预留实例要付费，但 1 个实例的成本远低于 3 个函数反复冷启动带来的体验损失。**注意**：空调用会产生 `count` 成本，建议加一个 `ping` action 只做 `cloud.init` 不碰数据库。
 4. **精简依赖**：各 `package.json` 只保留 `wx-server-sdk`（核对是否有冗余依赖）。
@@ -563,9 +611,9 @@ onShow() {
 | # | 动作 | 说明 |
 | --- | --- | --- |
 | 14 | `dispatchReminders` 内层串行改 8 路并发 | 250s → ~32s，必须先上，否则用户量上来必丢提醒 |
-| 15 | `processBatch` 并发限制到 5；`cleanupTrash` 降到 10-20 | 降低事务冲突 |
+| 15 | `processBatch` 并发限制到 5；`cleanupTrash` 降到 10-20 | 降低事务冲突 ✅（见第 0 节第 18 项） |
 | 16 | 批量操作去事务化（照 `decrement` 的条件更新范式） | 需要仔细设计 `cancelPendingReminder` 的补偿 |
-| 17 | `settingsApi` 合并进 `userApi` | 少一个冷启动 |
+| 17 | `settingsApi` 合并进 `userApi`（已落地） | 少一个冷启动 |
 | 18 | 给 `inventoryApi` 加 `ping` action + 5 分钟预热触发器 | 需评估预留实例成本 |
 
 ### 第 4 批：前端缓存与写放大（估算 3-4 天）

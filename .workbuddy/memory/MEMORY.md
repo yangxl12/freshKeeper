@@ -2,8 +2,11 @@
 
 ## 环境
 - 原生小程序 TS + WXSS + 云开发；vitest 锁 **3.2.7**（4/5.x 报 config undefined）。bash 不可用（ls/cat command not found）。
-- npm 脚本必须走：`& 'C:\Users\BYS\AppData\Local\Programs\PowerShell\7\pwsh.exe' -NoProfile -Command '...'`（禁 powershell.exe；stdout 会被吞，先 Out-File 再 Read）。
-- 删文件只认 `git clean -fx -- <明确路径>`（Remove-Item 静默失效）。
+- **本机没有 pwsh 7**（`C:\Users\BYS\...\pwsh.exe` 路径不存在，旧记录已失效）。直接用 PowerShell 工具跑 npm，stdout 会被吞 → `npm run check *>&1 | Out-File -Encoding utf8 .cN.txt` 再 Read。
+- 删**未跟踪**文件：`git clean -fx -- <明确路径>`（Remove-Item 静默失效）。
+- 删**已跟踪**目录：`git clean` 不管用，必须 `git rm -r -f <dir>`。
+- `.git/index.lock` 残留会让所有 git 命令报 `fatal: Unable to create ... File exists` → 确认没有其他 git 进程后删掉锁文件即可。
+- **重复 Read 同一个临时文件名会读到上一轮旧内容**：每轮换文件名（`.c1`/`.c2`/…）。
 - 同文件别并行 Edit（互相覆盖）；Write 前先 Read。
 - 流程：`npm run check` → commit → push `git@github.com:yangxl12/freshKeeper.git`（SSH 常被代理拦，第一次失败就只提交、让用户代推）。
 - **push 失败诊断**：`git push origin <branch> 2> .err.txt` + `$env:GIT_CURL_VERBOSE=1`（直接 `2>&1 | Out-String` 拿不到错误文本，只给 128）。
@@ -64,9 +67,33 @@
 - **提醒**：手机端全去开关化。提醒时间 = 到期日 − 提前天数，**当天 09:30** 推；纯函数 `domain/reminder-time.ts`。授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前。前端拦截只看日期。`reminderApi` 只有 arm；`dispatchReminders` 触发器 09:30 只处理 `remindDate===today`。模板字段映射写死在代码里（三处必改：`config/runtime.ts`、`reminderApi/index.js`、`dispatchReminders/template.js`），模板 ID 仍是占位。坑：`Number(null)===0`。未来时刻测试用例用 **2099 年**。
   **派发已并发化**：`dispatchReminders/index.js:JOB_CONCURRENCY = 8`（原逐条串行 ≈250s 必超 60s 超时 → 现在 ~32s）。
   claim 用条件更新保证幂等，所以并发安全。日志新增 `remaining` 字段。
-- **写操作不再有事务外预读**：`inventoryApi/index.js` 的 save/transition/moveToTrash/removePermanently/restore
-  只有事务内那一次读（`getTransactionOwnedDoc` + assert），错误码语义不变，别再加回 `await getOwnedItem`。
-  `processBatch` 是 `BATCH_CONCURRENCY = 5` 受控分批（不是一次 20 路并发事务）。
+- **状态流转类写操作已去事务化**（2026-09-12 第三批）：`transition`/`moveToTrash`/`removePermanently`/`restore`
+  搬到 **`inventoryApi/writes.js`（`createWriteService({db})` 注入式）**，
+  范式是「读一次（为了区分 NOT_FOUND/INVALID_STATE/CONFLICT）+ `where({_id,ownerId,inventoryStatus,version})` 条件更新」。
+  `index.js` 里这四个函数已删，handler 走 `writes.xxx`。取消提醒在事务外——安全的前提是
+  `dispatchReminders.processJob` 发送前会重新校验物品状态，漏掉的任务会被判 `ITEM_NOT_ELIGIBLE` 取消。
+  `save` / `saveIdempotent` **仍用事务**（要保护提醒改期 + 幂等键），别顺手也去了。
+  `processBatch` 是 `BATCH_CONCURRENCY = 5` 受控分批。
+
+## 用户设置 / 埋点
+- **设置已并入 `userApi`**（`userApi/settings.js`，action `getSettings` / `updateSettings`）；
+  `cloudfunctions/settingsApi/` 已删除。前端 `settings-service.ts` 与云端**必须一起发布**，否则打到不存在的 action。
+  顺手删了 `hasReminderJobs`（一次没人用的 `reminder_jobs` count）。
+- **埋点只走 `wx.reportEvent`（We 分析）**。老接口 `wx.reportAnalytics` 基础库 2.31.1 起已废弃，
+  两套系统事件不互通，不维护第二套配置（2026-09-12 龙哥拍板砍掉）。
+  - 事件/属性必须在 **We 分析 → 数据管理 → 上报管理** 先登记，没登记的被**静默丢弃**（不报错、不留痕）。
+    事件 ID 建完不可改；属性 ID 全局唯一、跨事件复用。
+  - 完整清单 `docs/analytics-events.md`；**机器可读版 `docs/analytics-events.json`**；
+    **批量直贴文件 `docs/analytics-properties-batch.json`（属性）+ `docs/analytics-events-batch.json`（事件）**。
+    属性 schema：`key`/`desc`/`comment`/`key_type`(KEY_TYPE_INT|KEY_TYPE_STRING)/`dict_name`；
+    事件 schema：`event_id`/`event_name`/`event_comment`/`report_src`(默认0前端)/`event_key_list`。
+    四份要同步。
+  - **上报字段一律 snake_case**（`duration_ms`、`failure_code`、`saved_count`、`draft_count`、
+    `candidate_count`、`within_24h`）—— 属性 ID 只允许小写字母+数字+下划线，代码 key 必须和后台
+    属性 ID 完全一致。微信未公开事件批量新增 schema，被拒就让龙哥截页面示例格式。
+  - **所有上报必须走 `utils/analytics.ts` 的 `track()` / `trackDuration()`**，
+    别在业务代码里直接调 `wx.reportXxx` —— 绕过封装的事件不会进清单，也就没人去登记
+    （`app.ts` 曾漏过一个 `app_open`，已收口）。
 
 ## UI / 工程
 - 自定义 tabBar `z-index:900`；遮不住时加 `hidden` 态（`getTabBar()?.setData({hidden:true})`）。

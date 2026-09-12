@@ -1,5 +1,6 @@
 import { CLOUD_ENV_ID } from './config/runtime'
 import { touchUserOnceToday } from './services/user-service'
+import { track } from './utils/analytics'
 
 App<IAppOption>({
   globalData: {
@@ -27,10 +28,6 @@ App<IAppOption>({
     touchUserOnceToday()
   },
   onShow() {
-    try {
-      wx.reportAnalytics('app_open', {})
-    } catch (_error) {
-      // 埋点失败不能阻塞核心流程。
-    }
+    track('app_open')
   },
 })

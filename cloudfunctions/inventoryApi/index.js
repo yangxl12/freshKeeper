@@ -5,8 +5,6 @@ const cloud = require('wx-server-sdk')
 const { addDays, currentDateKey, getExpiryPresentation } = require('./date')
 const { AppError, assert, normalizeError } = require('./error')
 const {
-  canMoveInventoryToTrash,
-  canTransitionInventory,
   getDecrementDecision,
 } = require('./rules')
 const {
@@ -26,6 +24,7 @@ const {
   validateVersion,
 } = require('./validation')
 const { readRecentProfilesOnce } = require('./recent')
+const { createWriteService } = require('./writes')
 const { fingerprint, stableItemId } = require('./idempotency')
 const { coverEnabled, createCoverService } = require('./image-cover')
 
@@ -61,7 +60,9 @@ const STATUS_LABELS = {
   discarded: '已删除',
 }
 
-const TRASH_RETENTION_DAYS = 30
+// 状态流转类写操作（用完 / 删除 / 彻底删除 / 重新入库）已去事务化：
+// 改成「读一次 + 带 version 的条件更新」，批量时不再互相撞事务。详见 writes.js。
+const writes = createWriteService({ db })
 
 function shanghaiDateKey(value) {
   if (!value) return ''
@@ -189,22 +190,6 @@ async function getTransactionOwnedDoc(transaction, collectionName, ownerId, id) 
     .limit(1)
     .get()
   return result.data[0] || null
-}
-
-async function cancelPendingReminder(transaction, ownerId, itemId, remove = false) {
-  const job = await getTransactionOwnedDoc(transaction, REMINDERS, ownerId, itemId)
-  if (!job) return
-  if (remove) {
-    await transaction.collection(REMINDERS).doc(itemId).remove()
-    return
-  }
-  if (!['scheduled', 'failed', 'cancelled'].includes(job.status)) return
-  await transaction.collection(REMINDERS).doc(itemId).update({
-    data: {
-      status: 'cancelled',
-      updatedAt: db.serverDate(),
-    },
-  })
 }
 
 // 首页概览：原来 4 次 count（每次都要扫命中条件的全部记录）。
@@ -390,12 +375,13 @@ async function listInventory(ownerId, event) {
 
 async function get(ownerId, event) {
   const itemId = validateItemId(event.itemId)
-  const item = await getOwnedItem(ownerId, itemId)
-  const reminderResult = await db
-    .collection(REMINDERS)
-    .where({ _id: itemId, ownerId })
-    .limit(1)
-    .get()
+  // 物品与提醒任务互不依赖，并行发出省掉一次串行 RTT。
+  // （更彻底的做法是把 reminderStatus 冗余进物品文档，但那要 arm / dispatchReminders
+  //  两处写入点同步维护，收益只是一次 RTT，性价比不够。）
+  const [item, reminderResult] = await Promise.all([
+    getOwnedItem(ownerId, itemId),
+    db.collection(REMINDERS).where({ _id: itemId, ownerId }).limit(1).get(),
+  ])
   return publicItem(item, currentDateKey(), {
     reminderStatus: reminderResult.data[0]?.status || null,
   })
@@ -530,99 +516,8 @@ async function decrement(ownerId, event) {
   return { quantity: item.quantity - amount, version: version + 1 }
 }
 
-// 事务内那次断言已经覆盖「不存在」，事务外这次纯属重复读（每次写多一个 RTT）。
-// decrement 的条件更新范式本来就是一次读就够，这里统一按它收敛。
-async function transition(ownerId, event, targetStatus) {
-  const itemId = validateItemId(event.itemId)
-  const version = validateVersion(event.version)
-  await db.runTransaction(async (transaction) => {
-    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
-    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
-    assert(
-      canTransitionInventory(current.inventoryStatus, targetStatus),
-      'INVALID_STATE',
-      '该物品已经处理',
-    )
-    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
-    const update = {
-      inventoryStatus: targetStatus,
-      version: version + 1,
-      completedAt: db.serverDate(),
-      updatedAt: db.serverDate(),
-    }
-    if (targetStatus === 'used_up') update.quantity = 0
-    await transaction.collection(ITEMS).doc(itemId).update({ data: update })
-    await cancelPendingReminder(transaction, ownerId, itemId)
-  })
-  return { version: version + 1 }
-}
-
-async function moveToTrash(ownerId, event) {
-  const itemId = validateItemId(event.itemId)
-  const version = validateVersion(event.version)
-  await db.runTransaction(async (transaction) => {
-    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
-    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
-    assert(canMoveInventoryToTrash(current.inventoryStatus), 'INVALID_STATE', '该物品已经删除')
-    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
-    await transaction.collection(ITEMS).doc(itemId).update({
-      data: {
-        inventoryStatus: 'deleted',
-        version: version + 1,
-        completedAt: db.serverDate(),
-        deletedAt: db.serverDate(),
-        purgeAfter: new Date(Date.now() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000),
-        updatedAt: db.serverDate(),
-      },
-    })
-    await cancelPendingReminder(transaction, ownerId, itemId, true)
-  })
-  return { version: version + 1 }
-}
-
-async function removePermanently(ownerId, event) {
-  const itemId = validateItemId(event.itemId)
-  const version = validateVersion(event.version)
-  await db.runTransaction(async (transaction) => {
-    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
-    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
-    assert(['deleted', 'discarded'].includes(current.inventoryStatus), 'INVALID_STATE', '只能彻底删除回收站中的物品')
-    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
-    await transaction.collection(ITEMS).doc(itemId).remove()
-    await cancelPendingReminder(transaction, ownerId, itemId, true)
-  })
-  return { deleted: true }
-}
-
-async function restore(ownerId, event) {
-  assert(event.idempotencyKey === undefined, 'INVALID_ARGUMENT', '重新入库不能包含快速录入请求编号')
-  const input = event.data
-  const normalized = validateSaveInput(input)
-  const itemId = validateItemId(input.itemId)
-  const version = validateVersion(input.version)
-  await db.runTransaction(async (transaction) => {
-    const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
-    assert(current, 'NOT_FOUND', '物品不存在或已被删除')
-    assert(['deleted', 'discarded'].includes(current.inventoryStatus), 'INVALID_STATE', '该物品不在回收站中')
-    assert(current.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
-    await transaction.collection(ITEMS).doc(itemId).update({
-      data: {
-        ...normalized,
-        inventoryStatus: 'active',
-        version: version + 1,
-        completedAt: null,
-        deletedAt: null,
-        purgeAfter: null,
-        updatedAt: db.serverDate(),
-      },
-    })
-    await cancelPendingReminder(transaction, ownerId, itemId, true)
-  })
-  return { itemId, version: version + 1, expiryDate: normalized.expiryDate }
-}
-
-// 每批最多 20 条，而每条 mutation 都是一个事务。20 路并发事务打同一个用户的同一集合
-// 很容易撞冲突重试甚至限流，改成受控 5 路：总耗时增加有限，冲突率显著下降。
+// 每批最多 20 条。每条 mutation 原来是 20 路并发事务，去事务化后（writes.js）改成
+// 受控 5 路：总耗时增加有限，但不会把同一个用户的同一集合打成冲突重试的尖峰。
 const BATCH_CONCURRENCY = 5
 
 async function processBatch(ownerId, event, mutation) {
@@ -737,15 +632,15 @@ const handlers = {
   save,
   generateCover,
   decrement,
-  complete: (ownerId, event) => transition(ownerId, event, 'used_up'),
-  discard: moveToTrash,
-  delete: moveToTrash,
-  moveToTrash,
-  permanentDelete: removePermanently,
-  restore,
-  batchComplete: (ownerId, event) => processBatch(ownerId, event, (id, item) => transition(id, item, 'used_up')),
-  batchDelete: (ownerId, event) => processBatch(ownerId, event, moveToTrash),
-  batchPermanentDelete: (ownerId, event) => processBatch(ownerId, event, removePermanently),
+  complete: (ownerId, event) => writes.transition(ownerId, event, 'used_up'),
+  discard: writes.moveToTrash,
+  delete: writes.moveToTrash,
+  moveToTrash: writes.moveToTrash,
+  permanentDelete: writes.removePermanently,
+  restore: writes.restore,
+  batchComplete: (ownerId, event) => processBatch(ownerId, event, (id, item) => writes.transition(id, item, 'used_up')),
+  batchDelete: (ownerId, event) => processBatch(ownerId, event, writes.moveToTrash),
+  batchPermanentDelete: (ownerId, event) => processBatch(ownerId, event, writes.removePermanently),
   listHistory,
   listTrash,
 }

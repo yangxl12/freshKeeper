@@ -412,7 +412,7 @@ Component({
         const finalExpiryDate = this.currentExpiryDate()
         if (itemId && !restoring && finalExpiryDate !== this.data.originalExpiryDate) {
           const age = Date.now() - this.data.originalCreatedAt
-          track('item_expiry_corrected', { within24h: this.data.originalCreatedAt > 0 && age >= 0 && age <= 86400000 ? 1 : 0 })
+          track('item_expiry_corrected', { within_24h: this.data.originalCreatedAt > 0 && age >= 0 && age <= 86400000 ? 1 : 0 })
         }
         this.setData({ saving: false })
         // 到期提醒默认全部走订阅消息，这里不再问用户要不要开。

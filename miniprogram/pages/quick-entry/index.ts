@@ -4,7 +4,6 @@ import {
   draftToFormPrefill,
   draftToInventoryInput,
   draftToManualFields,
-  getDraftSummary,
   getExpirySummary,
   normalizeRecentName,
   parseQuickTextLocally,
@@ -179,17 +178,6 @@ Page({
     /** 只作识别结果的分类/存放位置匹配用，列表已搬到 pages/recent-entry。 */
     recentProfiles: [] as RecentItemProfile[],
     drafts: [] as QuickEntryDraft[],
-    draftSummaries: [] as string[],
-    expirySummaries: [] as string[],
-    expiryBadges: [] as string[],
-    expiryTones: [] as Array<'fresh' | 'soon' | 'expired' | 'empty'>,
-    statusLabels: [] as string[],
-    statusTones: [] as string[],
-    sourceLabels: [] as string[],
-    aiFlags: [] as boolean[],
-    aiMissingHints: [] as string[],
-    nameMissingFlags: [] as boolean[],
-    expiredFlags: [] as boolean[],
     features: QUICK_ENTRY_FEATURES,
     capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
     unavailableHints: [] as string[],
@@ -220,7 +208,7 @@ Page({
   },
 
   onUnload() {
-    track('quick_entry_session_end', { savedCount: this.savedCount, durationMs: Date.now() - this.openedAt })
+    track('quick_entry_session_end', { saved_count: this.savedCount, duration_ms: Date.now() - this.openedAt })
     this.cancelVoice()
     this.cancelRecognition()
     this.clearVoiceTimer()
@@ -505,29 +493,40 @@ Page({
     setTimeout(() => this.setData({ quickInputFocused: true }), 60)
   },
 
-  /** 卡片展示需要的派生信息，任何一次草稿变更都要走这里，避免视图与数据脱节。 */
-  draftView(drafts: QuickEntryDraft[]) {
+  /**
+   * 卡片展示需要的派生信息，直接挂到每条草稿的 `view` 上一起下发。
+   *
+   * 原来是 11 个按索引对齐的平行数组，每次 commitDrafts 都是 14 个 key 的 setData；
+   * 更要命的是平行数组一旦和 drafts 错位（filter / 插入就会）卡片会串位。
+   * 挂到草稿对象上后 setData 只剩 drafts + 3 个计数，也不存在对齐问题。
+   */
+  withDraftViews(drafts: QuickEntryDraft[]): QuickEntryDraft[] {
     const today = this.data.today
-    const summaries = drafts.map(getExpirySummary)
-    return {
-      draftSummaries: drafts.map(getDraftSummary),
-      expirySummaries: summaries,
-      expiryBadges: summaries.map(summary => expiryBadgeText(summary, today)),
-      expiryTones: summaries.map(summary => expiryToneOf(summary, today)),
-      expiredFlags: summaries.map(summary => expiryToneOf(summary, today) === 'expired'),
-      statusLabels: drafts.map(draft => statusMeta(draft).label),
-      statusTones: drafts.map(draft => statusMeta(draft).tone),
-      sourceLabels: drafts.map(draft => SOURCE_LABELS[draft.source] || '录入'),
-      aiFlags: drafts.map(draft => Boolean(draft.parserVersion?.startsWith('ai-'))),
-      aiMissingHints: drafts.map(aiMissingHint),
-      nameMissingFlags: drafts.map(draft => draft.issues.some(issue => issue.field === 'name')),
-    }
+    return drafts.map((draft) => {
+      const summary = getExpirySummary(draft)
+      const tone = expiryToneOf(summary, today)
+      const meta = statusMeta(draft)
+      return {
+        ...draft,
+        view: {
+          expirySummary: summary,
+          expiryBadge: expiryBadgeText(summary, today),
+          expiryTone: tone,
+          expired: tone === 'expired',
+          statusLabel: meta.label,
+          statusTone: meta.tone,
+          sourceLabel: SOURCE_LABELS[draft.source] || '录入',
+          aiFlag: Boolean(draft.parserVersion?.startsWith('ai-')),
+          aiMissingHint: aiMissingHint(draft),
+          nameMissing: draft.issues.some((issue) => issue.field === 'name'),
+        },
+      }
+    })
   },
 
   commitDrafts(drafts: QuickEntryDraft[]) {
     this.setData({
-      drafts,
-      ...this.draftView(drafts),
+      drafts: this.withDraftViews(drafts),
       selectableCount: countSelectable(drafts),
       pendingCount: countPending(drafts),
       draftLimitReached: countUnfinished(drafts) >= MAX_DRAFTS,
@@ -621,11 +620,11 @@ Page({
       this.blurQuickInput()
       // 后添加的排在最前：新一批整批插到顶部，批内保持原文顺序。
       this.commitDrafts([...built.drafts, ...existing])
-      track('quick_parse_result', { result: built.notice ? 'fallback' : 'success', durationMs: Date.now() - startedAt, draftCount: built.drafts.length })
+      track('quick_parse_result', { result: built.notice ? 'fallback' : 'success', duration_ms: Date.now() - startedAt, draft_count: built.drafts.length })
     } catch (error) {
       if (recognitionId !== this.recognitionId) return
       this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
-      track('quick_parse_result', { result: 'failed', durationMs: Date.now() - startedAt, failureCode: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
+      track('quick_parse_result', { result: 'failed', duration_ms: Date.now() - startedAt, failure_code: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
     } finally {
       if (recognitionId === this.recognitionId) {
         wx.hideLoading?.()
@@ -786,7 +785,7 @@ Page({
     } catch (error) {
       if (recognitionId !== this.recognitionId) return
       this.setData({ voiceState: 'idle', recognitionState: 'idle', inputError: getErrorMessage(error) })
-      track('voice_transcribe_result', { result: 'failed', failureCode: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
+      track('voice_transcribe_result', { result: 'failed', failure_code: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
     }
   },
 
@@ -889,7 +888,7 @@ Page({
       const drafts = current ? this.data.drafts.map(item => item.draftId === targetId ? refreshDraftValidation(draft) : item) : [draft, ...this.data.drafts]
       this.setData({ recognitionState: 'idle', photoStage: 'idle', photoPreview: '' })
       this.commitDrafts(drafts)
-      track('date_photo_result', { result: 'success', candidateCount: result.candidates.length })
+      track('date_photo_result', { result: 'success', candidate_count: result.candidates.length })
     } catch (error) {
       if (recognitionId !== this.recognitionId) return
       this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
@@ -981,7 +980,7 @@ Page({
     // 而下面的 exitToHome 也要等授权弹窗收完才跳转。
     if (reminderTargets.length) await this.armSavedReminders(reminderTargets)
     this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
-    track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draftCount: targets.length, durationMs: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
+    track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draft_count: targets.length, duration_ms: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
     if (!updated.some((draft) => draft.status !== 'saved')) {
       wx.disableAlertBeforeUnload?.()
       wx.showToast({ title: '已加入库存', icon: 'success' })

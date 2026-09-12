@@ -72,6 +72,19 @@ function pageInstance() {
 function completeDraft(name: string) {
   return createDraftFromParsed(parseQuickTextLocally(`${name}明天到期`, '2026-09-08').items[0], 'text')
 }
+
+/**
+ * 剥掉渲染派生值 `view`：commitDrafts 会把它挂到每条草稿上，
+ * 但断言「草稿本体有没有被改」时不该被它干扰。
+ */
+function draftBody(draft: any) {
+  const { view: _view, ...body } = draft
+  return body
+}
+function draftBodies(drafts: any[]) {
+  return drafts.map(draftBody)
+}
+
 /** 把共用的完整录入表单替换成一个记录调用的替身，用来断言「灌进去什么」和「退出要不要拦」。 */
 function stubDraftForm(page: any, dirty = false, onSubmit?: () => void) {
   const applied: unknown[][] = []
@@ -107,7 +120,7 @@ describe('quick entry page compatibility', () => {
     expect(page.data.quickInputFocused).toBe(false)
     expect(wx.hideKeyboard).toHaveBeenCalled()
     expect(page.data.inputText).toBe('牛奶明天到期')
-    expect(page.data.drafts).toEqual([draft])
+    expect(draftBodies(page.data.drafts)).toEqual([draft])
   })
 
   it('refuses to open the recent page when the draft slots are used up', () => {
@@ -183,7 +196,7 @@ describe('quick entry page compatibility', () => {
     await page.generateDrafts()
     expect(page.data.drafts).toHaveLength(1)
     expect(page.data.drafts[0].fields.name).toBe('请问今天天气怎么样')
-    expect(page.data.nameMissingFlags).toEqual([false])
+    expect(page.data.drafts[0].view.nameMissing).toBe(false)
     expect(page.data.quickInputFocused).toBe(false)
     expect(wx.hideKeyboard).toHaveBeenCalled()
   })
@@ -352,16 +365,16 @@ describe('quick entry page compatibility', () => {
     const draft = completeDraft('牛奶')
     draft.fields.expiryDate = '2026-09-18'
     page.commitDrafts([draft])
-    expect(page.data.expiryTones[0]).toBe('fresh')
-    expect(page.data.expiryBadges[0]).toBe('还剩 10 天')
-    expect(page.data.statusLabels[0]).toBe('可入库')
-    expect(page.data.sourceLabels[0]).toBe('文字识别')
+    expect(page.data.drafts[0].view.expiryTone).toBe('fresh')
+    expect(page.data.drafts[0].view.expiryBadge).toBe('还剩 10 天')
+    expect(page.data.drafts[0].view.statusLabel).toBe('可入库')
+    expect(page.data.drafts[0].view.sourceLabel).toBe('文字识别')
 
     draft.fields.expiryDate = '2026-09-05'
     page.commitDrafts([draft])
-    expect(page.data.expiryTones[0]).toBe('expired')
-    expect(page.data.expiryBadges[0]).toBe('已过期 3 天')
-    expect(page.data.expiredFlags[0]).toBe(true)
+    expect(page.data.drafts[0].view.expiryTone).toBe('expired')
+    expect(page.data.drafts[0].view.expiryBadge).toBe('已过期 3 天')
+    expect(page.data.drafts[0].view.expired).toBe(true)
   })
 
   it('does not submit stale page text after the native textarea was cleared', async () => {
@@ -425,7 +438,7 @@ describe('quick entry page compatibility', () => {
     uploadMock.mockResolvedValueOnce('cloud://temporary')
     photoMock.mockResolvedValueOnce({ candidates: [{ date: '2027-01-01', role: 'expiry', complete: true, rawText: 'EXP 2027-01-01', source: 'photo' }] })
     await page.recognizePhoto()
-    expect(page.data.drafts[0]).toEqual(first)
+    expect(draftBody(page.data.drafts[0])).toEqual(first)
     expect(page.data.drafts[1].draftId).toBe(second.draftId)
     expect(page.data.drafts[1].fields.expiryDate).toBe('2027-01-01')
   })
@@ -728,9 +741,11 @@ describe('quick entry page compatibility', () => {
     stubDraftForm(page)
     const draft = completeDraft('牛奶')
     page.commitDrafts([draft])
+    // 派生值挂在草稿的 view 上，这里比的是草稿本体：开表单不能改动草稿
+    const before = JSON.parse(JSON.stringify(page.data.drafts[0]))
     page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
     // 表单里怎么切模式都只改表单，草稿保持原样，直到点「完成」
-    expect(page.data.drafts[0]).toEqual(draft)
+    expect(page.data.drafts[0]).toEqual(before)
     expect(page.data.drafts[0].status).toBe('savable')
   })
 
@@ -740,10 +755,10 @@ describe('quick entry page compatibility', () => {
     const draft = completeDraft('牛奶')
     page.data.today = '2026-09-09'
     page.commitDrafts([draft])
-    expect(page.data.expiredFlags).toEqual([false])
+    expect(page.data.drafts[0].view.expired).toBe(false)
     page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
     page.handleDraftFormSubmit({ detail: { ...draft.fields, expiryDate: '2026-09-01' } })
-    expect(page.data.expiredFlags).toEqual([true])
+    expect(page.data.drafts[0].view.expired).toBe(true)
   })
 
   it('silently degrades when the recent records cannot be read on the entry page', async () => {
@@ -787,7 +802,7 @@ describe('quick entry AI presentation', () => {
     const ai = createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1')
     const local = createDraftFromParsed(parseQuickTextLocally('牛奶明天到期', '2026-09-08').items[0], 'text', 1, undefined, undefined, 'rules-v3')
     page.commitDrafts([ai, local])
-    expect(page.data.aiFlags).toEqual([true, false])
+    expect(page.data.drafts.map((draft: any) => draft.view.aiFlag)).toEqual([true, false])
   })
 
   it('hints about the fields the model could not trace back to the source text', () => {
@@ -797,7 +812,7 @@ describe('quick entry AI presentation', () => {
       createDraftFromParsed({ name: '牛奶', quantity: 2, unit: '盒', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1'),
       createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'rules-v3'),
     ])
-    expect(page.data.aiMissingHints).toEqual([
+    expect(page.data.drafts.map((draft: any) => draft.view.aiMissingHint)).toEqual([
       'AI 没在原文里找到数量和单位，已按默认值填上，请核对',
       '',
       '',
@@ -810,11 +825,11 @@ describe('quick entry AI presentation', () => {
     const draft = createDraftFromParsed({ name: '牛奶', dateCandidates: [] }, 'text', 1, undefined, undefined, 'ai-v1')
     draft.fields.expiryDate = '2026-09-20'
     page.commitDrafts([refreshDraftValidation(draft)])
-    expect(page.data.aiMissingHints[0]).toBe('AI 没在原文里找到数量和单位，已按默认值填上，请核对')
+    expect(page.data.drafts[0].view.aiMissingHint).toBe('AI 没在原文里找到数量和单位，已按默认值填上，请核对')
 
     page.openDraftEditor({ currentTarget: { dataset: { index: 0 } } })
     page.handleDraftFormSubmit({ detail: { ...page.data.drafts[0].fields, quantity: 2, unit: '盒' } })
 
-    expect(page.data.aiMissingHints).toEqual([''])
+    expect(page.data.drafts.map((draft: any) => draft.view.aiMissingHint)).toEqual([''])
   })
 })

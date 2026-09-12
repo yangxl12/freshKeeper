@@ -11,15 +11,17 @@ afterEach(() => {
 
 describe('settings service contract', () => {
   it('updates reminder days without submitting a default storage location', async () => {
+    let requestedName = ''
     let requestData: Record<string, unknown> | undefined
     globalThis.wx = {
       cloud: {
         callFunction: vi.fn((request) => {
+          requestedName = request.name
           requestData = request.data
           request.success({
             result: {
               ok: true,
-              data: { defaultReminderLeadDays: 7, hasReminderJobs: false },
+              data: { defaultReminderLeadDays: 7 },
               requestId: 'req-settings',
             },
           })
@@ -30,8 +32,10 @@ describe('settings service contract', () => {
     await expect(updateSettings({ defaultReminderLeadDays: 7 })).resolves.toMatchObject({
       defaultReminderLeadDays: 7,
     })
+    // 设置已经并进 userApi，不再是独立的 settingsApi 云函数。
+    expect(requestedName).toBe('userApi')
     expect(requestData).toEqual({
-      action: 'update',
+      action: 'updateSettings',
       data: { defaultReminderLeadDays: 7 },
     })
   })
@@ -67,9 +71,9 @@ describe('settings service contract', () => {
       defaultReminderLeadDays: 5,
     })
     expect(requests).toEqual([
-      { action: 'update', data: { defaultReminderLeadDays: 5 } },
+      { action: 'updateSettings', data: { defaultReminderLeadDays: 5 } },
       {
-        action: 'update',
+        action: 'updateSettings',
         data: { defaultReminderLeadDays: 5, defaultStorageLocation: null },
       },
     ])

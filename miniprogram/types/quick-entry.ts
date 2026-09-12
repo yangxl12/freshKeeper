@@ -55,6 +55,26 @@ export interface QuickEntryDraftIssue {
   message: string
 }
 
+/**
+ * 草稿卡片的展示派生值。
+ *
+ * 故意挂在草稿对象上（`draft.view`）而不是拆成一堆平行数组：
+ * 平行数组按索引与 `drafts` 隐式对齐，任何一次 filter / 插入都会让卡片串位。
+ * 由页面在每次草稿变更后重算，不入库、不参与保存。
+ */
+export interface QuickEntryDraftView {
+  statusLabel: string
+  statusTone: string
+  sourceLabel: string
+  aiFlag: boolean
+  aiMissingHint: string
+  nameMissing: boolean
+  expirySummary: string
+  expiryBadge: string
+  expiryTone: 'fresh' | 'soon' | 'expired' | 'empty'
+  expired: boolean
+}
+
 export interface QuickEntryDraft {
   draftId: string
   saveKey: string
@@ -64,6 +84,8 @@ export interface QuickEntryDraft {
   issues: QuickEntryDraftIssue[]
   selected: boolean
   dateCandidates: DateCandidate[]
+  /** 卡片展示派生值；由页面重算，云端不存。 */
+  view?: QuickEntryDraftView
   confirmationFields?: string[]
   expanded?: boolean
   evidence?: { kind: 'text' | 'photo'; localPath?: string; sourceText?: string }

@@ -32,7 +32,7 @@
 | 保存客户端 | `miniprogram/services/inventory-service.ts` 的 `saveItem` | 快速草稿最终只能通过它保存 |
 | 服务端保存 | `cloudfunctions/inventoryApi/index.js` 的 `save` | 继续做字段白名单、用户隔离、日期计算和提醒更新 |
 | 字段契约 | `miniprogram/types/inventory.ts` 的 `InventorySaveInput` | 草稿转换时不能创建第二套库存字段 |
-| 默认提醒 | `settings-service.ts` + `settingsApi`，读取失败时表单默认 `1` 天 | 快速录入一次读取并沿用同一兜底 |
+| 默认提醒 | `settings-service.ts` + `userApi.getSettings`，读取失败时表单默认 `1` 天 | 快速录入一次读取并沿用同一兜底 |
 | 日期规则 | `miniprogram/utils/date-key.ts` 与 `cloudfunctions/inventoryApi/date.js` | 解析结果必须交给现有自然日规则 |
 | 统计与列表 | `getOverview`、`listInventory` 已在 `inventoryApi` 中实现 | 快速保存成功后沿用页面 `onShow` 刷新 |
 | 埋点 | `miniprogram/utils/analytics.ts` | 只能记录结果枚举、耗时和数量，不上传原文或媒体 |

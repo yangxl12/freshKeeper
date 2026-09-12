@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "purpose": "freshKeeper 埋点事件与属性登记清单，用于 We 分析批量导入或手工填表",
+    "entry": "微信公众平台 → 左侧 We 分析 → 数据管理 → 上报管理",
+    "steps": [
+      "1. 属性管理 → 批量JSON创建：粘贴 docs/analytics-properties-batch.json（14 个，必须先建）",
+      "2. 元事件 → 新增上报：按 events 建 26 个（事件 ID 保持下划线风格，与代码一致）",
+      "3. 事件详情 → 测试 → 选测试微信号 → 手机走一遍 → 约 1 分钟后看记录，缺字段会标红"
+    ],
+    "notes": [
+      "事件 ID 建完不可修改；属性 ID 建完不可修改，命名前确认",
+      "属性 ID 已按后台规则用 snake_case（小写字母+数字+下划线），代码里的上报 key 已同步，两边必须一致",
+      "key_type 的数值枚举按 KEY_TYPE_INT 填写，若后台报错请核对弹窗里被截断的完整枚举名",
+      "微信未公开事件批量新增的 schema，events 是按 UI 字段推导的，导入被拒就把页面示例格式发来重出",
+      "所有上报必须走 utils/analytics.ts 的 track() / trackDuration()，别在业务代码直接调 wx.reportXxx"
+    ],
+    "generatedFrom": "miniprogram 下 track() / trackDuration() 的全部调用点"
+  },
+  "properties": [
+    { "name": "耗时", "id": "duration_ms", "dataType": "整数类型", "propertyType": "自定义", "description": "耗时，毫秒" },
+    { "name": "数量", "id": "count", "dataType": "整数类型", "propertyType": "自定义", "description": "物品条数" },
+    { "name": "结果", "id": "result", "dataType": "字符", "propertyType": "自定义", "description": "success / failed / partial" },
+    { "name": "场景", "id": "reason", "dataType": "字符", "propertyType": "自定义", "description": "save / quantity 等场景标记" },
+    { "name": "来源", "id": "source", "dataType": "字符", "propertyType": "自定义", "description": "text / voice / photo / recent / manual" },
+    { "name": "错误码", "id": "failure_code", "dataType": "字符", "propertyType": "自定义", "description": "业务错误码" },
+    { "name": "槽位数", "id": "slots", "dataType": "整数类型", "propertyType": "自定义", "description": "最近档案槽位数" },
+    { "name": "页签", "id": "tab", "dataType": "字符", "propertyType": "自定义", "description": "快录页切换的页签" },
+    { "name": "24小时内", "id": "within_24h", "dataType": "整数类型", "propertyType": "自定义", "description": "0 或 1" },
+    { "name": "保存条数", "id": "saved_count", "dataType": "整数类型", "propertyType": "自定义", "description": "本次会话保存条数" },
+    { "name": "草稿条数", "id": "draft_count", "dataType": "整数类型", "propertyType": "自定义", "description": "草稿条数" },
+    { "name": "候选数", "id": "candidate_count", "dataType": "整数类型", "propertyType": "自定义", "description": "日期候选数" },
+    { "name": "成功条数", "id": "succeeded", "dataType": "整数类型", "propertyType": "自定义", "description": "批量成功条数" },
+    { "name": "失败条数", "id": "failed", "dataType": "整数类型", "propertyType": "自定义", "description": "批量失败条数" }
+  ],
+  "events": [
+    { "name": "首页首屏加载", "id": "home_first_screen", "type": "自定义事件", "propertyIds": ["duration_ms", "count", "result"], "trigger": "pages/home 首屏列表刷出，onLoad 起算" },
+    { "name": "首页列表刷新", "id": "home_list_refresh", "type": "自定义事件", "propertyIds": ["duration_ms", "count", "result"], "trigger": "pages/home 下拉刷新或改筛选" },
+    { "name": "首页加载更多", "id": "home_list_more", "type": "自定义事件", "propertyIds": ["duration_ms", "count", "result"], "trigger": "pages/home 上拉加载更多" },
+    { "name": "保存物品结果", "id": "item_save_result", "type": "自定义事件", "propertyIds": ["duration_ms", "result", "reason"], "trigger": "services/inventory-service saveItem" },
+    { "name": "新建物品成功", "id": "item_create_success", "type": "自定义事件", "propertyIds": [], "trigger": "components/item-form-sheet 新建成功" },
+    { "name": "到期日被修正", "id": "item_expiry_corrected", "type": "自定义事件", "propertyIds": ["within_24h"], "trigger": "components/item-form-sheet 保存后改了到期日" },
+    { "name": "标记用完", "id": "item_used_up", "type": "自定义事件", "propertyIds": [], "trigger": "pages/home、pages/item-detail" },
+    { "name": "从提醒打开详情", "id": "reminder_open_detail", "type": "自定义事件", "propertyIds": [], "trigger": "pages/item-detail 从提醒消息进入" },
+    { "name": "提醒授权结果", "id": "reminder_request_result", "type": "自定义事件", "propertyIds": ["result"], "trigger": "services/reminder-service 订阅授权" },
+    { "name": "打开快录", "id": "quick_entry_open", "type": "自定义事件", "propertyIds": [], "trigger": "pages/quick-entry 进入" },
+    { "name": "快录会话结束", "id": "quick_entry_session_end", "type": "自定义事件", "propertyIds": ["saved_count", "duration_ms"], "trigger": "pages/quick-entry 退出" },
+    { "name": "快录切页签", "id": "quick_entry_switch_tab", "type": "自定义事件", "propertyIds": ["tab"], "trigger": "pages/quick-entry 切换页签" },
+    { "name": "快录转手动", "id": "quick_entry_manual", "type": "自定义事件", "propertyIds": ["source"], "trigger": "pages/quick-entry 转手动录入" },
+    { "name": "快录保存结果", "id": "quick_entry_save_result", "type": "自定义事件", "propertyIds": ["result", "draft_count", "duration_ms", "succeeded", "failed", "source"], "trigger": "pages/quick-entry 批量保存结束" },
+    { "name": "快录解析结果", "id": "quick_parse_result", "type": "自定义事件", "propertyIds": ["result", "duration_ms", "draft_count", "failure_code"], "trigger": "pages/quick-entry AI 或本地解析结束" },
+    { "name": "草稿表单提交", "id": "draft_form_submit", "type": "自定义事件", "propertyIds": ["source"], "trigger": "pages/quick-entry 草稿编辑完成" },
+    { "name": "录音授权结果", "id": "voice_permission_result", "type": "自定义事件", "propertyIds": ["result"], "trigger": "pages/quick-entry 录音授权" },
+    { "name": "语音转写结果", "id": "voice_transcribe_result", "type": "自定义事件", "propertyIds": ["result", "failure_code"], "trigger": "pages/quick-entry 语音转写" },
+    { "name": "拍照识别日期结果", "id": "date_photo_result", "type": "自定义事件", "propertyIds": ["result", "candidate_count"], "trigger": "pages/quick-entry 拍照识别日期" },
+    { "name": "打开最近档案", "id": "recent_entry_open", "type": "自定义事件", "propertyIds": ["slots"], "trigger": "pages/recent-entry、pages/quick-entry" },
+    { "name": "编辑最近档案", "id": "recent_entry_edit", "type": "自定义事件", "propertyIds": [], "trigger": "pages/recent-entry" },
+    { "name": "选取最近档案", "id": "recent_entry_pick", "type": "自定义事件", "propertyIds": ["source"], "trigger": "pages/recent-entry" },
+    { "name": "删除最近档案", "id": "recent_entry_remove", "type": "自定义事件", "propertyIds": [], "trigger": "pages/recent-entry" },
+    { "name": "确认最近档案", "id": "recent_entry_confirm", "type": "自定义事件", "propertyIds": ["count"], "trigger": "pages/recent-entry" },
+    { "name": "批量选取档案", "id": "recent_item_select", "type": "自定义事件", "propertyIds": ["count"], "trigger": "pages/quick-entry 从档案批量选取" },
+    { "name": "小程序启动", "id": "app_open", "type": "自定义事件", "propertyIds": [], "trigger": "app.ts 每次进前台 onShow" }
+  ]
+}

@@ -11,6 +11,19 @@ const ITEMS = 'inventory_items'
 const REMINDERS = 'reminder_jobs'
 const BATCH_SIZE = 100
 const MAX_BATCHES = 10
+// 受控并发：原来 BATCH_SIZE 条事务/更新一次性 Promise.all（100 路），
+// 同集合上容易触发事务冲突重试甚至限流。按文档 4.3 降到 10 路。
+const CONCURRENCY = 10
+
+/** 把 jobs（返回 Promise 的 thunk）按 CONCURRENCY 分批执行，单条失败不中断整批。 */
+async function runInBatches(jobs) {
+  const results = []
+  for (let index = 0; index < jobs.length; index += CONCURRENCY) {
+    const slice = await Promise.allSettled(jobs.slice(index, index + CONCURRENCY).map((job) => job()))
+    results.push(...slice)
+  }
+  return results
+}
 
 async function queryExpiredTrash(now) {
   const result = await db
@@ -31,7 +44,7 @@ async function migrateLegacyTrash(now) {
       .limit(BATCH_SIZE)
       .get()
     if (!result.data.length) break
-    await Promise.all(result.data.map((item) =>
+    await runInBatches(result.data.map((item) => () =>
       db.collection(ITEMS).where({ _id: item._id, inventoryStatus: 'discarded' }).update({
         data: {
           inventoryStatus: 'deleted',
@@ -77,7 +90,7 @@ exports.main = async () => {
   for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
     const items = await queryExpiredTrash(now)
     if (!items.length) break
-    const results = await Promise.allSettled(items.map(removeTrashItem))
+    const results = await runInBatches(items.map((item) => () => removeTrashItem(item)))
     const batchDeletedCount = results.filter(
       (result) => result.status === 'fulfilled' && result.value,
     ).length

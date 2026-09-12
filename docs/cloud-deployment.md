@@ -42,12 +42,11 @@
 在开发者工具中分别对以下目录执行“上传并部署：云端安装依赖”：
 
 - `inventoryApi`
-- `settingsApi`
 - `reminderApi`
 - `dispatchReminders`
 - `cleanupTrash`
 - `quickEntryApi`
-- `userApi`
+- `userApi`（含原 `settingsApi` 的设置读写，见 3.0 节）
 
 编译或上传小程序不会同步更新云函数。只要 `cloudfunctions/` 有改动，发布对应客户端前必须单独部署相关函数；否则新客户端仍会调用旧接口。也可以使用开发者工具 CLI：
 
@@ -57,14 +56,17 @@ cli cloud functions deploy --env <环境ID> --names <函数名> --project <项�
 
 注意：CLI 部署**只更新代码**。`config.json` 的 `timeout` / `envVariables` 只在函数首次创建时写入云端，更新部署不会重新应用，改过这两项必须去云开发控制台（详见 3.3 节）。
 
-部署 `settingsApi` 后，应在“我的 → 提醒设置”中修改默认提醒天数并保存一次，确认云端只校验提醒天数；保存时会同时清除当前用户历史设置中的废弃默认存放位置字段。
+部署 `userApi` 后，应在“我的 → 提醒设置”中修改默认提醒天数并保存一次，确认云端只校验提醒天数；保存时会同时清除当前用户历史设置中的废弃默认存放位置字段。
 
-运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用 `inventoryApi`、`settingsApi`、`reminderApi`、`quickEntryApi` 和 `userApi`；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
+运行时固定为 Node.js 20。函数调用权限配置为：已登录用户可调用 `inventoryApi`、`reminderApi`、`quickEntryApi` 和 `userApi`；`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
 
 ### 3.0 用户档案与账号注销（userApi）
 
-`userApi` 只做两件事：启动时 `touch` 一次活跃度（`users` 集合，`_id` = OPENID）、以及「我的 → 账号与数据 → 注销账号」
-清空该用户的全部数据。集合权限一律“无权限”，只有云函数能读写。
+`userApi` 做三件事：启动时 `touch` 一次活跃度（`users` 集合，`_id` = OPENID）、「我的 → 账号与数据 → 注销账号」
+清空该用户的全部数据、以及默认提醒天数的读写（`user_settings` 集合）。集合权限一律“无权限”，只有云函数能读写。
+
+- **设置已并入本函数**：原独立的 `settingsApi` 云函数已删除，action 名为 `getSettings` / `updateSettings`。
+  前端 `services/settings-service.ts` 同步改为调用 `userApi`，**两者必须一起发布**，否则新客户端会打到还不存在的 action。
 
 - **必须先建集合再部署**：控制台建 `users`（权限设为无），否则首次 touch 会失败（埋点失败静默，症状是集合里没数据）。
 - **超时必须 60 秒**：`userApi/config.json` 已写 `"timeout": 60`，但 `timeout` 只在函数**首次创建**时写入云端，
