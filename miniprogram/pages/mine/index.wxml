@@ -178,6 +178,7 @@
             </view>
           </view>
           <button wx:if="{{trashNextCursor}}" class="trash-more" bindtap="loadMoreTrash" hover-class="pressable--pressed">加载更多</button>
+          <view wx:elif="{{trashLoadMoreLimited}}" class="trash-more trash-more--limited">已显示 200 件，请用搜索缩小范围</view>
           <view wx:else class="trash-tip">没有更多了</view>
         </block>
         <view wx:else class="trash-tip">回收站是空的</view>

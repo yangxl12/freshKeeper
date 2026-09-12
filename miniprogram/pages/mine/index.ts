@@ -1,4 +1,4 @@
-import { toInventoryCardItem } from '../../domain/inventory'
+import { toInventoryCardItem, MAX_LIST_ITEMS, canLoadMoreItems } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import { listTrash, permanentlyDeleteItem } from '../../services/inventory-service'
 import { readReminderAuthorization } from '../../services/reminder-service'
@@ -46,6 +46,7 @@ type EntryKey = 'settings' | 'trash' | 'feedback' | 'help' | 'about' | 'account'
 let trashSearchTimer: number | undefined
 let trashRequestSequence = 0
 let profileReadAt = 0
+let settingsReadAt = 0
 
 function readProfile(): Profile {
   try {
@@ -109,6 +110,8 @@ Page({
     trashSearch: '',
     trashItems: [] as ReturnType<typeof toInventoryCardItem>[],
     trashNextCursor: null as string | null,
+    /** 回收站到达 200 条上限后停止自动加载。 */
+    trashLoadMoreLimited: false,
     feedbackText: '',
     /** 注销中：锁住弹窗关闭与按钮，避免删一半被打断。 */
     deletingAccount: false,
@@ -128,7 +131,8 @@ Page({
   },
 
   onPullDownRefresh() {
-    void this.loadSettings().finally(() => wx.stopPullDownRefresh())
+    // 下拉是明确的「要最新数据」意图，穿透节流。
+    void this.loadSettings(true).finally(() => wx.stopPullDownRefresh())
   },
 
   syncTabBar() {
@@ -140,10 +144,16 @@ Page({
     tabBar?.setData?.({ selected: 1 })
   },
 
-  async loadSettings() {
+  async loadSettings(force = false) {
+    // 与 loadProfile 同一套节流：设置项在弹窗里改，改完会主动刷新，onShow 不必每次都打云函数。
+    if (!force && settingsReadAt && Date.now() - settingsReadAt < PROFILE_READ_TTL_MS) return
     this.setData({ settingsLoading: true, settingsError: '' })
+    // 授权状态是本机系统状态，读失败不影响默认天数的展示；和云端读取并行，不串行等待。
+    const [authorization] = await Promise.all([readReminderAuthorization()])
+    this.setData({ notificationSummary: authorization.summary })
     try {
       const settings = await getSettings()
+      settingsReadAt = Date.now()
       this.setData({
         reminderDayIndex: reminderDayIndexOf(settings.defaultReminderLeadDays),
         savedReminderDayValue: settings.defaultReminderLeadDays,
@@ -152,9 +162,6 @@ Page({
     } catch (error) {
       this.setData({ settingsLoading: false, settingsError: getErrorMessage(error) })
     }
-    // 授权状态是本机系统状态，读失败不影响默认天数的展示。
-    const authorization = await readReminderAuthorization()
-    this.setData({ notificationSummary: authorization.summary })
   },
 
   /** 系统级订阅状态只能跳到微信设置页改，小程序侧的任何控件都只是镜像。 */
@@ -332,6 +339,8 @@ Page({
         settingsSaving: false,
         activeModal: '',
       })
+      // 刚写完的这份就是最新的，重置节流窗口，避免下次 onShow 立刻又读一次。
+      settingsReadAt = Date.now()
       wx.showToast({ title: '设置已保存', icon: 'success' })
     } catch (error) {
       this.setData({ settingsSaving: false, settingsError: getErrorMessage(error) })
@@ -339,7 +348,7 @@ Page({
   },
 
   retrySettings() {
-    void this.loadSettings()
+    void this.loadSettings(true)
   },
 
   /* 回收站 */
@@ -358,9 +367,13 @@ Page({
       })
       if (requestSequence !== trashRequestSequence) return
       const pageItems = result.items.map(toInventoryCardItem)
+      // 与首页同一上限：列表不做虚拟化，回收站几百条时节点数会拖慢滚动。
+      const capped = reset ? pageItems : [...this.data.trashItems, ...pageItems].slice(0, MAX_LIST_ITEMS)
+      const reachedLimit = capped.length >= MAX_LIST_ITEMS
       this.setData({
-        trashItems: reset ? pageItems : [...this.data.trashItems, ...pageItems],
-        trashNextCursor: result.nextCursor,
+        trashItems: capped,
+        trashNextCursor: reachedLimit ? null : result.nextCursor,
+        trashLoadMoreLimited: reachedLimit,
         trashLoading: false,
         trashLoadingMore: false,
         trashError: '',
@@ -411,6 +424,7 @@ Page({
 
   loadMoreTrash() {
     if (!this.data.trashNextCursor || this.data.trashLoadingMore) return
+    if (!canLoadMoreItems(this.data.trashItems.length)) return
     void this.loadTrash(false)
   },
 

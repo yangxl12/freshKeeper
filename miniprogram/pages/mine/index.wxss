@@ -548,6 +548,16 @@
   line-height: 76rpx;
 }
 
+/* 到达单次加载上限（200 条）后的说明，和「加载更多」按钮同一位置但不该是可点样式。 */
+.trash-more--limited {
+  border-color: transparent;
+  background: transparent;
+  color: #93a49f;
+  font-size: 21rpx;
+  font-weight: 400;
+  text-align: center;
+}
+
 /* 批量管理的入口，固定在弹窗底部，不跟着列表滚动。 */
 .trash-foot {
   display: flex;

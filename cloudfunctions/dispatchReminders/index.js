@@ -12,6 +12,14 @@ const ITEMS = 'inventory_items'
 const REMINDERS = 'reminder_jobs'
 const BATCH_SIZE = 50
 const MAX_BATCHES = 20
+// 单条 processJob ≈ 6-8 次数据库操作 + 1 次开放接口调用，串行时 50 条/批要 12.5s、
+// 20 批 ≈ 250s，必然撞 60s 云函数超时，后半批用户的提醒会静默丢失。
+// 受控 8 路并发后约 1.6s/批、20 批 ≈ 32s。
+//
+// 并发安全性：processJob 的 claim 用的是条件更新
+// （where status='scheduled'，updatedCount 必须为 1），重复/并发处理只会返回 skipped，
+// 不会有两条路径同时给同一 job 发消息。
+const JOB_CONCURRENCY = 8
 const MILLIS_PER_DAY = 86_400_000
 class AppError extends Error {
   constructor(code, message) {
@@ -244,12 +252,37 @@ exports.main = async () => {
         .get()
       if (!result.data.length) break
 
-      for (const job of result.data) {
-        const outcome = await processJob(job, today, config)
-        summary.processed += 1
-        summary[outcome] += 1
+      // 内层并发（见 JOB_CONCURRENCY 说明）；受控分批，避免一次打太多开放接口。
+      for (let index = 0; index < result.data.length; index += JOB_CONCURRENCY) {
+        const slice = result.data.slice(index, index + JOB_CONCURRENCY)
+        const outcomes = await Promise.all(
+          slice.map(async (job) => {
+            try {
+              return await processJob(job, today, config)
+            } catch (_error) {
+              // 单条异常不能掀翻整批：留成 failed，剩下的继续发。
+              return 'failed'
+            }
+          }),
+        )
+        for (const outcome of outcomes) {
+          summary.processed += 1
+          summary[outcome] += 1
+        }
       }
       if (result.data.length < BATCH_SIZE) break
+    }
+
+    // 超时被截断时运维要能看出漏了多少，只打 summary 是看不出来的。
+    let remaining = 0
+    try {
+      const remainingResult = await db
+        .collection(REMINDERS)
+        .where({ status: 'scheduled', remindDate: command.lte(today) })
+        .count()
+      remaining = remainingResult.total || 0
+    } catch (_error) {
+      remaining = -1
     }
 
     console.info(
@@ -259,9 +292,10 @@ exports.main = async () => {
         resultCode: 'OK',
         durationMs: Date.now() - startedAt,
         ...summary,
+        remaining,
       }),
     )
-    return { ok: true, data: summary, requestId }
+    return { ok: true, data: { ...summary, remaining }, requestId }
   } catch (error) {
     const safeError =
       error instanceof AppError

@@ -29,6 +29,7 @@
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, completedAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, completedAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, updatedAt DESC` |
+| `inventory_items` | `ownerId ASC, inventoryStatus ASC, name ASC` |
 | `inventory_items` | `inventoryStatus ASC, purgeAfter ASC` |
 | `reminder_jobs` | `status ASC, remindDate ASC` |
 | `reminder_jobs` | `ownerId ASC, status ASC` |

@@ -46,6 +46,27 @@ export const HOME_CARD_VIEW_STATUS = {
 
 export const MAX_ITEM_QUANTITY = 9999
 
+// 无限滚动加载后的兜底上限：列表不做虚拟化，物品到 500+ 时节点数会成为滚动卡顿主因。
+// 到顶后停止自动加载，提示用户用搜索缩小范围（批量页同理）。
+export const MAX_LIST_ITEMS = 200
+
+/** 是否还能继续自动加载下一页。 */
+export function canLoadMoreItems(loadedCount: number): boolean {
+  return loadedCount < MAX_LIST_ITEMS
+}
+
+// 列表卡片的封面显示尺寸只有一个小方块（约 200px 以内），却在拉 1024² 原图。
+// 云存储的图片处理参数把封面按需转成小尺寸 webp，单张从 150-500KB 降到 10KB 量级。
+const COVER_THUMB_QUERY = '?imageView2/2/w/200/h/200/format/webp/q/80'
+
+/** 由原图 fileID 派生列表用的缩略图 URL；详情页仍然用原图。 */
+export function coverThumbUrl(coverFileId: string | null | undefined): string {
+  const fileId = typeof coverFileId === 'string' ? coverFileId.trim() : ''
+  if (!fileId) return ''
+  // 云存储 fileID 形如 cloud://env.bucket/path，拼接查询参数即可触发图片处理。
+  return `${fileId}${COVER_THUMB_QUERY}`
+}
+
 export type InventoryCardItem = InventoryItem & {
   expiryDateText: string
   remainingDaysText: string
@@ -53,6 +74,8 @@ export type InventoryCardItem = InventoryItem & {
   locationText: string
   hasLocation: boolean
   isActive: boolean
+  /** 列表用的缩略图 URL（原图为空时为空串）。 */
+  coverThumb: string
 }
 
 export function toInventoryCardItem(item: InventoryItem): InventoryCardItem {
@@ -71,6 +94,7 @@ export function toInventoryCardItem(item: InventoryItem): InventoryCardItem {
     locationText,
     hasLocation: Boolean(locationText),
     isActive: item.inventoryStatus === 'active',
+    coverThumb: coverThumbUrl(item.coverFileId),
   }
 }
 

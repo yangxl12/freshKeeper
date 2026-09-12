@@ -174,58 +174,6 @@ async function cancelPendingReminder(transaction, ownerId, itemId, remove = fals
   })
 }
 
-async function listActive(ownerId, event) {
-  const today = currentDateKey()
-  const search = validateSearch(event.search)
-  const category = validateOptionalCategory(event.category)
-  const storageLocation = validateOptionalStorage(event.storageLocation)
-  const pageSize = validatePageSize(event.pageSize)
-  const offset = decodeCursor(event.cursor)
-  const where = { ownerId, inventoryStatus: 'active' }
-  if (category) where.category = category
-  if (storageLocation) where.storageLocation = storageLocation
-  if (search) {
-    where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
-  }
-
-  const [pageResult, totalResult, expiredResult, expiringResult] = await Promise.all([
-    db
-      .collection(ITEMS)
-      .where(where)
-      .orderBy('expiryDate', 'asc')
-      .orderBy('createdAt', 'desc')
-      .skip(offset)
-      .limit(pageSize + 1)
-      .get(),
-    db.collection(ITEMS).where({ ownerId, inventoryStatus: 'active' }).count(),
-    db
-      .collection(ITEMS)
-      .where({ ownerId, inventoryStatus: 'active', expiryDate: command.lt(today) })
-      .count(),
-    db
-      .collection(ITEMS)
-      .where({
-        ownerId,
-        inventoryStatus: 'active',
-        expiryDate: command.gte(today).and(command.lte(addDays(today, 7))),
-      })
-      .count(),
-  ])
-
-  const hasMore = pageResult.data.length > pageSize
-  const items = pageResult.data.slice(0, pageSize).map((item) => publicItem(item, today))
-  return {
-    items,
-    overview: {
-      expired: expiredResult.total,
-      expiringWithin7Days: expiringResult.total,
-      activeTotal: totalResult.total,
-    },
-    nextCursor: hasMore ? encodeCursor(offset + pageSize) : null,
-    serverToday: today,
-  }
-}
-
 async function getOverview(ownerId) {
   const today = currentDateKey()
   const expiringEnd = addDays(today, 7)
@@ -281,11 +229,12 @@ async function listInventory(ownerId, event) {
   let where = command.and(conditions)
   if (search) {
     // 名称与存放位置任一命中即可；同时覆盖历史记录和位置中文标签。
+    // 不再额外匹配 name：searchName 写入时就是 name 的小写（validation.js），
+    // 两个分支对同一个关键词的结果几乎完全重合，白扫一个字段。
     const keyword = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
     where = command.and([
       where,
       command.or([
-        { name: keyword },
         { searchName: keyword },
         { storageLocation: keyword },
         ...Object.entries(STORAGE_LABELS)
@@ -352,7 +301,6 @@ async function save(ownerId, event) {
 
   const itemId = validateItemId(input.itemId)
   const version = validateVersion(input.version)
-  await getOwnedItem(ownerId, itemId)
   await db.runTransaction(async (transaction) => {
     const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
     assert(current, 'NOT_FOUND', '物品不存在或已被删除')
@@ -455,10 +403,11 @@ async function decrement(ownerId, event) {
   return { quantity: item.quantity - amount, version: version + 1 }
 }
 
+// 事务内那次断言已经覆盖「不存在」，事务外这次纯属重复读（每次写多一个 RTT）。
+// decrement 的条件更新范式本来就是一次读就够，这里统一按它收敛。
 async function transition(ownerId, event, targetStatus) {
   const itemId = validateItemId(event.itemId)
   const version = validateVersion(event.version)
-  await getOwnedItem(ownerId, itemId)
   await db.runTransaction(async (transaction) => {
     const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
     assert(current, 'NOT_FOUND', '物品不存在或已被删除')
@@ -484,7 +433,6 @@ async function transition(ownerId, event, targetStatus) {
 async function moveToTrash(ownerId, event) {
   const itemId = validateItemId(event.itemId)
   const version = validateVersion(event.version)
-  await getOwnedItem(ownerId, itemId)
   await db.runTransaction(async (transaction) => {
     const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
     assert(current, 'NOT_FOUND', '物品不存在或已被删除')
@@ -508,7 +456,6 @@ async function moveToTrash(ownerId, event) {
 async function removePermanently(ownerId, event) {
   const itemId = validateItemId(event.itemId)
   const version = validateVersion(event.version)
-  await getOwnedItem(ownerId, itemId)
   await db.runTransaction(async (transaction) => {
     const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
     assert(current, 'NOT_FOUND', '物品不存在或已被删除')
@@ -526,7 +473,6 @@ async function restore(ownerId, event) {
   const normalized = validateSaveInput(input)
   const itemId = validateItemId(input.itemId)
   const version = validateVersion(input.version)
-  await getOwnedItem(ownerId, itemId)
   await db.runTransaction(async (transaction) => {
     const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
     assert(current, 'NOT_FOUND', '物品不存在或已被删除')
@@ -548,11 +494,15 @@ async function restore(ownerId, event) {
   return { itemId, version: version + 1, expiryDate: normalized.expiryDate }
 }
 
+// 每批最多 20 条，而每条 mutation 都是一个事务。20 路并发事务打同一个用户的同一集合
+// 很容易撞冲突重试甚至限流，改成受控 5 路：总耗时增加有限，冲突率显著下降。
+const BATCH_CONCURRENCY = 5
+
 async function processBatch(ownerId, event, mutation) {
   const items = validateBatchItems(event.items)
   const succeeded = []
   const failed = []
-  await Promise.all(items.map(async (item) => {
+  const runOne = async (item) => {
     try {
       await mutation(ownerId, item)
       succeeded.push(item.itemId)
@@ -560,7 +510,10 @@ async function processBatch(ownerId, event, mutation) {
       const safeError = normalizeError(error)
       failed.push({ itemId: item.itemId, code: safeError.code, message: safeError.message })
     }
-  }))
+  }
+  for (let index = 0; index < items.length; index += BATCH_CONCURRENCY) {
+    await Promise.all(items.slice(index, index + BATCH_CONCURRENCY).map(runOne))
+  }
   return { succeeded, failed }
 }
 
@@ -650,7 +603,6 @@ async function generateCover(ownerId, event) {
 }
 
 const handlers = {
-  listActive,
   getOverview,
   listInventory,
   listRecentProfiles,

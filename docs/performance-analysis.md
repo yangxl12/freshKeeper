@@ -6,6 +6,39 @@
 
 ---
 
+## 0. 实施进度（2026-09-12）
+
+第一批（低成本高收益）与部分第三批、第四批已落地，`npm run check` 全绿（421 用例 / 30 文件）。
+
+| # | 动作 | 状态 | 落点 |
+| --- | --- | --- | --- |
+| 1 | 列表封面加 `lazy-load` | ✅ | `components/inventory-row/index.wxml` |
+| 2 | 封面缩略图（`imageView2/2/w/200/format/webp/q/80`） | ✅ | `domain/inventory.ts:coverThumbUrl` → 卡片 `coverThumb` |
+| 3 | 删掉搜索里 `{ name: keyword }` 冗余分支 | ✅ | `inventoryApi/index.js:listInventory` |
+| 4 | 批量页改「先累积、按档下发」 | ✅ | `pages/batch-operation/index.ts`（每 100 条一次 setData） |
+| 5 | 首页/回收站加载上限 200 条 | ✅ | `domain/inventory.ts:MAX_LIST_ITEMS` + home/mine |
+| 6 | `readRecentProfiles` 加提前退出 | ✅ | `inventoryApi/recent.js`（`limit × 2` 收敛） |
+| 7 | 删掉写操作里事务外的 `getOwnedItem` | ✅ | `index.js` 的 save / transition / moveToTrash / removePermanently / restore |
+| 8 | 表单 `refreshDerived` 合并 setData | ✅ | `components/item-form-sheet/index.ts`（1 次下发 + 值未变短路） |
+| — | 删 `listActive` 死代码 | ✅ | `inventoryApi/index.js`（函数 + handler 注册） |
+| — | `processBatch` 并发限到 5 | ✅ | `inventoryApi/index.js:BATCH_CONCURRENCY` |
+| — | `dispatchReminders` 内层改 8 路并发 + `remaining` 观测 | ✅ | `dispatchReminders/index.js:JOB_CONCURRENCY` |
+| — | 我的页设置读取加 60s 节流 | ✅ | `pages/mine/index.ts:loadSettings(force)` |
+| — | 首页概览 SWR 缓存 + 脏标记 + 跨日失效 | ✅ | `pages/home/index.ts`（`home_overview_cache`） |
+| 9 | 补索引 `ownerId+inventoryStatus+name` | ⏳ 需在云控制台建 | 已写入 `docs/cloud-deployment.md` 索引表 |
+| 10 | `listRecentProfiles` 改单次查询（24→1） | ⏳ 待做（索引已就绪） | 见 3.1 方案 2 |
+| 11 | `getOverview` 改内存聚合替代 4 次 count | ⏳ 待做 | 见 3.2 方案 2 |
+| 12 | `listInventory` 首屏顺带返回 `overview` | ⏳ 待做 | 见 3.2 方案 1 |
+| 13 | 游标 offset → `(expiryDate, createdAt)` | ⏳ 待做 | 见 3.3 |
+| 14 | 批量操作去事务化 | ⏳ 待做 | 见 4.3 |
+| 15 | `settingsApi` 合并进 `userApi` | ⏳ 待做 | 见 4.6 |
+| 16 | 快录页派生值合并进草稿对象 | ⏳ 待做 | 见 5.1 |
+| 17 | 前端首屏/翻页/保存耗时埋点 | ⏳ 待做 | 见 5.5 |
+
+**缓存相关的一个坑已处理**：`scheduleMidnightRefresh` 的 `setTimeout` 在小程序切后台 5 分钟后会被挂起，基本不会准时触发，所以跨日失效没有依赖它，而是由 `overviewCache.dateKey !== shanghaiTodayKey()` 在每次 `onShow` 时判断（见 3.2 方案 4）。
+
+---
+
 ## 1. 结论摘要
 
 这个项目的问题**不在渲染，在网络与数据访问**。前端体积 381.7 KB、组件层级浅、`lazyCodeLoading: requiredComponents` 已开，渲染层没有硬伤。

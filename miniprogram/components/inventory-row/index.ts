@@ -4,6 +4,7 @@ interface CardItem {
   _id?: string
   quantity?: number
   coverFileId?: string
+  coverThumb?: string
 }
 
 const COVER_PLACEHOLDER = '/assets/inventory-placeholder.svg'
@@ -48,13 +49,16 @@ Component({
 
   observers: {
     item(item: CardItem) {
+      // 封面身份仍然用原图 fileID 判断（coverThumb 只是它带图片处理参数派生的展示 URL），
+      // 这样换封面/封面就绪的回填逻辑不受缩略图影响。
       const cover = item && item.coverFileId ? String(item.coverFileId) : ''
+      const src = item && item.coverThumb ? String(item.coverThumb) : cover
       if (cover !== this.data.coverFor) {
         // 换了封面：重置错误态重新加载；没有封面则回到占位图。
-        this.setData({ coverFor: cover, coverSrc: cover || COVER_PLACEHOLDER, coverError: false })
+        this.setData({ coverFor: cover, coverSrc: src || COVER_PLACEHOLDER, coverError: false })
         return
       }
-      const nextSrc = cover || COVER_PLACEHOLDER
+      const nextSrc = src || COVER_PLACEHOLDER
       if (!this.data.coverError && this.data.coverSrc !== nextSrc) {
         this.setData({ coverSrc: nextSrc })
       }

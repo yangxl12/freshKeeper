@@ -76,8 +76,7 @@ page { background: #f3f8f6; }
 .loading-row__line { width: 55%; height: 26rpx; border-radius: 10rpx; background: #e8efeb; }
 .loading-row__line--short { width: 34%; height: 18rpx; margin-top: 20rpx; }
 .load-more { padding: 26rpx 0; color: #93a49f; font-size: 21rpx; text-align: center; }
-.load-more--error { color: #b84a3e; }
-.load-more__retry { display: inline-block; margin: 0; padding: 0 16rpx; background: transparent; color: #b84a3e; font-size: 22rpx; }
+.load-more--error { color: #b84a3e; }.load-more__retry { display: inline-block; margin: 0; padding: 0 16rpx; background: transparent; color: #b84a3e; font-size: 22rpx; }
 .error-banner {
   display: flex;
   align-items: center;

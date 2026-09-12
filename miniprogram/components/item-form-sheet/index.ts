@@ -222,10 +222,16 @@ Component({
 
     handleTextInput(event: WechatMiniprogram.Input) {
       const field = event.currentTarget.dataset.field as FormTextField
-      this.setData({ [field]: event.detail.value, dirty: true }, () => {
-        // 保质期与提前天数都会改变派生值：到期日预览、提醒时间。
-        if (field === 'shelfLifeValue' || field === 'reminderLeadDays') this.refreshDerived()
-      })
+      const value = event.detail.value
+      // 保质期与提前天数都会改变派生值（到期日预览、提醒时间）。
+      // 之前是「先 setData 字段、回调里再刷两次派生值」＝ 每敲一个字符 3 次 setData；
+      // 派生值就是字段的函数，先写进 data 再一次性算完下发即可。
+      if (field !== 'shelfLifeValue' && field !== 'reminderLeadDays') {
+        this.setData({ [field]: value, dirty: true })
+        return
+      }
+      this.data[field as 'shelfLifeValue' | 'reminderLeadDays'] = value
+      this.setData({ [field]: value, dirty: true, ...this.derivedPatch() })
     },
 
     handleCategoryChange(event: WechatMiniprogram.PickerChange) {
@@ -277,10 +283,27 @@ Component({
       return this.data.mode === 'shelf_life' ? this.data.expiryPreview : this.data.expiryDate
     },
 
-    /** 两个派生字段一起重算：到期日预览与提醒时间都跟着 mode / 日期 / 天数走。 */
+    /**
+     * 两个派生字段一次算完、一次下发。
+     * 原来 refreshDerived = updateExpiryPreview + updateReminderAt 是两次 setData，
+     * 叠上 handleTextInput 自己的那次，敲一个字符就是 3 次 setData。
+     */
     refreshDerived() {
-      this.updateExpiryPreview()
-      this.updateReminderAt()
+      this.setData(this.derivedPatch())
+    },
+
+    /** 派生值的纯计算部分，不做任何 setData，便于与调用方的字段写入合并成一次下发。 */
+    derivedPatch() {
+      const preview = this.computeExpiryPreview()
+      const reminder = resolveReminderTime({
+        expiryDate: this.data.mode === 'shelf_life' ? preview : this.data.expiryDate,
+        reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
+      })
+      return {
+        expiryPreview: preview,
+        reminderAtText: reminder?.text || '',
+        reminderMissed: reminder?.missed || false,
+      }
     },
 
     updateReminderAt() {
@@ -294,22 +317,25 @@ Component({
       })
     },
 
-    updateExpiryPreview() {
-      if (this.data.mode !== 'shelf_life') {
-        this.setData({ expiryPreview: '' })
-        return
-      }
+    computeExpiryPreview(): string {
+      if (this.data.mode !== 'shelf_life') return ''
       try {
-        const expiryPreview = calculateExpiryDate({
+        return calculateExpiryDate({
           mode: 'shelf_life',
           productionDate: this.data.productionDate,
           shelfLifeValue: Number(this.data.shelfLifeValue),
           shelfLifeUnit: SHELF_LIFE_OPTIONS[this.data.shelfLifeUnitIndex]?.value,
         })
-        this.setData({ expiryPreview })
       } catch (_error) {
-        this.setData({ expiryPreview: '' })
+        return ''
       }
+    },
+
+    updateExpiryPreview() {
+      const expiryPreview = this.computeExpiryPreview()
+      // 值没变就不下发：mode 不是 shelf_life 时每次都会算成空串，原来是照发不误。
+      if (this.data.expiryPreview === expiryPreview) return
+      this.setData({ expiryPreview })
     },
 
     validateForm(): string {

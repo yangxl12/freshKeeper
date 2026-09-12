@@ -25,6 +25,9 @@ interface BatchIntent {
 }
 
 const CHUNK_SIZE = 20
+// 批量页会一直翻页到底（拉完整个筛选范围）。边翻边 setData 的话，已加载数组会被
+// 反复重下发，累计条次约 N²/60；这里先累积、分档下发，把下发次数从 N/30 压到 N/100。
+const EMIT_BATCH_SIZE = 100
 const TRASH_SCOPE_LABEL = '回收站全部'
 
 /** 回收站工具栏文案：搜索词 + 已加载件数；空列表不显示「0 件」，避免看起来像加载失败。 */
@@ -94,32 +97,41 @@ Page({
 
   async loadAll(intent: BatchIntent) {
     this.setData({ loading: true, errorMessage: '', items: [], selectedCount: 0, allSelected: false })
+    const search = intent.search || ''
     try {
       let cursor: string | null = null
-      const items: BatchListItem[] = []
+      const collected: BatchListItem[] = []
+      let emitted = 0
       do {
         const result: InventoryListResult = intent.source === 'trash'
-          ? await listTrash({ search: intent.search || '', cursor })
+          ? await listTrash({ search, cursor })
           : await listInventory({
-              search: intent.search || '',
+              search,
               category: intent.category || '',
               viewStatus: intent.viewStatus || (intent.source === 'home' ? 'expiring' : 'active_all'),
               cursor,
             })
-        items.push(...result.items.map((item: import('../../types/inventory').InventoryItem) => ({
+        collected.push(...result.items.map((item: import('../../types/inventory').InventoryItem) => ({
           ...toInventoryCardItem(item),
           selected: false,
         })))
         cursor = result.nextCursor
-        // 边加载边更新件数：回收站要清空时用户能看清「全选」到底选中了多少件。
-        if (intent.source === 'trash') {
-          this.setData({ items: [...items], scopeLabel: trashScopeLabel(intent.search || '', items.length) })
-        } else {
-          this.setData({ items: [...items] })
+        // 节流下发：每攒够 EMIT_BATCH_SIZE 条才 setData 一次，件数也随之更新。
+        if (collected.length - emitted >= EMIT_BATCH_SIZE) {
+          emitted = collected.length
+          this.setData({
+            items: [...collected],
+            ...(intent.source === 'trash' ? { scopeLabel: trashScopeLabel(search, collected.length) } : {}),
+          })
         }
       } while (cursor)
-      this.setData({ loading: false })
+      this.setData({
+        items: collected,
+        ...(intent.source === 'trash' ? { scopeLabel: trashScopeLabel(search, collected.length) } : {}),
+        loading: false,
+      })
     } catch (error) {
+      // 已经下发的部分保留，避免翻到一半失败时用户眼前整个列表消失。
       this.setData({ loading: false, errorMessage: getErrorMessage(error) })
     }
   },

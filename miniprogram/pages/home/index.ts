@@ -6,6 +6,8 @@ import {
   INVENTORY_SORT_OPTIONS,
   INVENTORY_VIEW_STATUS_OPTIONS,
   MAX_ITEM_QUANTITY,
+  MAX_LIST_ITEMS,
+  canLoadMoreItems,
   stepQuantity,
   toInventoryCardItem,
   type InventoryCardItem,
@@ -26,7 +28,7 @@ import type {
   InventoryViewStatus,
 } from '../../types/inventory'
 import { track } from '../../utils/analytics'
-import { millisecondsUntilShanghaiTomorrow } from '../../utils/shanghai-time'
+import { shanghaiTodayKey, millisecondsUntilShanghaiTomorrow } from '../../utils/shanghai-time'
 
 interface MoreSheet {
   visible: boolean
@@ -36,6 +38,60 @@ interface MoreSheet {
 
 // 到期提醒需要看得见任务状态才能决策，只在物品详情里操作，不放进这个看不见状态的快捷菜单。
 type MoreAction = 'complete' | 'delete'
+
+const OVERVIEW_STORAGE_KEY = 'home_overview_cache'
+
+/**
+ * 概览缓存：4 次 count 是首页最贵的一段，而从详情/编辑/批量页返回首页是高频动作，
+ * 数据却大概率没变。这里做 SWR —— 进页面先用缓存渲染，再按需静默刷新。
+ *
+ * 失效条件有三条，缺一不可：
+ * 1. 任何写操作（增删改、批量）后置脏标记；
+ * 2. 缓存日期 ≠ 今天：跨日会让「临期 3 件」一直挂着昨天算出来的数字；
+ * 3. `statsDirty` 由 refresh() 翻页时发现列表与缓存不一致时置位。
+ */
+interface OverviewCache {
+  dateKey: string
+  overview: InventoryOverviewResult
+  at: number
+}
+
+let overviewCache: OverviewCache | null = null
+let overviewDirty = true
+
+/** 写操作后调用：下次进首页必须重新统计。 */
+export function markOverviewDirty() {
+  overviewDirty = true
+}
+
+function readOverviewCache(): OverviewCache | null {
+  if (overviewCache) return overviewCache
+  try {
+    const stored = wx.getStorageSync(OVERVIEW_STORAGE_KEY) as OverviewCache | ''
+    if (stored && typeof stored === 'object' && stored.overview && typeof stored.dateKey === 'string') {
+      overviewCache = stored
+    }
+  } catch (_error) {
+    // 读不到就当没有缓存，走正常请求
+  }
+  return overviewCache
+}
+
+function writeOverviewCache(overview: InventoryOverviewResult) {
+  const next: OverviewCache = { dateKey: shanghaiTodayKey(), overview, at: Date.now() }
+  overviewCache = next
+  overviewDirty = false
+  try {
+    wx.setStorageSync(OVERVIEW_STORAGE_KEY, next)
+  } catch (_error) {
+    // 缓存写失败不影响本次展示
+  }
+}
+
+function cachedOverviewUsable(dateKey: string): boolean {
+  const cache = readOverviewCache()
+  return Boolean(cache && !overviewDirty && cache.dateKey === dateKey)
+}
 
 let searchTimer: number | undefined
 let midnightTimer: number | undefined
@@ -70,6 +126,8 @@ Page({
     loadMoreError: '',
     hasActiveConditions: false,
     actionLoading: false,
+    /** 到达单次加载上限（200 条）后停止自动翻页，提示用户改用搜索。 */
+    loadMoreLimited: false,
     moreSheet: emptyMoreSheet(),
   },
 
@@ -92,9 +150,25 @@ Page({
     this.syncTabBar()
     this.subscribeCoverUpdates()
     this.applyPendingHomeSort()
+    // 先用缓存渲染概览，数据没脏且还是今天就不重复打云函数（4 次 count 是首页最贵的一段）。
+    this.applyCachedOverview()
     void this.refreshOverview()
     void this.refresh(true, false)
     this.scheduleMidnightRefresh()
+  },
+
+  /** 有可用缓存就先顶上，弱网下首屏立刻有内容。 */
+  applyCachedOverview() {
+    const cache = readOverviewCache()
+    if (!cache) return
+    if (cache.dateKey !== shanghaiTodayKey()) return
+    if (this.data.overview) return
+    this.setData({ overview: cache.overview })
+  },
+
+  /** 任何改变了物品集合或状态的操作都要让概览缓存失效，否则返回首页会看到旧数字。 */
+  invalidateOverview() {
+    markOverviewDirty()
   },
 
   /** 保存物品后回首页的一次性排序意图：消费即清空，之后用户自己选的排序不受影响。 */
@@ -136,6 +210,8 @@ Page({
 
   onPullDownRefresh() {
     this.setData({ refreshing: true })
+    // 下拉是用户明确的「我要最新数据」意图，必须穿透缓存。
+    this.invalidateOverview()
     Promise.all([this.refreshOverview(), this.refresh(true, false)]).finally(() => {
       this.setData({ refreshing: false })
       wx.stopPullDownRefresh()
@@ -143,14 +219,16 @@ Page({
   },
 
   onReachBottom() {
-    if (this.data.nextCursor && !this.data.loading && !this.data.loadingMore) {
-      void this.refresh(false, false)
-    }
+    if (!this.data.nextCursor || this.data.loading || this.data.loadingMore) return
+    if (!canLoadMoreItems(this.data.items.length)) return
+    void this.refresh(false, false)
   },
 
   scheduleMidnightRefresh() {
     if (midnightTimer) clearTimeout(midnightTimer)
     midnightTimer = setTimeout(() => {
+      // 跨日了：概览缓存必然过期（dateKey 判定会挡住），这里顺手清一次脏标记再拉。
+      this.invalidateOverview()
       void this.refreshOverview()
       void this.refresh(true, false)
       this.scheduleMidnightRefresh()
@@ -179,11 +257,17 @@ Page({
     tabBar.setData?.({ hidden })
   },
 
-  async refreshOverview() {
+  async refreshOverview(options: { force?: boolean } = {}) {
+    // 数据没脏、还是同一天：直接用缓存，不打云函数。
+    if (!options.force && cachedOverviewUsable(shanghaiTodayKey())) {
+      this.applyCachedOverview()
+      return
+    }
     const requestSequence = ++overviewRequestSequence
     try {
       const overview = await getOverview()
       if (requestSequence !== overviewRequestSequence) return
+      writeOverviewCache(overview)
       this.setData({ overview, errorMessage: '' })
     } catch (error) {
       if (requestSequence !== overviewRequestSequence) return
@@ -218,9 +302,13 @@ Page({
       })
       if (requestSequence !== listRequestSequence) return
       const pageItems = result.items.map(toInventoryCardItem)
+      // 到上限后停止自动加载：列表没有虚拟化，节点数涨到几百条就会拖慢滚动。
+      const capped = reset ? pageItems : [...this.data.items, ...pageItems].slice(0, MAX_LIST_ITEMS)
+      const reachedLimit = capped.length >= MAX_LIST_ITEMS
       this.setData({
-        items: reset ? pageItems : [...this.data.items, ...pageItems],
-        nextCursor: result.nextCursor,
+        items: capped,
+        nextCursor: reachedLimit ? null : result.nextCursor,
+        loadMoreLimited: reachedLimit,
         loading: false,
         loadingMore: false,
         listErrorMessage: '',
@@ -348,6 +436,8 @@ Page({
       // 成功不弹 toast：数字本身会跳一下（inventory-row 的 quantityFlash），
       // 数量就在原地变化，再盖一层遮罩式提示反而碍事。
       this.patchItem(item._id, { quantity, version: result.version })
+      // 数量变化会影响「状态良好」计数（不改变 active 总数），保险起见置脏。
+      this.invalidateOverview()
     } catch (error) {
       this.handleActionError(error)
     }
@@ -399,6 +489,7 @@ Page({
       this.setData({ actionLoading: false })
       this.closeMore()
       wx.showToast({ title: '已标记为用完', icon: 'success' })
+      this.invalidateOverview()
       void this.refreshOverview()
       void this.refresh(true, false)
     } catch (error) {
@@ -421,6 +512,7 @@ Page({
       this.setData({ actionLoading: false })
       this.closeMore()
       wx.showToast({ title: '已删除', icon: 'success' })
+      this.invalidateOverview()
       void this.refreshOverview()
       void this.refresh(true, false)
     } catch (error) {

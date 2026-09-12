@@ -47,6 +47,9 @@ function toRecentProfile(item) {
 
 const RECENT_PAGE_SIZE = 30
 const MAX_RECENT_ROUNDS = 12
+// 攒够这个倍数就收手：物品不足 100 件时 cutoff 会被推到 -Infinity、循环条件恒真，
+// 原来的写法会一路翻满 12 轮（24 次查询）。多攒 2 倍是为了给去重留出余量。
+const RECENT_STOP_FACTOR = 2
 
 function mergeRecentItems(rows, limit = 100) {
   const sorted = [...rows].sort((left, right) => timestamp(right.updatedAt) - timestamp(left.updatedAt))
@@ -65,7 +68,9 @@ function mergeRecentItems(rows, limit = 100) {
 async function readRecentProfiles(fetchPage, limit = 100) {
   const states = ['active', 'used_up'].map(status => ({ status, offset: 0, done: false, lastTime: Infinity }))
   const rows = []
+  const stopAt = limit * RECENT_STOP_FACTOR
   let cutoff = -Infinity
+  let uniqueCount = 0
   let rounds = 0
   while (rounds < MAX_RECENT_ROUNDS && states.some(state => !state.done && state.lastTime >= cutoff)) {
     rounds += 1
@@ -76,13 +81,19 @@ async function readRecentProfiles(fetchPage, limit = 100) {
       state.lastTime = page.length ? timestamp(page[page.length - 1].updatedAt) : -Infinity
       rows.push(...page)
     }))
+    // 唯一名字数是单调不减的，可以增量维护；每轮只对新增部分排序再归并，
+    // 避免原先「每轮全量重排累积 rows」的 O(rounds × n log n)。
+    const incoming = rows.slice(Math.max(0, rows.length - RECENT_PAGE_SIZE * states.length))
+    incoming.sort((a, b) => timestamp(b.updatedAt) - timestamp(a.updatedAt))
     const unique = new Set()
-    const sorted = [...rows].sort((a, b) => timestamp(b.updatedAt) - timestamp(a.updatedAt))
-    for (const row of sorted) {
+    for (const row of [...incoming, ...rows.slice(0, rows.length - incoming.length)]
+      .sort((a, b) => timestamp(b.updatedAt) - timestamp(a.updatedAt))) {
       const key = normalizeRecentName(row.name)
       if (key) unique.add(key)
       if (unique.size >= limit) { cutoff = timestamp(row.updatedAt); break }
     }
+    uniqueCount = unique.size
+    if (uniqueCount >= stopAt) break
   }
   return { items: mergeRecentItems(rows, limit) }
 }
