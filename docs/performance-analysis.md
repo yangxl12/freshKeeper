@@ -26,10 +26,26 @@
 | — | 我的页设置读取加 60s 节流 | ✅ | `pages/mine/index.ts:loadSettings(force)` |
 | — | 首页概览 SWR 缓存 + 脏标记 + 跨日失效 | ✅ | `pages/home/index.ts`（`home_overview_cache`） |
 | 9 | 补索引 `ownerId+inventoryStatus+name` | ⏳ 需在云控制台建 | 已写入 `docs/cloud-deployment.md` 索引表 |
-| 10 | `listRecentProfiles` 改单次查询（24→1） | ⏳ 待做（索引已就绪） | 见 3.1 方案 2 |
-| 11 | `getOverview` 改内存聚合替代 4 次 count | ⏳ 待做 | 见 3.2 方案 2 |
-| 12 | `listInventory` 首屏顺带返回 `overview` | ⏳ 待做 | 见 3.2 方案 1 |
-| 13 | 游标 offset → `(expiryDate, createdAt)` | ⏳ 待做 | 见 3.3 |
+| 9b | 补索引 `ownerId+updatedAt DESC`（2026-09-12 第二批新增） | ⏳ 需在云控制台建 | 已写入 `docs/cloud-deployment.md` 索引表 |
+| 10 | `listRecentProfiles` 改单次查询（24→1） | ✅ | `recent.js:readRecentProfilesOnce` + `index.js:listRecentProfiles` |
+| 11 | `getOverview` 改内存聚合替代 4 次 count | ✅ | `inventoryApi/index.js:aggregateOverview` |
+| 12 | `listInventory` 首屏按需返回 `overview` | ✅ | `listInventory` 的 `withOverview` 参数 |
+| 13 | 游标 offset → `(expiryDate, createdAt)` | ✅ | `index.js:decodeKeyCursor` / `encodeKeyCursor` |
+
+**第二批落地说明（2026-09-12）**
+
+- **10 单次查询**：新增 `readRecentProfilesOnce(fetchTop)`，跨 active/used_up 按 `updatedAt DESC` 一次取 100 条再内存去重。
+  原来的 `readRecentProfiles(fetchPage)` 保留为 fallback（单测与无索引环境仍可用）。
+  **必须先建索引 `ownerId ASC, updatedAt DESC`**，否则这次查询会退化成全量扫描。
+- **11 内存聚合**：`aggregateOverview` 一次投影查询拿 `(inventoryStatus, expiryDate)`，limit 1000。
+  刻意**不用分页 skip 累积**——1000 件分页空扫 5500 条文档，比原来的 4 次 count 更贵。
+  拿满 1000 条（结果会失真）时退回 `countOverview`，保证数字准确。
+- **12 首屏带概览**：由前端按 `withOverview` 显式索取（首页缓存可用时不索取），
+  云端只在 `cursor` 为空时计算。这是**调用合并**而非次数优化：`getOverview` 仍单独保留，
+  作为列表请求失败时的兜底通道（`home/index.ts:refreshOverview`）。
+- **13 复合游标**：payload 加 `v:2` 版本号，旧版 offset 游标会被判为 `INVALID_CURSOR` 要求刷新。
+  `querySignature` 机制保留（防翻页途中改筛选串页）。`listHistory` / `listTrash` 仍用 offset 游标，
+  它们的排序键是 `completedAt` 且总量小，暂不改造。
 | 14 | 批量操作去事务化 | ⏳ 待做 | 见 4.3 |
 | 15 | `settingsApi` 合并进 `userApi` | ⏳ 待做 | 见 4.6 |
 | 16 | 快录页派生值合并进草稿对象 | ⏳ 待做 | 见 5.1 |

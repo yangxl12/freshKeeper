@@ -9,29 +9,9 @@ import type {
   InventorySort,
   InventoryStatus,
   InventoryViewStatus,
-  LegacyInventoryListResult,
 } from '../types/inventory'
 import { toInventorySaveInput } from '../domain/inventory'
 import { CloudServiceError, callCloud } from './cloud-client'
-
-export interface ListActiveParams {
-  search?: string
-  category?: string
-  storageLocation?: string
-  cursor?: string | null
-  pageSize?: number
-}
-
-export function listActive(params: ListActiveParams = {}): Promise<LegacyInventoryListResult> {
-  return callCloud('inventoryApi', {
-    action: 'listActive',
-    search: params.search || '',
-    category: params.category || '',
-    storageLocation: params.storageLocation || '',
-    cursor: params.cursor || null,
-    pageSize: params.pageSize || 30,
-  })
-}
 
 export function getOverview(): Promise<InventoryOverviewResult> {
   return callCloud('inventoryApi', { action: 'getOverview' })
@@ -44,6 +24,8 @@ export function listInventory(params: {
   sort?: InventorySort
   cursor?: string | null
   pageSize?: number
+  /** 首屏顺带取回概览，省掉一次 getOverview 调用；只有无游标（第一页）时有效。 */
+  withOverview?: boolean
 } = {}): Promise<InventoryListResult> {
   return callCloud('inventoryApi', {
     action: 'listInventory',
@@ -53,6 +35,7 @@ export function listInventory(params: {
     sort: params.sort || 'expiry_asc',
     cursor: params.cursor || null,
     pageSize: params.pageSize || 30,
+    ...(params.withOverview ? { withOverview: true } : {}),
   })
 }
 

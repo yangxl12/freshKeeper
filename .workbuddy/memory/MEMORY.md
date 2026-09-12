@@ -45,9 +45,21 @@
   **列表用缩略图**：`domain/inventory.ts:coverThumbUrl()` 拼 `?imageView2/2/w/200/h/200/format/webp/q/80` 落到卡片 `coverThumb`；
   `inventory-row` 的 observer **封面身份判据仍是原图 `coverFileId`**（`coverFor`），别改成比 `coverThumb`。详情页用原图。
 - **列表加载上限**：`MAX_LIST_ITEMS = 200` + `canLoadMoreItems()`，首页/回收站到顶后 `nextCursor` 置 null 并出提示。
+- **列表游标是复合键**（2026-09-12 第二批）：`decodeKeyCursor`/`encodeKeyCursor`，payload 带 `v:2`，
+  编码上一页最后一条的 `(expiryDate, createdAt)`，`createdAt` 统一走 `toIsoKey()`。旧 offset 游标判 `INVALID_CURSOR`。
+  排序方向决定比较方向：`created_asc` 用 `gt`、其余用 `lt`，并列时再比 `createdAt lt`。
+  `listHistory` / `listTrash` 仍用老 offset 游标（`decodeCursor`，排序键 `completedAt`）。
 - **首页概览缓存**：`pages/home/index.ts` 的 `home_overview_cache` + `overviewDirty` 脏标记 + SWR。
   写操作（数量/完成/删除）必须调 `invalidateOverview()`。**跨日失效靠比 `shanghaiTodayKey()`，不靠 setTimeout**
   （切后台 5 分钟 JS 挂起，`scheduleMidnightRefresh` 基本不会准时触发）。
+  **2026-09-12 第二批**：概览改由 `listInventory` 首屏顺带回传（`withOverview`，前端只在缓存不可用时索取），
+  `onShow` 已不再单独调 `getOverview`；`refreshOverview({force:true})` 降级为**列表失败时的兜底**。
+- **概览统计口径**：云端 `aggregateOverview()` 一次投影查询 `field({inventoryStatus, expiryDate})` + `limit(1000)`
+  内存算四个数；拿满 1000 条（失真）才退回 `countOverview()` 的 4 次 count。
+  **别改成分页 skip 累积**——1000 件要空扫 5500 条文档，比 count 更贵。
+- **最近档案（`listRecentProfiles`）**：主路径 `recent.js:readRecentProfilesOnce(fetchTop)`，跨 active/used_up
+  按 `updatedAt DESC` 一次取 100 条再内存去重（原双状态翻页最坏 24 次）。
+  **依赖新索引 `ownerId ASC, updatedAt DESC`**，没建就是全量扫描。老的 `readRecentProfiles(fetchPage)` 保留为 fallback。
 - **批量页下发**：`batch-operation/index.ts:loadAll` 先累积、每 `EMIT_BATCH_SIZE(100)` 条才 setData（原来每页一次 = O(N²)）。
 - **提醒**：手机端全去开关化。提醒时间 = 到期日 − 提前天数，**当天 09:30** 推；纯函数 `domain/reminder-time.ts`。授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前。前端拦截只看日期。`reminderApi` 只有 arm；`dispatchReminders` 触发器 09:30 只处理 `remindDate===today`。模板字段映射写死在代码里（三处必改：`config/runtime.ts`、`reminderApi/index.js`、`dispatchReminders/template.js`），模板 ID 仍是占位。坑：`Number(null)===0`。未来时刻测试用例用 **2099 年**。
   **派发已并发化**：`dispatchReminders/index.js:JOB_CONCURRENCY = 8`（原逐条串行 ≈250s 必超 60s 超时 → 现在 ~32s）。

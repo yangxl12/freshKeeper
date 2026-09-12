@@ -65,6 +65,12 @@ function mergeRecentItems(rows, limit = 100) {
   return result
 }
 
+/**
+ * 双状态翻页归并（fallback）。
+ *
+ * 只在拿不到「跨状态按 updatedAt 排序」的能力时使用：索引未建、或数据源按状态分开存放。
+ * 最坏会翻 MAX_RECENT_ROUNDS × 2 次，所以加了提前退出（见 RECENT_STOP_FACTOR）。
+ */
 async function readRecentProfiles(fetchPage, limit = 100) {
   const states = ['active', 'used_up'].map(status => ({ status, offset: 0, done: false, lastTime: Infinity }))
   const rows = []
@@ -98,4 +104,22 @@ async function readRecentProfiles(fetchPage, limit = 100) {
   return { items: mergeRecentItems(rows, limit) }
 }
 
-module.exports = { mergeRecentItems, normalizeRecentName, toRecentProfile, readRecentProfiles }
+/**
+ * 最近录入档案（单次查询版，云函数主路径）。
+ *
+ * 跨 active / used_up 直接按 updatedAt 倒序取 limit 条，再做内存去重 —— 语义上比
+ * 「双状态各自翻页再归并」更贴近「最近」，且把最坏 24 次查询压到 1 次。
+ * 依赖索引 `ownerId ASC, updatedAt DESC`。
+ */
+async function readRecentProfilesOnce(fetchTop, limit = 100) {
+  const rows = await fetchTop(limit)
+  return { items: mergeRecentItems(rows || [], limit) }
+}
+
+module.exports = {
+  mergeRecentItems,
+  normalizeRecentName,
+  toRecentProfile,
+  readRecentProfiles,
+  readRecentProfilesOnce,
+}

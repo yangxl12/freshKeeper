@@ -152,7 +152,6 @@ Page({
     this.applyPendingHomeSort()
     // 先用缓存渲染概览，数据没脏且还是今天就不重复打云函数（4 次 count 是首页最贵的一段）。
     this.applyCachedOverview()
-    void this.refreshOverview()
     void this.refresh(true, false)
     this.scheduleMidnightRefresh()
   },
@@ -212,7 +211,7 @@ Page({
     this.setData({ refreshing: true })
     // 下拉是用户明确的「我要最新数据」意图，必须穿透缓存。
     this.invalidateOverview()
-    Promise.all([this.refreshOverview(), this.refresh(true, false)]).finally(() => {
+    this.refresh(true, false).finally(() => {
       this.setData({ refreshing: false })
       wx.stopPullDownRefresh()
     })
@@ -229,7 +228,6 @@ Page({
     midnightTimer = setTimeout(() => {
       // 跨日了：概览缓存必然过期（dateKey 判定会挡住），这里顺手清一次脏标记再拉。
       this.invalidateOverview()
-      void this.refreshOverview()
       void this.refresh(true, false)
       this.scheduleMidnightRefresh()
     }, millisecondsUntilShanghaiTomorrow()) as unknown as number
@@ -257,6 +255,10 @@ Page({
     tabBar.setData?.({ hidden })
   },
 
+  /**
+   * 概览兜底通道。正常路径下概览由 `listInventory` 首屏顺带回传，不需要单独调用；
+   * 只有列表请求失败、页面上还没有可用概览时才走这里，避免「列表挂了首页一片空白」。
+   */
   async refreshOverview(options: { force?: boolean } = {}) {
     // 数据没脏、还是同一天：直接用缓存，不打云函数。
     if (!options.force && cachedOverviewUsable(shanghaiTodayKey())) {
@@ -295,16 +297,25 @@ Page({
       this.setData({ loadingMore: true, loadMoreError: '' })
     }
 
+    // 只有首屏且本地概览缓存不可用时才让云端顺带统计，否则纯属白算。
+    const needOverview = reset && !cachedOverviewUsable(shanghaiTodayKey())
     try {
       const result = await listInventory({
         ...query,
         cursor: reset ? null : this.data.nextCursor,
+        ...(needOverview ? { withOverview: true } : {}),
       })
       if (requestSequence !== listRequestSequence) return
       const pageItems = result.items.map(toInventoryCardItem)
       // 到上限后停止自动加载：列表没有虚拟化，节点数涨到几百条就会拖慢滚动。
       const capped = reset ? pageItems : [...this.data.items, ...pageItems].slice(0, MAX_LIST_ITEMS)
       const reachedLimit = capped.length >= MAX_LIST_ITEMS
+      // 首屏顺带返回的概览：只有在缓存不可用（脏 / 跨日 / 首次）时才采纳，
+      // 否则会用刚拉到的列表数据覆盖用户已有的正确缓存并触发多余渲染。
+      const overviewPatch =
+        needOverview && result.overview
+          ? (writeOverviewCache(result.overview), { overview: result.overview, errorMessage: '' })
+          : {}
       this.setData({
         items: capped,
         nextCursor: reachedLimit ? null : result.nextCursor,
@@ -313,6 +324,7 @@ Page({
         loadingMore: false,
         listErrorMessage: '',
         loadMoreError: '',
+        ...overviewPatch,
         hasActiveConditions: hasActiveInventoryConditions(
           query.search,
           query.category as Category | '',
@@ -331,6 +343,8 @@ Page({
         loadingMore: false,
         listErrorMessage: this.data.items.length ? `列表未更新：${message}` : message,
       })
+      // 列表挂了不代表概览也拿不到：概览是首页顶部四张卡，能单独救回来就救。
+      if (!this.data.overview) void this.refreshOverview({ force: true })
     }
   },
 
@@ -490,7 +504,6 @@ Page({
       this.closeMore()
       wx.showToast({ title: '已标记为用完', icon: 'success' })
       this.invalidateOverview()
-      void this.refreshOverview()
       void this.refresh(true, false)
     } catch (error) {
       this.handleActionError(error)
@@ -513,7 +526,6 @@ Page({
       this.closeMore()
       wx.showToast({ title: '已删除', icon: 'success' })
       this.invalidateOverview()
-      void this.refreshOverview()
       void this.refresh(true, false)
     } catch (error) {
       this.handleActionError(error)
@@ -551,7 +563,6 @@ Page({
   },
 
   retry() {
-    void this.refreshOverview()
     void this.refresh(true, false)
   },
 

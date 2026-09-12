@@ -73,10 +73,8 @@ export interface InventoryListResult {
   items: InventoryItem[]
   nextCursor: string | null
   serverToday: string
-}
-
-export interface LegacyInventoryListResult extends InventoryListResult {
-  overview: Pick<InventoryOverview, 'expired' | 'expiringWithin7Days' | 'activeTotal'>
+  /** 首屏（无游标）时由云端顺带返回，省掉一次 getOverview 调用。 */
+  overview?: InventoryOverviewResult
 }
 
 export interface HistoryListResult {

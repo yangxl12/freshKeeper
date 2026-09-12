@@ -25,7 +25,7 @@ const {
   validateSearch,
   validateVersion,
 } = require('./validation')
-const { readRecentProfiles } = require('./recent')
+const { readRecentProfilesOnce } = require('./recent')
 const { fingerprint, stableItemId } = require('./idempotency')
 const { coverEnabled, createCoverService } = require('./image-cover')
 
@@ -101,10 +101,15 @@ function publicItem(item, today, extra = {}) {
   }
 }
 
+// 最近档案：一次查询拿 limit 条（跨 active/used_up），再做内存去重。
+// 依赖索引 ownerId ASC, updatedAt DESC —— 原来「双状态各自翻页再归并」最坏 24 次查询。
 async function listRecentProfiles(ownerId) {
-  return readRecentProfiles(async (inventoryStatus, offset, limit) => {
-    const result = await db.collection(ITEMS).where({ ownerId, inventoryStatus })
-      .orderBy('updatedAt', 'desc').skip(offset).limit(limit).get()
+  return readRecentProfilesOnce(async (limit) => {
+    const result = await db.collection(ITEMS)
+      .where({ ownerId })
+      .orderBy('updatedAt', 'desc')
+      .limit(limit)
+      .get()
     return result.data
   })
 }
@@ -129,6 +134,34 @@ function decodeCursor(value, expectedSignature = '') {
 function encodeCursor(offset, signature = '') {
   const payload = signature ? { offset, signature } : { offset }
   return Buffer.from(JSON.stringify(payload)).toString('base64url')
+}
+
+// 复合游标：把上一页最后一条的排序键 (expiryDate, createdAt) 编进游标，
+// 下一页用「严格大于该键」的条件继续查 —— 深分页从 O(offset) 降到常数，
+// 也不再受 offset 10000 的硬上限约束（那是 skip 方案的遗留限制）。
+function decodeKeyCursor(value, expectedSignature = '') {
+  if (!value) return null
+  try {
+    const payload = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+    if (payload.v !== 2 || typeof payload.expiryDate !== 'string' || typeof payload.createdAt !== 'string') {
+      throw new Error('invalid')
+    }
+    if (expectedSignature && payload.signature !== expectedSignature) throw new Error('invalid')
+    return { expiryDate: payload.expiryDate, createdAt: payload.createdAt }
+  } catch (_error) {
+    throw new AppError('INVALID_CURSOR', '分页位置已失效，请刷新后重试')
+  }
+}
+
+function encodeKeyCursor(after, sort, signature = '') {
+  return Buffer.from(JSON.stringify({ v: 2, ...after, sort, signature })).toString('base64url')
+}
+
+/** 时间字段统一转成 ISO 字符串，保证能编进游标且可比较。 */
+function toIsoKey(value) {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
 function querySignature(values) {
@@ -174,9 +207,12 @@ async function cancelPendingReminder(transaction, ownerId, itemId, remove = fals
   })
 }
 
-async function getOverview(ownerId) {
-  const today = currentDateKey()
-  const expiringEnd = addDays(today, 7)
+// 首页概览：原来 4 次 count（每次都要扫命中条件的全部记录）。
+// 改成「1 次范围查询 + 内存聚合」——只取 expiryDate 一个字段，成本与在库物品数线性相关但不是 4 倍。
+// 超过 OVERVIEW_SCAN_LIMIT 条时退回 count，避免为了统计把上千条文档拉进内存。
+const OVERVIEW_SCAN_LIMIT = 1000
+
+async function countOverview(ownerId, today, expiringEnd) {
   const [activeResult, expiredResult, expiringResult, usedUpResult] = await Promise.all([
     db.collection(ITEMS).where({ ownerId, inventoryStatus: 'active' }).count(),
     db
@@ -193,15 +229,70 @@ async function getOverview(ownerId) {
       .count(),
     db.collection(ITEMS).where({ ownerId, inventoryStatus: 'used_up' }).count(),
   ])
-
   return {
     activeTotal: activeResult.total,
     expired: expiredResult.total,
     expiringWithin7Days: expiringResult.total,
     usedUpTotal: usedUpResult.total,
-    safe: Math.max(0, activeResult.total - expiredResult.total - expiringResult.total),
+  }
+}
+
+/**
+ * 一次字段投影查询拿回在库 + 已用完物品的 (inventoryStatus, expiryDate)，内存里算四个数字。
+ *
+ * 刻意用「单查询 + limit」而不是「分页 skip 累积」：分页会把成本从 O(n) 变成 O(n²/页大小)，
+ * 1000 件时要空扫 5500 条文档，反而比原来的 count 更贵。服务端 get() 单次上限 1000，
+ * 千条以内一次拿完才是净收益；超过就退回 count 口径，保证数字准确。
+ */
+async function aggregateOverview(ownerId, today, expiringEnd) {
+  const result = await db.collection(ITEMS)
+    .where({ ownerId, inventoryStatus: command.in(['active', 'used_up']) })
+    .field({ inventoryStatus: true, expiryDate: true })
+    .limit(OVERVIEW_SCAN_LIMIT)
+    .get()
+
+  let activeTotal = 0
+  let usedUpTotal = 0
+  let expired = 0
+  let expiringWithin7Days = 0
+  for (const item of result.data) {
+    if (item.inventoryStatus === 'used_up') {
+      usedUpTotal += 1
+      continue
+    }
+    activeTotal += 1
+    const expiry = typeof item.expiryDate === 'string' ? item.expiryDate : ''
+    if (expiry && expiry < today) expired += 1
+    else if (expiry && expiry >= today && expiry <= expiringEnd) expiringWithin7Days += 1
+  }
+  return {
+    activeTotal,
+    expired,
+    expiringWithin7Days,
+    usedUpTotal,
+    // 拿满了就说明还有更多，聚合结果会失真。
+    truncated: result.data.length >= OVERVIEW_SCAN_LIMIT,
+  }
+}
+
+async function buildOverview(ownerId, today = currentDateKey()) {
+  const expiringEnd = addDays(today, 7)
+  let counts = await aggregateOverview(ownerId, today, expiringEnd)
+  // 在库物品超过扫描上限（统计会失真）时退回 count 口径，保证数字准确。
+  if (counts.truncated) counts = await countOverview(ownerId, today, expiringEnd)
+
+  return {
+    activeTotal: counts.activeTotal,
+    expired: counts.expired,
+    expiringWithin7Days: counts.expiringWithin7Days,
+    usedUpTotal: counts.usedUpTotal,
+    safe: Math.max(0, counts.activeTotal - counts.expired - counts.expiringWithin7Days),
     serverToday: today,
   }
+}
+
+async function getOverview(ownerId) {
+  return buildOverview(ownerId)
 }
 
 async function listInventory(ownerId, event) {
@@ -212,7 +303,7 @@ async function listInventory(ownerId, event) {
   const sort = validateInventorySort(event.sort)
   const pageSize = validatePageSize(event.pageSize)
   const signature = querySignature({ search, category, viewStatus, sort, pageSize })
-  const offset = decodeCursor(event.cursor, signature)
+  const after = decodeKeyCursor(event.cursor, signature)
   const conditions = [
     { ownerId },
     { inventoryStatus: viewStatus === 'used_up' ? 'used_up' : 'active' },
@@ -244,6 +335,29 @@ async function listInventory(ownerId, event) {
     ])
   }
 
+  // 游标续接：按当前排序方向，取「严格晚于上一页最后一条排序键」的记录。
+  // expiryDate 是 'YYYY-MM-DD' 字符串，createdAt 是服务端 Date；同一 expiryDate 内
+  // 一律由 createdAt 降序做次级排序，所以并列时的方向固定是「更早创建的排后面」。
+  if (after) {
+    const createdBefore = { createdAt: command.lt(new Date(after.createdAt)) }
+    const createdAfter = { createdAt: command.gt(new Date(after.createdAt)) }
+    let keyCondition
+    if (sort === 'created_asc') keyCondition = createdAfter
+    else if (sort === 'created_desc') keyCondition = createdBefore
+    else if (sort === 'expiry_desc') {
+      keyCondition = command.or([
+        { expiryDate: command.lt(after.expiryDate) },
+        { expiryDate: after.expiryDate, ...createdBefore },
+      ])
+    } else {
+      keyCondition = command.or([
+        { expiryDate: command.gt(after.expiryDate) },
+        { expiryDate: after.expiryDate, ...createdBefore },
+      ])
+    }
+    where = command.and([where, keyCondition])
+  }
+
   let query = db.collection(ITEMS).where(where)
   if (sort === 'created_asc' || sort === 'created_desc') {
     query = query.orderBy('createdAt', sort === 'created_asc' ? 'asc' : 'desc')
@@ -252,12 +366,25 @@ async function listInventory(ownerId, event) {
       .orderBy('expiryDate', sort === 'expiry_desc' ? 'desc' : 'asc')
       .orderBy('createdAt', 'desc')
   }
-  const result = await query.skip(offset).limit(pageSize + 1).get()
+  const result = await query.limit(pageSize + 1).get()
   const hasMore = result.data.length > pageSize
+  const pageItems = result.data.slice(0, pageSize)
+  const last = pageItems[pageItems.length - 1]
+  // 首屏（无游标）且调用方明确要概览时顺带返回：前端首页原本是 getOverview + listInventory
+  // 两次调用，合并成一次省掉一个 RTT 和一次可能的冷启动。
+  // 由调用方按需索取：搜素/筛选重置时前端缓存往往还是有效的，不该白算一次统计。
+  const overview = event.withOverview && !event.cursor ? await buildOverview(ownerId, today) : null
   return {
-    items: result.data.slice(0, pageSize).map((item) => publicItem(item, today)),
-    nextCursor: hasMore ? encodeCursor(offset + pageSize, signature) : null,
+    items: pageItems.map((item) => publicItem(item, today)),
+    nextCursor: hasMore && last
+      ? encodeKeyCursor(
+        { expiryDate: last.expiryDate || '', createdAt: toIsoKey(last.createdAt) },
+        sort,
+        signature,
+      )
+      : null,
     serverToday: today,
+    ...(overview ? { overview } : {}),
   }
 }
 
