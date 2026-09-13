@@ -53,6 +53,7 @@ function createFakeDb(options: {
   reminders?: Doc[]
   settings?: Doc[]
   removeCap?: number
+  missingCollections?: string[]
 } = {}) {
   const store: Record<string, Doc[]> = {
     users: [...(options.users ?? [])],
@@ -94,6 +95,9 @@ function createFakeDb(options: {
         return { stats: { updated: matched.length } }
       },
       async remove() {
+        if (options.missingCollections?.includes(name)) {
+          throw Object.assign(new Error(`collection ${name} not found`), { code: 'DATABASE_COLLECTION_NOT_EXIST' })
+        }
         const matched = store[name].filter((doc) => matches(doc, where))
         const batch = options.removeCap ? matched.slice(0, options.removeCap) : matched
         const ids = new Set(batch.map((doc) => doc._id))
@@ -405,6 +409,20 @@ describe('userApi deleteAccount', () => {
     expect(files.batches).toEqual([])
     expect(result.deleted.files).toBe(0)
     expect(result.deleted.items).toBe(2)
+  })
+
+  it('发布过渡期 ai_usage_daily 尚未创建时仍可完成注销', async () => {
+    const fake = createFakeDb({
+      users: [{ _id: OWNER, ownerId: OWNER, schemaVersion: 1 }],
+      missingCollections: ['ai_usage_daily'],
+    })
+    const files = createFakeDeleteFile(fake.calls)
+    const service = account.createAccountService({ db: fake.db, deleteFile: files.deleteFile })
+
+    await expect(service.deleteAccount(OWNER, { confirm: 'DELETE' })).resolves.toEqual({
+      deleted: { items: 0, reminders: 0, settings: 0, aiUsage: 0, files: 0 },
+    })
+    expect(fake.store.users).toHaveLength(0)
   })
 
   it('只剩别人的数据，一条都不动', async () => {

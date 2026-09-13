@@ -312,6 +312,24 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     throw new AppError('DELETE_INCOMPLETE', '数据较多，请重新再试一次')
   }
 
+  function isMissingCollection(error) {
+    const code = String(error?.code ?? error?.errCode ?? '')
+    const message = String(error?.message ?? error?.errMsg ?? '')
+    return code === 'DATABASE_COLLECTION_NOT_EXIST'
+      || code === '-502005'
+      || /collection.*(?:not exist|not found|不存在)|resource.*not.*found/i.test(message)
+  }
+
+  /** 发布过渡期集合可能尚未由控制台创建；只宽容这一种错误，其他删除失败仍阻断注销。 */
+  async function removeOptionalCollection(collectionName, where) {
+    try {
+      return await removeAll(collectionName, where)
+    } catch (error) {
+      if (!isMissingCollection(error)) throw error
+      return 0
+    }
+  }
+
   /**
    * 顺序不能改：收集 fileID → 删云存储 → 删数据库。
    * 删干净后再调一次是空删，天然幂等，不留墓碑（墓碑本身就是残留个人信息）。
@@ -332,7 +350,7 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     const items = await removeAll(ITEMS, { ownerId })
     const reminders = await removeAll(REMINDERS, { ownerId })
     const settings = await removeAll(SETTINGS, { ownerId })
-    const aiUsage = await removeAll(AI_USAGE, { ownerId })
+    const aiUsage = await removeOptionalCollection(AI_USAGE, { ownerId })
     // _id 就是 openid，按主键删；删掉后重新进入会重新 touch 出一条空档案。
     await removeAll(USERS, { _id: ownerId })
     return { deleted: { items, reminders, settings, aiUsage, files } }
