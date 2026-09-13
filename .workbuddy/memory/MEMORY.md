@@ -24,12 +24,22 @@
   → 建完必须去控制台改（新环境默认 **3s**；`quickEntryApi` / `userApi` 要 **60s**）。
 - CLI：`D:\微信web开发者工具\cli.bat cloud functions deploy --env cloud1-d0gkh66ce94b1be08 --names <fn> --project D:/my-project/freshKeeper [--remote-npm-install]`。
   首建偶发 `Creating` 报错 → 等 45s 重跑。
+- **改完云函数必须真的部署**：云端常年落后本地（`inventoryApi` 曾停在 1cec0b4 之前，
+  导致首页概览字段压根没回传）。查漂移：`cli.bat cloud functions download --env <env> --name <fn>
+  --path <临时目录> --project <项目>`，再和本地 diff / grep。
 - 本地调试没有网关注入，`cloud.ai()` 必 404（代码已按 `WX_LOCAL_SCF` 自动跳过；逃生门
   `QUICK_ENTRY_AI_LOCAL_DEBUG=true`）。**验证 AI 路径只能走云端**。
 - `INTERNAL_ERROR` 吞真堆栈：临时在 catch 加 `debug:String(error.stack)`，**用完必须撤掉**。
 
 ## 模拟器验收
-- `cli.bat auto --auto-port 9420 --trust-project` + `wechat_devtools_mcp` daemon，发 NDJSON `run_test_script`。
+- `cli.bat auto --project <项目> --auto-port 9420 --trust-project` 开自动化端口，然后**直连**
+  `ws://127.0.0.1:9420` 发 NDJSON `{id,method,params}`（Node 22 内置 `WebSocket` 即可，无需装包）。
+  可用方法：`App.getPageStack` / `Page.getData` / `Page.setData` / `Page.callMethod` / `Page.getElements` /
+  `App.callWxMethod`（如 `getStorageSync`、`removeStorageSync`）/ `Page.getElement`。
+  **不可用**：`App.evaluate`、`App.callFunction`（参数形态对不上）、`Page.screenshot`（webview unimplemented）。
+- 页面能不能修好，就发 `Page.callMethod refresh true false` 再 `Page.getData` 看数据；
+  节点数用 `Page.getElements {selector}` 数（例：`.stat-card--skeleton`）。
+- 复现故障态不用重启：`Page.callMethod invalidateOverview` + `Page.setData {overview:null}`。
 - 探针取 `res.result.data.xxx`；`save` 的 idempotencyKey 须标准 UUID v4。
 - 必须 TAP 手势的 API（shareFileMessage）只能真点，`evaluate` 不算点击。
   探针超时后仍在后台跑，立刻重跑会自相矛盾。平台行为先实测，别推理。
@@ -56,8 +66,9 @@
   键 `(expiryDate, createdAt)`，`createdAt` 走 `toIsoKey()`）；旧 offset 游标判 `INVALID_CURSOR`；
   `created_asc` 用 `gt`、其余用 `lt`。`listHistory`/`listTrash` 仍用老 offset 游标。
 - **首页概览**：`home_overview_cache` + `overviewDirty` + SWR；写操作必须调 `invalidateOverview()`。
-  **跨日失效靠比 `shanghaiTodayKey()`，不靠 setTimeout**。概览改由 `listInventory` 首屏顺带回传（`withOverview`），
-  `refreshOverview({force:true})` 只是列表失败兜底。
+  **跨日失效靠比 `shanghaiTodayKey()`，不靠 setTimeout**。概览改由 `listInventory` 首屏顺带回传（`withOverview`）。
+  **两条兜底缺一不可**：列表失败时、以及列表成功但没回传 `overview` 时，都要 `refreshOverview({force:true})`
+  —— 少一条，顶部四张卡就停在骨架态（真踩过）。
 - **概览统计**：`aggregateOverview()` 一次投影 + `limit(1000)` 内存算，满 1000 才退回 `countOverview()`。
   **别改成分页 skip 累积**（比 count 更贵）。
 - **最近档案**：`recent.js:readRecentProfilesOnce`，按 `updatedAt DESC` 取 100 条内存去重。

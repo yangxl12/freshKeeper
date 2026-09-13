@@ -337,6 +337,9 @@ Page({
         ),
       })
       this.reportListTiming(reset, startedAt, pageItems.length, 'success')
+      // 索取了概览却没拿到（云函数还是没带上 `withOverview` 的老版本、或字段缺失）时补一次
+      // 兜底请求。列表本身是成功的，走不到 catch 里那条兜底，否则顶部四张卡会一直停在骨架态。
+      if (needOverview && !result.overview) void this.refreshOverview({ force: true })
     } catch (error) {
       if (requestSequence !== listRequestSequence) return
       const message = getErrorMessage(error)
