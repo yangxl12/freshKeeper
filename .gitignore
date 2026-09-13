@@ -4,6 +4,10 @@ miniprogram_npm/
 *.log
 # 本机调试探针留下的快照文件，不提交
 probe-*.txt
+# git commit -F 用的临时提交信息与临时输出（本机 PowerShell 的工具输出常被吞，
+# 只能落盘再读，统一用点号前缀避免误提交）
+.commitmsg.txt
+.c[A-Z]*.txt
 coverage/
 project.private.config.json
 .env
