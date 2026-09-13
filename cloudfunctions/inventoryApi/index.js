@@ -23,7 +23,7 @@ const {
   validateSearch,
   validateVersion,
 } = require('./validation')
-const { readRecentProfilesOnce } = require('./recent')
+const { PROFILE_STATUSES, readRecentProfilesOnce } = require('./recent')
 const { createWriteService } = require('./writes')
 const { fingerprint, stableItemId } = require('./idempotency')
 const { coverEnabled, createCoverService } = require('./image-cover')
@@ -103,11 +103,13 @@ function publicItem(item, today, extra = {}) {
 }
 
 // 最近档案：一次查询拿 limit 条（跨 active/used_up），再做内存去重。
-// 依赖索引 ownerId ASC, updatedAt DESC —— 原来「双状态各自翻页再归并」最坏 24 次查询。
+// inventoryStatus 必须过滤掉回收站两个状态，否则删掉的东西会一直出现在快录建议里。
+// 命中已有索引 ownerId ASC, inventoryStatus ASC, updatedAt DESC ——
+// 原来「双状态各自翻页再归并」最坏 24 次查询，现在 1 次。
 async function listRecentProfiles(ownerId) {
   return readRecentProfilesOnce(async (limit) => {
     const result = await db.collection(ITEMS)
-      .where({ ownerId })
+      .where({ ownerId, inventoryStatus: command.in(PROFILE_STATUSES) })
       .orderBy('updatedAt', 'desc')
       .limit(limit)
       .get()

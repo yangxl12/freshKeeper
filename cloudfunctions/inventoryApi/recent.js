@@ -45,6 +45,14 @@ function toRecentProfile(item) {
   }
 }
 
+// 只有这两个状态的物品能进「最近录入档案」——回收站（deleted/discarded）的不能，
+// 否则用户清空回收站前，删掉的东西会一直出现在快录页的建议里。
+const PROFILE_STATUSES = ['active', 'used_up']
+// 内存兜底：查询层已经用 inventoryStatus in PROFILE_STATUSES 过滤了，这里再挡一道，
+// 防止别的调用方（或没走索引的降级路径）把回收站物品漏进来。
+// 用黑名单而不是白名单：缺少 inventoryStatus 字段的历史文档不该被顺手扔掉。
+const EXCLUDED_STATUSES = new Set(['deleted', 'discarded'])
+
 const RECENT_PAGE_SIZE = 30
 const MAX_RECENT_ROUNDS = 12
 // 攒够这个倍数就收手：物品不足 100 件时 cutoff 会被推到 -Infinity、循环条件恒真，
@@ -56,6 +64,7 @@ function mergeRecentItems(rows, limit = 100) {
   const seen = new Set()
   const result = []
   for (const item of sorted) {
+    if (EXCLUDED_STATUSES.has(item.inventoryStatus)) continue
     const nameKey = normalizeRecentName(item.name)
     if (!nameKey || seen.has(nameKey)) continue
     seen.add(nameKey)
@@ -72,7 +81,7 @@ function mergeRecentItems(rows, limit = 100) {
  * 最坏会翻 MAX_RECENT_ROUNDS × 2 次，所以加了提前退出（见 RECENT_STOP_FACTOR）。
  */
 async function readRecentProfiles(fetchPage, limit = 100) {
-  const states = ['active', 'used_up'].map(status => ({ status, offset: 0, done: false, lastTime: Infinity }))
+  const states = [...PROFILE_STATUSES].map(status => ({ status, offset: 0, done: false, lastTime: Infinity }))
   const rows = []
   const stopAt = limit * RECENT_STOP_FACTOR
   let cutoff = -Infinity
@@ -109,7 +118,10 @@ async function readRecentProfiles(fetchPage, limit = 100) {
  *
  * 跨 active / used_up 直接按 updatedAt 倒序取 limit 条，再做内存去重 —— 语义上比
  * 「双状态各自翻页再归并」更贴近「最近」，且把最坏 24 次查询压到 1 次。
- * 依赖索引 `ownerId ASC, updatedAt DESC`。
+ *
+ * 命中已有索引 `ownerId ASC, inventoryStatus ASC, updatedAt DESC`（cloud-deployment.md 索引表里的老条目）。
+ * 注意别为了它去新建 `ownerId ASC, updatedAt DESC`：那要去掉 inventoryStatus 条件才能用，
+ * 代价是把回收站物品也拉进来，不划算。
  */
 async function readRecentProfilesOnce(fetchTop, limit = 100) {
   const rows = await fetchTop(limit)
@@ -117,6 +129,7 @@ async function readRecentProfilesOnce(fetchTop, limit = 100) {
 }
 
 module.exports = {
+  PROFILE_STATUSES,
   mergeRecentItems,
   normalizeRecentName,
   toRecentProfile,

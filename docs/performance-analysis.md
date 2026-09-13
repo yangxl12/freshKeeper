@@ -25,8 +25,8 @@
 | — | `dispatchReminders` 内层改 8 路并发 + `remaining` 观测 | ✅ | `dispatchReminders/index.js:JOB_CONCURRENCY` |
 | — | 我的页设置读取加 60s 节流 | ✅ | `pages/mine/index.ts:loadSettings(force)` |
 | — | 首页概览 SWR 缓存 + 脏标记 + 跨日失效 | ✅ | `pages/home/index.ts`（`home_overview_cache`） |
-| 9 | 补索引 `ownerId+inventoryStatus+name` | ⏳ 需在云控制台建 | 已写入 `docs/cloud-deployment.md` 索引表 |
-| 9b | 补索引 `ownerId+updatedAt DESC`（2026-09-12 第二批新增） | ⏳ 需在云控制台建 | 已写入 `docs/cloud-deployment.md` 索引表 |
+| 9 | 补索引 `ownerId+inventoryStatus+name` | ⏳ 需在云控制台建 | 步骤见 `docs/cloud-deployment.md` 2.1 节 |
+| 9b | ~~补索引 `ownerId+updatedAt DESC`~~ | ✅ **撤销** | 改用已有的 `ownerId+inventoryStatus+updatedAt DESC`，见 2.1 节 |
 | 10 | `listRecentProfiles` 改单次查询（24→1） | ✅ | `recent.js:readRecentProfilesOnce` + `index.js:listRecentProfiles` |
 | 11 | `getOverview` 改内存聚合替代 4 次 count | ✅ | `inventoryApi/index.js:aggregateOverview` |
 | 12 | `listInventory` 首屏按需返回 `overview` | ✅ | `listInventory` 的 `withOverview` 参数 |
@@ -53,6 +53,7 @@
 | 18 | `cleanupTrash` 并发 100 → 10（含 `migrateLegacyTrash`） | ✅ | `cleanupTrash/index.js:runInBatches` |
 | 19 | 详情页 `get` 两次串行查询改并行 | ✅ | `inventoryApi/index.js:get`（`Promise.all`） |
 | 20 | 云函数依赖核对 | ✅ | 5 个函数仅 `wx-server-sdk`；`quickEntryApi` 多 2 个腾讯云 SDK（STT/OCR 必需），无冗余 |
+| 21 | `listRecentProfiles` 补 `inventoryStatus` 过滤（修 bug） | ✅ | `recent.js:PROFILE_STATUSES` + `index.js:listRecentProfiles` |
 
 **第三批落地说明（2026-09-12）**
 
@@ -86,6 +87,13 @@
   **没做** 4.4 提的「`reminderStatus` 冗余进物品文档」——那要 `reminderApi.arm` 与 `dispatchReminders` 两处写入点同步维护，
   收益只是一次 RTT，性价比不够。
 - **20 依赖核对**：无冗余，不需要精简。
+- **21 顺手修掉的回归**：第 10 项的单次查询写成了 `where({ ownerId })`，**没有过滤 `inventoryStatus`** —
+  回收站（`deleted`/`discarded`）的物品会被拉进快录页的「最近档案」建议，用户在清空回收站前会一直看到删掉的东西。
+  原来的双状态 fallback 是只取 active/used_up 的，这是改造时漏掉的语义差异，**测试也没覆盖**（测试数据里没有 deleted 物品）。
+  修法是加 `inventoryStatus: command.in(['active','used_up'])` + 内存黑名单兜底（`EXCLUDED_STATUSES`，
+  用黑名单而非白名单，避免缺字段的历史文档被误杀），并补了一条用例。
+  **副作用是好的**：加了状态条件后命中**已存在**的老索引 `ownerId+inventoryStatus+updatedAt DESC`，
+  于是第 9b 项那条新索引不用建了。
 - **4.6 方案 2（`touch` 与 `getOverview` 合并）已作废**：第 12 项落地后首页 `onShow` 不再单独调 `getOverview`
   （只有列表失败兜底时才调），首页已无第二次可合并的调用。
 
@@ -95,7 +103,7 @@
 
 | 项 | 说明 | 卡在哪 |
 | --- | --- | --- |
-| 索引 9 / 9b | `ownerId+inventoryStatus+name`、`ownerId+updatedAt DESC` | **只能在云控制台建**，代码侧已写进 `docs/cloud-deployment.md`。没建之前第 10 项的单次查询会退化成全量扫描 |
+| 索引 9 | `ownerId+inventoryStatus+name`（生图同名复用查询用） | **只能在云控制台建，代码里写不出索引**。步骤见 `docs/cloud-deployment.md` 2.1 节：开发者工具或网页端 → 云开发 → 数据库 → `inventory_items` → 索引管理。开发、生产两套环境要各建一次 |
 | 4.1 搜索前缀锚定 | 正则改 `^keyword` + 建索引 `ownerId+inventoryStatus+searchName` | **改搜索语义**（包含 → 前缀匹配），需产品拍板；且索引表里还没这条，没索引改了也不生效 |
 | 4.6 方案 3 预热 | `ping` action + 5 分钟定时触发器 | `config.json` 的 triggers **只在首次创建时写入云端**，已存在的函数必须在控制台加触发器；且要评估预留实例成本 |
 | 3.6 方案 3 降生图分辨率 | `IMAGE_SIZE` 1024² → 512² | 列表已用 200px 缩略图，降分辨率只省存储/CDN，生图是 fire-and-forget 用户不感知；代价是详情页画质下降。**建议不做** |

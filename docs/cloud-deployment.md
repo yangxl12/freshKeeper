@@ -30,12 +30,40 @@
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, category ASC, completedAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, updatedAt DESC` |
 | `inventory_items` | `ownerId ASC, inventoryStatus ASC, name ASC` |
-| `inventory_items` | `ownerId ASC, updatedAt DESC` |
 | `inventory_items` | `inventoryStatus ASC, purgeAfter ASC` |
 | `reminder_jobs` | `status ASC, remindDate ASC` |
 | `reminder_jobs` | `ownerId ASC, status ASC` |
 
+其中 `ownerId ASC, inventoryStatus ASC, name ASC` 服务于生图前的同名复用查询（`image-cover.js`），是目前唯一还没在生产环境落地的一条。
+
 名称包含搜索使用当前用户范围内的正则匹配；首版不建立全文索引。
+
+> `ownerId ASC, updatedAt DESC` 已从索引表撤下（2026-09-13）。它曾是为 `listRecentProfiles` 的单次查询加的，
+> 但那条查询必须带 `inventoryStatus in ['active','used_up']` 才不会把回收站物品拉进快录建议，
+> 带了它就必须用**已存在的老索引** `ownerId ASC, inventoryStatus ASC, updatedAt DESC`（上表第 7 行）。
+> 换索引的代价远大于不换，所以这条不用建。详见 2.1 节。
+
+### 2.1 索引怎么建
+
+索引**不在代码里**，也没有 API 能建 —— `cloudfunctions/` 里写不出索引，每次改动只能去云开发控制台点。**换环境、重建环境都要重做一遍**，这是最容易漏的一步。
+
+操作路径（两条都行）：
+
+- 微信开发者工具 → 工具栏「云开发」→ 数据库 → 集合 `inventory_items` / `reminder_jobs` → **索引管理** → 添加索引
+- 或网页端 <https://cloud.weixin.qq.com> → 选环境 → 数据库 → 同上
+
+每一步注意：
+
+1. **先选对环境**：左上角环境要在「开发」和「生产」之间切换，两边各建一次。只在开发环境建过的话，生产环境上线后查询会静默退化成全集合扫描 —— 不报错，只是变慢。
+2. **字段名逐个手填**：`ownerId` 选升序（ASC），`updatedAt` 选降序（DESC）。**顺序不能错**，索引是「先按第一个字段排，相同时再按第二个」，`ownerId ASC, inventoryStatus ASC, name ASC` 跟 `name, inventoryStatus, ownerId` 是两个完全不同的索引。
+3. 索引名随意，建议照抄字段组合，方便以后对照这张表。
+4. **唯一索引不要勾**：`ownerId` 是重复值（一个用户很多件物品），勾了会写入失败。
+
+建完之后：
+
+- 生效需要时间，数据量小通常几秒到几分钟，可以在「索引管理」里看状态是否变成「正常」。
+- 集合里没数据时建索引会很快，但**此时也看不出效果**。要等有几百条数据后再看。
+- **怎么验证真的用上了**：云开发控制台 → 云函数 → `inventoryApi` → 日志，看 `durationMs`。或者直接看 `docs/performance-analysis.md` 第 7 节的验证方法。控制台不提供 `explain`，所以只能靠耗时和数据库「读操作次数」监控间接判断。
 
 ## 3. 部署云函数
 

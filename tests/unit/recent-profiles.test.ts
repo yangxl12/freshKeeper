@@ -183,4 +183,16 @@ describe('readRecentProfilesOnce 单次查询', () => {
     // 最近录入的排最前。
     expect(result.items[0].name).toBe('物品149')
   })
+
+  it('回收站物品不进「最近录入档案」建议', async () => {
+    const rows = [
+      { name: '刚删的酸奶', inventoryStatus: 'deleted', quantity: 1, unit: '件', category: 'food', storageLocation: '', reminderLeadDays: 1, expiryInputMode: 'direct', updatedAt: '2026-03-05T00:00:00.000Z' },
+      { name: '待清理的面包', inventoryStatus: 'discarded', quantity: 1, unit: '件', category: 'food', storageLocation: '', reminderLeadDays: 1, expiryInputMode: 'direct', updatedAt: '2026-03-04T00:00:00.000Z' },
+      { name: '牛奶', inventoryStatus: 'active', quantity: 2, unit: '盒', category: 'food', storageLocation: '', reminderLeadDays: 1, expiryInputMode: 'direct', updatedAt: '2026-03-02T00:00:00.000Z' },
+      { name: '已用完的纸巾', inventoryStatus: 'used_up', quantity: 1, unit: '件', category: 'household', storageLocation: '', reminderLeadDays: 1, expiryInputMode: 'direct', updatedAt: '2026-03-03T00:00:00.000Z' },
+    ]
+    const result = await readRecentProfilesOnce(async () => rows)
+
+    expect(result.items.map((item) => item.name)).toEqual(['已用完的纸巾', '牛奶'])
+  })
 })
