@@ -63,7 +63,8 @@
 - **AI 解析**：provider 必须 `hunyuan-v3` / 模型 `hy3`，名字只准出现在 `ai-client.js`。
   铁律：① 不让模型算日期（只出 `dateFacts`，`date-facts.js` 归一化）；② 证据回链防幻觉。
   降级 AI → 自定义 → `rules-v3`；AI 超时 6000ms < 前端 8s `Promise.race`。
-- **封面生图**：model `HY-Image-3.0-Plus-4090-Tob-v1.0`，必须显式 `revise/enable_thinking=false`。
+- **封面生图**：model `HY-Image-3.0-Plus-4090-Tob-v1.0`，`IMAGE_SIZE='512x512'`（实测最小可用档位；
+  非标准值 256/320/384/448 一律 **HTTP 400**，官方文档漏列了 512），必须显式 `revise/enable_thinking=false`。
   落 `coverFileId` **不 bump version**；保存后 fire-and-forget；回填走 `onItemCoverReady()` 广播。
   ⚠️ **`cloud://` fileID 不支持拼图片处理参数**：`fileID + '?imageView2/...'` 实测 `file not found`
   → `<image>` onError 回退占位图（= 2026-09-13「首页封面消失」事故，466294a 回滚）。

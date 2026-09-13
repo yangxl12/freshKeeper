@@ -16,7 +16,12 @@ const IMAGE_PROVIDER = 'hunyuan-image' // provider / 模型名只允许出现在
 // 2026-07-15 起 model 参数 'hunyuan-image' 已下线（cloud.ai 会直接报错），必须用具体版本号。
 // 换模型只改这里；provider 仍是 'hunyuan-image'。
 const IMAGE_MODEL = 'HY-Image-3.0-Plus-4090-Tob-v1.0'
-const IMAGE_SIZE = '1024x1024'
+// 卡片上封面只有 106rpx（约 53pt，高刷屏物理像素约 165px），1024² 是纯浪费。
+// 尺寸边界 2026-09-13 在云端实测过（逐个真实生图）：256/320/384/448 一律返回 HTTP 400，
+// 只有标准档位被接受；512x512 可用 —— 官方文档只列了 1024²/1280x720/720x1280/1280²，
+// 漏了 512，它才是最小可用档位。
+// 降到 512² 后像素量是原来的 1/4，JPEG 约 30-80KB（原 150-500KB），对 165px 的展示有 3 倍余量。
+const IMAGE_SIZE = '512x512'
 // inventoryApi 云函数超时 60s（控制台配置）：生图 30s + 下载 10s 各自独立限制，
 // 保证最坏情况也能在云函数被杀之前失败返回，物品保持无封面而不是让调用方超时。
 const GENERATE_TIMEOUT_MS = 30000
@@ -147,6 +152,7 @@ function createCoverService(options = {}) {
     uploadFile: options.uploadFile || null,
     provider: options.provider || IMAGE_PROVIDER,
     model: options.model || IMAGE_MODEL,
+    size: options.size || IMAGE_SIZE,
     generateTimeoutMs: options.generateTimeoutMs || GENERATE_TIMEOUT_MS,
   }
 
@@ -163,7 +169,7 @@ function createCoverService(options = {}) {
       imageModel.generateImage({
         model: deps.model,
         prompt: buildCoverPrompt(name),
-        size: IMAGE_SIZE,
+        size: deps.size,
         n: 1,
         revise: { value: false },
         enable_thinking: { value: false },

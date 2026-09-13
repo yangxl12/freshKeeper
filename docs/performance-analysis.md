@@ -106,7 +106,7 @@
 | 索引 9 | `ownerId+inventoryStatus+name`（生图同名复用查询用） | **只能在云控制台建，代码里写不出索引**。步骤见 `docs/cloud-deployment.md` 2.1 节：开发者工具或网页端 → 云开发 → 数据库 → `inventory_items` → 索引管理。开发、生产两套环境要各建一次 |
 | 4.1 搜索前缀锚定 | 正则改 `^keyword` + 建索引 `ownerId+inventoryStatus+searchName` | **改搜索语义**（包含 → 前缀匹配），需产品拍板；且索引表里还没这条，没索引改了也不生效 |
 | 4.6 方案 3 预热 | `ping` action + 5 分钟定时触发器 | `config.json` 的 triggers **只在首次创建时写入云端**，已存在的函数必须在控制台加触发器；且要评估预留实例成本 |
-| 3.6 方案 3 降生图分辨率 | `IMAGE_SIZE` 1024² → 512² | 列表已用 200px 缩略图，降分辨率只省存储/CDN，生图是 fire-and-forget 用户不感知；代价是详情页画质下降。**建议不做** |
+| 3.6 方案 3 降生图分辨率 | `IMAGE_SIZE` 1024² → 512² | **2026-09-13 已落地**。缩略图方案回滚后（fileID 不能拼参），这是唯一零依赖、能真正减小列表图片流量的手段。 |
 | 5.5 AI 限次持久化 | 内存 `Map` → 云数据库集合 | 多实例/冷启动会让 50 次/天的限额放大成 50×N。上限成本可控（0.001 元/次），但要在 AI 主链路上引入新集合依赖，需 try/catch 兜底。**建议等真出现刷量再做** |
 
 ---
@@ -372,7 +372,7 @@ for (let batch = 0; batch < MAX_BATCHES; batch += 1) {          // 20 批
 
 **位置**：
 
-- 生成端：`cloudfunctions/inventoryApi/image-cover.js:19` `const IMAGE_SIZE = '1024x1024'`
+- 生成端：`cloudfunctions/inventoryApi/image-cover.js` `const IMAGE_SIZE = '512x512'`（2026-09-13 前为 `1024x1024`）
 - 渲染端：`miniprogram/components/inventory-row/index.wxml:3` `<image class="item-card__image" src="{{coverSrc}}" mode="aspectFit" ... />`
 
 列表里的封面展示尺寸是卡片左侧的小方块（WXSS 中 `item-card__image` 的实际渲染尺寸远小于 1024px），却拉的是 1024×1024 的 JPEG。**首页 30 条 = 30 张 1024² 图同时下载**，估算 150-500 KB/张 → 单次首屏 5-15 MB 图片流量。
@@ -412,7 +412,11 @@ for (let batch = 0; batch < MAX_BATCHES; batch += 1) {          // 20 批
    批量 `getTempFileURL` 换 URL 并拼参（注意临时 URL 有效期，需要缓存/刷新策略）；
    ③ 保留原 `coverFileId` 用于详情页大图。`coverFor` 比较逻辑（`inventory-row/index.ts`）用的是
    fileID，不受展示 URL 影响，这点原判断仍然成立。
-3. **降生图分辨率**：`IMAGE_SIZE` 改 `512x512`（封面在卡片上最多显示 ~200px，详情页也够）。生图耗时和费用都会下来（当前约 5.8s）。**这是当前唯一零依赖、能真正减小列表图片流量的手段。**
+3. **降生图分辨率 —— 2026-09-13 已落地**：`IMAGE_SIZE` 从 `1024x1024` 改为 `512x512`。
+   尺寸边界在云端逐个真实生图实测过：`256/320/384/448` **一律返回 HTTP 400**，只有标准档位被接受；
+   `512x512` 可用，并且**官方文档漏列了它**（文档只写 1024²/1280x720/720x1280/1280²）。
+   像素量降到 1/4，JPEG 约 30-80KB（原 150-500KB），对卡片实际需要的 ~165 物理像素有 3 倍余量。
+   **这是当前唯一零依赖、能真正减小列表图片流量的手段。**
 4. **详情页**（`pages/item-detail`）用原图，不要复用缩略图 —— 那里用户会放大看。
 
 ---
@@ -607,7 +611,7 @@ onShow() {
 | 语音录制每秒 setData | `quick-entry/index.ts:734` | `setInterval(() => setData({voiceSeconds}), 1000)`。影响很小（只在录音中），可保留。 |
 | `listActive` 是死代码 | `inventoryApi/index.js:177-227` | 4 次查询（3 count + 1 列表）的 legacy 实现，页面已改用 `listInventory`。**建议直接删**，减少云函数体积和误用风险。 |
 | AI 限次是实例内存态 | `quickEntryApi/ai-quota.js:9-18` | 注释里已承认：多实例/冷启动会让 50 次/天的限额失效。这是成本问题，不是性能问题，但会实打实花钱——换云数据库集合（文档已提，接口不变）。 |
-| 封面生图 1024² | `image-cover.js:19` | 见 3.6，和列表展示尺寸不匹配。 |
+| 封面生图 1024² | `image-cover.js` | 见 3.6，和列表展示尺寸不匹配。2026-09-13 已降到 512²（实测最小可用档位）。 |
 | 缺少前端耗时埋点 | `utils/analytics.ts` 只有 `reportAnalytics` | 云函数已打 `durationMs`（`:685`），前端没有。建议给首页首屏、列表翻页、保存流程各加一个 `Date.now()` 差值埋点，才能按第 6 节验证优化效果。 |
 
 ---
