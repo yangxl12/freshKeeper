@@ -1,102 +1,149 @@
-# 上线前手工操作清单
+# 上线前必做（只有你能操作）
 
-更新：2026-09-13。**这份清单只收录「代码和部署都替代不了、必须去后台点」的事项。**
-功能类验收见 `quick-entry-acceptance.md`，云环境搭建见 `cloud-deployment.md`。
+更新：2026-09-13。全部是后台手工项，代码和部署替代不了。
+功能验收见 `quick-entry-acceptance.md`，云环境搭建见 `cloud-deployment.md`。
 
----
-
-## A. 隐私合规（微信公众平台 →「用户隐私保护指引」）
-
-这是审核硬项，代码一条都代替不了。当前需要写入指引的内容共 **5 条**：
-
-| # | 声明内容 | 出处 |
-| --- | --- | --- |
-| A1 | 收集**昵称、头像**，用于个人资料展示 | `user-profile-plan.md` §10 |
-| A2 | 提供**删除 / 注销个人信息**的路径：本项目为「我的 → 账号与数据」 | `cloud-deployment.md` §3.0 |
-| A3 | **语音转写**：说明数据用途、腾讯云为第三方处理方、临时处理范围 | `cloud-deployment.md` §3.2 |
-| A4 | **日期照片识别**：相机 / 相册权限用途为「识别本次录入的日期」 | `cloud-deployment.md` §3.2 |
-| A5 | **用户输入的物品文字会发送至大模型（云开发内置混元）用于结构化解析**；文字和语音都走这条链路 | `cloud-deployment.md` §3.3、`quick-entry-acceptance.md` |
-
-配套代码开关（改代码，但受 A5 评审结果驱动）：
-
-- A5 审核通过前，`miniprogram/config/runtime.ts:QUICK_ENTRY_FEATURES.aiParse` 保持 `false`，
-  页面会静默退回确定性规则，不弹提示；通过后再置 `true`。
-- `app.json.permission` **不支持** `scope.record` / `scope.camera` 声明，
-  不要试图用无效配置代替后台隐私指引（`cloud-deployment.md` §3.2）。
-
-> 除隐私指引外，还需同步提交**审核材料**（第三方处理方说明），见 `quick-entry-acceptance.md` 第 2 条。
+先做 1–3，它们直接挡功能；4 以后是性能与合规。
 
 ---
 
-## B. 订阅消息模板（提醒功能的前提，现在是占位）
+## 1. 订阅消息模板 —— 不做，提醒功能发不出去
 
-代码里 `REMINDER_TEMPLATE_ID` 仍是 `TODO_REPLACE_WITH_REAL_TEMPLATE_ID`，提醒功能实际发不出去。
+1. 公众平台 → 功能 → 订阅消息 → 申请**一次性订阅**模板，字段选：物品名称、到期日、剩余天数、当前数量、备注。
+2. 记下**模板 ID** 和 5 个字段名（形如 `thing7`、`time2`）。
+3. 填 3 处，缺一处静默失效：
+   - `miniprogram/config/runtime.ts:15` → `REMINDER_TEMPLATE_ID`
+   - 云开发控制台 → 云函数 → `reminderApi` → 配置 → 环境变量 `REMINDER_TEMPLATE_ID`
+   - `cloudfunctions/dispatchReminders/template.js` → 字段映射改成实际字段名
+4. `dispatchReminders` 环境变量 `MINIPROGRAM_STATE`：开发 `developer` / 体验 `trial` / 正式 `formal`。
 
-1. 公众平台申请**一次性订阅消息模板**，拿到模板 ID 与字段名。
-2. 模板 ID 要填 **3 处**，缺一处就静默失效：
-   - `miniprogram/config/runtime.ts:15` 的 `REMINDER_TEMPLATE_ID`
-   - 云函数 `reminderApi` 环境变量 `REMINDER_TEMPLATE_ID`
-   - `cloudfunctions/dispatchReminders/template.js` 的字段映射
-3. `dispatchReminders` 环境变量按**实际审批结果**核对字段名：
+---
 
-   | 变量 | 当前假定值 |
+## 2. 云函数超时改 60 秒 —— 不改，快录必报错
+
+云开发控制台 → 云函数 → 配置 → 超时时间 → **60 秒**，逐个改：
+
+- `quickEntryApi`
+- `userApi`
+
+（新环境默认 3 秒，更新部署不会自动带上 `config.json` 里的值。）
+
+---
+
+## 3. 用户隐私保护指引 —— 审核项
+
+公众平台 → 设置 → 服务内容声明 → **用户隐私保护指引** → 编辑，补上这 5 条：
+
+1. 收集**昵称、头像** —— 用于个人资料展示。
+2. 提供删除/注销路径 —— 「我的 → 账号与数据」。
+3. **语音转写** —— 用途：识别本次录入内容；第三方处理方：腾讯云；不长期留存。
+4. **相机/相册** —— 用途：识别本次录入的日期。
+5. **文字/语音会发送至大模型（云开发内置混元）用于结构化解析**。
+
+代码联动：`miniprogram/config/runtime.ts` 的 `QUICK_ENTRY_FEATURES.aiParse` —— 审核通过前 `false`，通过后 `true`。
+
+---
+
+## 4. 数据库索引（11 条，开发、生产各建一次）
+
+云开发控制台 → 数据库 → 集合 → **索引管理** → 添加索引。
+规则：**字段顺序不能换，不要勾唯一**。
+
+`inventory_items`（9 条）：
+
+| # | 字段（顺序固定） |
+| --- | --- |
+| 1 | `ownerId` ASC, `inventoryStatus` ASC, `expiryDate` ASC, `createdAt` DESC |
+| 2 | `ownerId` ASC, `inventoryStatus` ASC, `category` ASC, `expiryDate` ASC, `createdAt` DESC |
+| 3 | `ownerId` ASC, `inventoryStatus` ASC, `storageLocation` ASC, `expiryDate` ASC, `createdAt` DESC |
+| 4 | `ownerId` ASC, `inventoryStatus` ASC, `category` ASC, `storageLocation` ASC, `expiryDate` ASC, `createdAt` DESC |
+| 5 | `ownerId` ASC, `inventoryStatus` ASC, `completedAt` DESC |
+| 6 | `ownerId` ASC, `inventoryStatus` ASC, `category` ASC, `completedAt` DESC |
+| 7 | `ownerId` ASC, `inventoryStatus` ASC, `updatedAt` DESC |
+| 8 | `ownerId` ASC, `inventoryStatus` ASC, `name` ASC |
+| 9 | `inventoryStatus` ASC, `purgeAfter` ASC |
+
+`reminder_jobs`（2 条）：
+
+| # | 字段 |
+| --- | --- |
+| 10 | `status` ASC, `remindDate` ASC |
+| 11 | `ownerId` ASC, `status` ASC |
+
+---
+
+## 5. 集合权限
+
+云开发控制台 → 数据库 → 集合 → 权限设置 → **所有用户不可读写**（只允许云函数访问）：
+
+`inventory_items`、`user_settings`、`reminder_jobs`、`users`
+
+---
+
+## 6. 云函数调用权限
+
+云开发控制台 → 云函数 → 配置 → 权限 → 改为**仅定时触发、禁止小程序端调用**：
+
+- `dispatchReminders`
+- `cleanupTrash`
+
+---
+
+## 7. 触发器时区
+
+确认两个定时触发器时区为 `Asia/Shanghai`：
+
+- `dispatchReminders` —— 每日 09:00
+- `cleanupTrash` —— 每日 03:30
+
+---
+
+## 8. 云存储规则
+
+云开发控制台 → 存储 → 权限设置：
+
+- 安全规则：仅创建者可读写（他人不可读）。
+- 为 `quick-entry/` 目录配**最短可用生命周期清理**。
+
+---
+
+## 9. 腾讯云识别服务（语音、拍日期）
+
+1. 腾讯云控制台开通「一句话识别」和「通用文字识别（高精度版）」，确认计费。
+2. 建一个只有 ASR/OCR 权限的子账号，拿 SecretId / SecretKey。
+3. 云开发控制台 → 云函数 → `quickEntryApi` → 环境变量：
+
+   | 变量 | 值 |
    | --- | --- |
-   | `REMINDER_ITEM_FIELD` | `thing7` |
-   | `REMINDER_DATE_FIELD` | `time2` |
-   | `REMINDER_REMAINING_DAYS_FIELD` | `number5` |
-   | `REMINDER_QUANTITY_FIELD` | `number4` |
-   | `REMINDER_NOTE_FIELD` | `thing3` |
+   | `QUICK_ENTRY_TENCENT_SECRET_ID` | 上一步的 SecretId |
+   | `QUICK_ENTRY_TENCENT_SECRET_KEY` | 上一步的 SecretKey |
+   | `QUICK_ENTRY_TENCENT_REGION` | 可选，默认 `ap-guangzhou` |
 
-4. 每个投放阶段还要改 `MINIPROGRAM_STATE`：开发 `developer` / 体验 `trial` / 正式 `formal`。
+密钥不要发聊天、不要提交仓库。
 
 ---
 
-## C. 腾讯云侧
+## 10. 小程序成长计划 + 云环境套餐（AI 解析的前提）
 
-- **开通识别服务**：一句话识别 + 通用文字识别（高精度版），确认计费；
-  给 `quickEntryApi` 配 `QUICK_ENTRY_TENCENT_SECRET_ID` / `QUICK_ENTRY_TENCENT_SECRET_KEY`。
-  密钥**不要**发到聊天、不要提交仓库。当前真实环境能力为 `voice: false`、`datePhoto: false`。
-- **小程序成长计划**（公众平台 → 行业能力 → 小程序成长计划）：报名即到账，无审核，
-  10 亿混元 Token + 10 万张生图，6 个月有效。一个小程序账号只能参加一次。
-- **确认云环境套餐等级**：「CloudBase 内置模型调用」在**免费体验版环境不支持**，需个人版。
-  如果 AI 解析一直降级，先查这一项。
+1. 公众平台 → 行业能力 → **小程序成长计划** → 报名（无审核，一个账号一次，10 亿混元 Token 有效期 6 个月）。
+2. 云开发控制台 → 环境 → 套餐：确认为**个人版**。免费体验版不支持内置模型调用，会导致 AI 一直静默降级。
 
 ---
 
-## D. 云开发控制台
+## 11. We 分析埋点登记
 
-- **数据库索引 11 条**：开发、生产**各建一次**。字段顺序不能换，**不要勾唯一**。
-  完整表见 `cloud-deployment.md` §2；操作步骤见 §2.1。
-  2026-09-13 实测当时只建了 1 条（`ownerId + inventoryStatus + name`），其余 10 条全缺。
-  > 索引没有 API，只能手点，这一点已反复确认过，别再找自动化路子。
-- **集合权限全部设为「无权限」**：`inventory_items` / `user_settings` / `reminder_jobs` / `users`，
-  数据只允许云函数访问。
-- **云函数超时改成 60 秒**：`quickEntryApi`、`userApi`。
-  `config.json` 的 `timeout` 只在**首次创建**时写入云端，更新部署不会重新应用，新环境默认只有 **3 秒**，
-  必报 `FUNCTIONS_TIME_LIMIT_EXCEEDED`。
-- **云函数调用权限**：`dispatchReminders` 和 `cleanupTrash` 禁止小程序端调用，只允许定时触发。
-- **触发器时区确认 `Asia/Shanghai`**：`dispatchReminders` 每日 09:00、`cleanupTrash` 每日 03:30。
-- **云存储安全规则**：本人可上传 / 删除自己的文件，禁止他人读取；
-  另给 `quick-entry/` 配最短可用生命周期清理，兜底断网、进程被杀、函数硬超时留下的孤立媒体。
+公众平台 → **We 分析** → 数据管理 → 上报管理：
+
+1. 属性管理 → 批量JSON创建 → 粘贴 `docs/analytics-properties-batch.json`（14 个属性）
+2. 元事件 → 批量JSON创建 → 粘贴 `docs/analytics-events-batch.json`（26 个事件）；
+   没有批量入口就逐个新增。**事件 ID 建完不可改**。
+
+不登记 = 上报被静默丢弃，不报错不留痕。
 
 ---
 
-## E. 微信后台其他
+## 12. 杂项
 
-- **AppID**：`project.config.json` 里的 `touristappid` 换成真实 AppID。
-- **We 分析埋点登记**：公众平台 → We 分析 → 数据管理 → 上报管理。
-  **先配置后上报**，没登记的事件和属性会被**静默丢弃**（不报错、无日志）。
-  - 属性管理 →「批量JSON创建」→ 粘贴 `docs/analytics-properties-batch.json`（14 个属性）
-  - 元事件 → 新增上报 26 个，参考 `docs/analytics-events-batch.json`（事件 ID 建完不可改）
-  - 完整定义见 `docs/analytics-events.md`
-- **ICP 备案**：小程序上架的前置条件（2023-09 起）。项目文档里没有记录过这项，
-  **需要你自己确认备案状态**。
-- **服务类目**：核对所选类目是否需要额外资质（`mvp-technical-design.md` §14 只提到「核对类目」，
-  未指定具体类目）。
-
----
-
-## 一句话优先级
-
-挡住功能可用的有三件：**B 订阅模板 ID（提醒发不出去）**、**D 云函数超时 60 秒（快录直接报错）**、
-**A 隐私指引（审核不过）**。索引只影响性能，不挡住上线。
+- `project.config.json` 的 `touristappid` → 换成真实 AppID。
+- **ICP 备案**：小程序上架前置条件，文档里从没记录过，去公众平台确认状态。
+- **服务类目**：确认所选类目不需要额外资质。
