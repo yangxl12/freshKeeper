@@ -49,8 +49,9 @@ Component({
 
   observers: {
     item(item: CardItem) {
-      // 封面身份仍然用原图 fileID 判断（coverThumb 只是它带图片处理参数派生的展示 URL），
-      // 这样换封面/封面就绪的回填逻辑不受缩略图影响。
+      // 封面身份用原图 fileID 判断：coverThumb 只是从它派生的展示地址
+      // （当前等于原图本身，见 domain/inventory.ts:coverThumbUrl 的说明），
+      // 这样换封面/封面就绪的回填逻辑不受展示层影响。
       const cover = item && item.coverFileId ? String(item.coverFileId) : ''
       const src = item && item.coverThumb ? String(item.coverThumb) : cover
       if (cover !== this.data.coverFor) {

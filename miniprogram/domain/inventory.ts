@@ -55,15 +55,20 @@ export function canLoadMoreItems(loadedCount: number): boolean {
   return loadedCount < MAX_LIST_ITEMS
 }
 
-// 列表卡片的封面显示尺寸只有一个小方块（约 200px 以内），却在拉 1024² 原图。
-// 云存储的图片处理参数把封面按需转成小尺寸 webp，单张从 150-500KB 降到 10KB 量级。
-const COVER_THUMB_QUERY = '?imageView2/2/w/200/h/200/format/webp/q/80'
+// 【2026-09-13 回滚】曾经在 fileID 后拼 `?imageView2/2/w/200/h/200/format/webp/q/80` 做缩略图，
+// 实测这条路走不通：cloud:// 是文件标识不是 URL，拼接任何查询参数（imageView2 / imageMogr2 都试过）
+// 都会被当成文件路径的一部分，getImageInfo / <image> 一律报 `file not found`，
+// 卡片 binderror 后回退占位图 —— 用户看到的就是「加了物品，首页卡片没图」。
+// 官方口径：fileID 本身不支持图片处理，必须先用 wx.cloud.getTempFileURL 换成 https URL
+// 再拼参数，且需要云存储开通「图像处理」扩展（当前环境未开通）。
+// 所以列表暂时直接用原 fileID（详情页本来就是原图）。将来要恢复缩略图只改这一个函数：
+// 先转 https URL，再拼 ?imageView2/2/w/200/h/200/format/webp/q/80。
+const COVER_THUMB_QUERY = ''
 
-/** 由原图 fileID 派生列表用的缩略图 URL；详情页仍然用原图。 */
+/** 列表卡片封面地址。目前等同原图 fileID；为空时由卡片回退占位图。 */
 export function coverThumbUrl(coverFileId: string | null | undefined): string {
   const fileId = typeof coverFileId === 'string' ? coverFileId.trim() : ''
   if (!fileId) return ''
-  // 云存储 fileID 形如 cloud://env.bucket/path，拼接查询参数即可触发图片处理。
   return `${fileId}${COVER_THUMB_QUERY}`
 }
 

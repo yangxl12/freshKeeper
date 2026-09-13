@@ -13,7 +13,7 @@
 | # | 动作 | 状态 | 落点 |
 | --- | --- | --- | --- |
 | 1 | 列表封面加 `lazy-load` | ✅ | `components/inventory-row/index.wxml` |
-| 2 | 封面缩略图（`imageView2/2/w/200/format/webp/q/80`） | ✅ | `domain/inventory.ts:coverThumbUrl` → 卡片 `coverThumb` |
+| 2 | ~~封面缩略图（`imageView2/2/w/200/format/webp/q/80`）~~ **已回滚（2026-09-13）** | ❌ | 见 §3.6：fileID 拼参不可用，卡片封面全部加载失败 |
 | 3 | 删掉搜索里 `{ name: keyword }` 冗余分支 | ✅ | `inventoryApi/index.js:listInventory` |
 | 4 | 批量页改「先累积、按档下发」 | ✅ | `pages/batch-operation/index.ts`（每 100 条一次 setData） |
 | 5 | 首页/回收站加载上限 200 条 | ✅ | `domain/inventory.ts:MAX_LIST_ITEMS` + home/mine |
@@ -382,12 +382,37 @@ for (let batch = 0; batch < MAX_BATCHES; batch += 1) {          // 20 批
 **修复方案**：
 
 1. **立刻可做**：`<image lazy-load>` + 保留 `binderror` 兜底（已有 `handleCoverError`，`:93-96`）。
-2. **缩略图（收益最大）**：云存储支持在 fileID 后拼接图片处理参数：
+2. **缩略图（收益最大，但当前不可用 —— 2026-09-13 实测回滚）**：
+   ~~云存储支持在 fileID 后拼接图片处理参数~~
    ```
    coverFileId + '?imageView2/2/w/200/h/200/format/webp/q/80'
    ```
-   200px WebP 约 8-15 KB，**比原图小 20-40 倍**。需要在 `inventory-service` / `toInventoryCardItem` 里生成展示用的 `coverThumb` 字段（保留原 `coverFileId` 用于详情页大图）。注意带参数的 URL 不能直接当 `<image src>` 用于 `binderror` 重试判断的 key，`coverFor` 比较逻辑（`inventory-row/index.ts:52`）用的是 fileID，不受影响。
-3. **降生图分辨率**：`IMAGE_SIZE` 改 `512x512`（封面在卡片上最多显示 ~200px，详情页也够）。生图耗时和费用都会下来（当前约 5.8s）。
+
+   **这个前提是错的，已实测证伪**。`cloud://` 是文件标识不是 URL，后面拼接任何查询参数
+   （`imageView2`、`imageMogr2` 都试过）都会被当成文件路径的一部分，`getImageInfo` 和
+   `<image>` 一律返回 `file not found`，卡片 `binderror` → `handleCoverError()`
+   → 回退占位图，用户表现为「加了物品但首页卡片没图」。
+
+   实测记录（开发者工具自动化端口，环境 `cloud1-d0gkh66ce94b1be08`）：
+
+   | 请求 | 结果 |
+   | --- | --- |
+   | `getImageInfo(fileID)` | ✅ `ok`，1024×1024 jpeg |
+   | `getImageInfo(fileID + '?imageView2/2/w/200/h/200/format/webp/q/80')` | ❌ `file not found` |
+   | `getImageInfo(fileID + '?imageMogr2/thumbnail/200x200')` | ❌ `file not found` |
+
+   官方口径（微信开放社区）：**「必须改用 url 才支持图片处理，fileID 不支持」**。
+   即：先用 `wx.cloud.getTempFileURL` 把 fileID 换成 https URL，再在 URL 后拼处理参数，
+   **且需要云存储开通「图像处理」扩展**（本环境未开通）。
+
+   所以 `domain/inventory.ts:coverThumbUrl` 当前直接返回原 fileID（`COVER_THUMB_QUERY = ''`），
+   等于回到原图直出。要做缩略图请按上述两条前提走完整链路，别只改这一个常量。
+
+   将来恢复的完整改动面：① 云存储开通「图像处理」扩展 + 权限（所有人可读）；② 列表加载后
+   批量 `getTempFileURL` 换 URL 并拼参（注意临时 URL 有效期，需要缓存/刷新策略）；
+   ③ 保留原 `coverFileId` 用于详情页大图。`coverFor` 比较逻辑（`inventory-row/index.ts`）用的是
+   fileID，不受展示 URL 影响，这点原判断仍然成立。
+3. **降生图分辨率**：`IMAGE_SIZE` 改 `512x512`（封面在卡片上最多显示 ~200px，详情页也够）。生图耗时和费用都会下来（当前约 5.8s）。**这是当前唯一零依赖、能真正减小列表图片流量的手段。**
 4. **详情页**（`pages/item-detail`）用原图，不要复用缩略图 —— 那里用户会放大看。
 
 ---
@@ -596,7 +621,7 @@ onShow() {
 | # | 动作 | 文件 | 风险 |
 | --- | --- | --- | --- |
 | 1 | 列表封面加 `lazy-load` | `inventory-row/index.wxml:3` | 无 |
-| 2 | 封面用缩略图 URL（`imageView2/2/w/200/format/webp`） | `inventory-service` / `domain/inventory.ts` | 低（需确认云存储图片处理已开通） |
+| 2 | ~~封面用缩略图 URL（`imageView2/2/w/200/format/webp`）~~ **已回滚，见 §3.6** | `domain/inventory.ts` | ❌ 前提不成立：fileID 不支持拼参，会导致封面全部加载失败 |
 | 3 | 删掉搜索里 `{ name: keyword }` 冗余分支 | `inventoryApi/index.js:289` | 无 |
 | 4 | 批量页改「先累积、一次 setData」 | `batch-operation/index.ts:95-125` | 低 |
 | 5 | 首页/回收站加加载条数上限（200） | `home/index.ts`、`mine/index.ts` | 无 |
