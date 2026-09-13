@@ -37,11 +37,12 @@
 ## 模拟器验收
 - `cli.bat auto --project <项目> --auto-port 9420 --trust-project` 开自动化端口，然后**直连**
   `ws://127.0.0.1:9420` 发 NDJSON `{id,method,params}`（Node 22 内置 `WebSocket` 即可，无需装包）。
-  可用方法：`App.getPageStack` / `Page.getData` / `Page.setData` / `Page.callMethod` / `Page.getElements` /
-  `App.callWxMethod`（如 `getStorageSync`、`removeStorageSync`）/ `Page.getElement`。
-  **不可用**：`App.evaluate`、`App.callFunction`（参数形态对不上）、`Page.screenshot`（webview unimplemented）。
-- 页面能不能修好，就发 `Page.callMethod refresh true false` 再 `Page.getData` 看数据；
-  节点数用 `Page.getElements {selector}` 数（例：`.stat-card--skeleton`）。
+  可用方法：`App.getPageStack` / `Page.getData` / `Page.setData` / `Page.callMethod` /
+  `App.callWxMethod`（如 `getStorageSync`、`getImageInfo`、`removeStorageSync`）。
+  **不可用**：`App.evaluate`、`App.callFunction`（参数形态对不上）、`Page.screenshot`（webview unimplemented）、
+  `Page.getElements`/`Page.getElement`（本机报 `appservice ... unimplemented`，且不穿透自定义组件）。
+- 页面能不能修好，就发 `Page.callMethod refresh true false` 再 `Page.getData` 看数据。
+  **验图片/URL 用 `App.callWxMethod getImageInfo {src}`**：成功=能显示，`file not found`=显示不出来。
 - 复现故障态不用重启：`Page.callMethod invalidateOverview` + `Page.setData {overview:null}`。
 - 探针取 `res.result.data.xxx`；`save` 的 idempotencyKey 须标准 UUID v4。
 - 必须 TAP 手势的 API（shareFileMessage）只能真点，`evaluate` 不算点击。
@@ -64,7 +65,11 @@
   降级 AI → 自定义 → `rules-v3`；AI 超时 6000ms < 前端 8s `Promise.race`。
 - **封面生图**：model `HY-Image-3.0-Plus-4090-Tob-v1.0`，必须显式 `revise/enable_thinking=false`。
   落 `coverFileId` **不 bump version**；保存后 fire-and-forget；回填走 `onItemCoverReady()` 广播。
-  列表用 `coverThumbUrl()` 缩略图，但 `inventory-row` 的 observer **判据仍是原图 `coverFileId`**（`coverFor`）。详情页用原图。
+  ⚠️ **`cloud://` fileID 不支持拼图片处理参数**：`fileID + '?imageView2/...'` 实测 `file not found`
+  → `<image>` onError 回退占位图（= 2026-09-13「首页封面消失」事故，466294a 回滚）。
+  列表与详情页现在都用原 fileID（`coverThumbUrl` 的 `COVER_THUMB_QUERY` 为空）。
+  真要做缩略图必须两条同时满足：`getTempFileURL` 转 https **且** 云存储开通「图像处理」扩展。
+  `inventory-row` 的 observer 判据始终是原图 `coverFileId`（`coverFor`），这点不变。
 - **列表**：`MAX_LIST_ITEMS=200` + `canLoadMoreItems()`。游标是**复合键**（`encodeKeyCursor`，payload `v:2`，
   键 `(expiryDate, createdAt)`，`createdAt` 走 `toIsoKey()`）；旧 offset 游标判 `INVALID_CURSOR`；
   `created_asc` 用 `gt`、其余用 `lt`。`listHistory`/`listTrash` 仍用老 offset 游标。
