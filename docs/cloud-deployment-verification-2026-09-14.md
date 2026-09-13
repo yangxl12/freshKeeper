@@ -2,7 +2,7 @@
 
 环境：`cloud1-d0gkh66ce94b1be08`
 
-代码提交：`337edec`（`index-ui`）
+代码提交：`1a29f27`（`index-ui`，含 `ai_usage_daily` 尚未创建时的注销兼容）
 
 ## 已完成
 
