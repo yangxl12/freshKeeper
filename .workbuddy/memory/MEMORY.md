@@ -22,8 +22,11 @@
 ## 云函数
 - `config.json` 的 timeout/envVariables/triggers **只在首次创建**时写云端，deploy 只更新代码
   → 建完必须去控制台改（新环境默认 **3s**；`quickEntryApi` / `userApi` 要 **60s**）。
-- CLI：`D:\微信web开发者工具\cli.bat cloud functions deploy --env cloud1-d0gkh66ce94b1be08 --names <fn> --project D:/my-project/freshKeeper [--remote-npm-install]`。
-  首建偶发 `Creating` 报错 → 等 45s 重跑。
+- CLI：`D:\微信web开发者工具\cli.bat cloud functions deploy --env cloud1-d0gkh66ce94b1be08
+  --names <fn> --project D:/my-project/freshKeeper`，**必须加 `--remote-npm-install`**。
+  不加会把本地残缺的 `node_modules`（2982 文件 / 3.2 MB，缺 `@cloudbase/node-sdk`）整包传上云端，
+  函数**每次调用都崩**，客户端只报统一的「服务暂时不可用」——2026-09-13 真踩过，别省。
+  加 `-r` 后是 12 文件 / 34 KB。报 `当前函数处于Updating状态` → 等 60~75s 重跑。
 - **改完云函数必须真的部署**：云端常年落后本地（`inventoryApi` 曾停在 1cec0b4 之前，
   导致首页概览字段压根没回传）。查漂移：`cli.bat cloud functions download --env <env> --name <fn>
   --path <临时目录> --project <项目>`，再和本地 diff / grep。

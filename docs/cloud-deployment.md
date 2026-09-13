@@ -82,6 +82,15 @@
 cli cloud functions deploy --env <环境ID> --names <函数名> --project <项目目录> --remote-npm-install
 ```
 
+**`--remote-npm-install` 不能省。** 省掉就会把本地 `cloudfunctions/<函数名>/node_modules` 整包传上云端
+（实测 `inventoryApi` 打包 2982 个文件 / 3.2 MB），而本机那份是**残缺的**：`wx-server-sdk` 依赖的
+`@cloudbase/node-sdk` 不在里面，本地 `node -e "require('./cloudfunctions/inventoryApi/index.js')"`
+会直接报 `Cannot find module '@cloudbase/node-sdk'`。传上去后函数**每次调用都崩**，客户端只能看到
+统一的「服务暂时不可用，请稍后重试」，从报错完全猜不到根因。带上 `-r` 只传 12 个文件 / 34 KB，
+依赖由云端按 `package.json` 安装，包小、跨平台也安全。
+
+同理，部署后如果函数报错，第一步先确认打包体量：`filesCount` 应该是十几个而不是上千。
+
 注意：CLI 部署**只更新代码**。`config.json` 的 `timeout` / `envVariables` 只在函数首次创建时写入云端，更新部署不会重新应用，改过这两项必须去云开发控制台（详见 3.3 节）。
 
 部署 `userApi` 后，应在“我的 → 提醒设置”中修改默认提醒天数并保存一次，确认云端只校验提醒天数；保存时会同时清除当前用户历史设置中的废弃默认存放位置字段。
