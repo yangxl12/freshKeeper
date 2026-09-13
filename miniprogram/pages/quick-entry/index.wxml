@@ -20,50 +20,23 @@
 
   <view wx:if="{{activeTab === 'quick'}}" class="quick-stage">
     <view class="quick-top">
-      <form wx:if="{{features.text || features.voice || features.datePhoto}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
+      <form wx:if="{{features.text}}" class="quick-input-card" bindsubmit="handleGenerateSubmit">
         <textarea class="quick-input" name="quickText" value="{{inputText}}" focus="{{quickInputFocused}}" maxlength="500" adjust-position="{{false}}" hold-keyboard="{{true}}" disable-default-padding="{{true}}" bindfocus="handleQuickInputFocus" bindkeyboardheightchange="handleQuickKeyboardHeightChange" bindblur="handleQuickInputBlur" placeholder="例如：牛奶2盒，3天后到期，放冰箱" placeholder-class="quick-input-placeholder" bindinput="handleQuickTextInput" />
         <view class="quick-input-tools">
           <view class="quick-input-tools__group">
             <button wx:if="{{features.recent}}" class="recent-entry-button" disabled="{{saving || recognitionState !== 'idle' || draftLimitReached}}" bindtap="openRecentEntry" hover-class="recent-entry-button--pressed">从最近录入添加</button>
-            <button wx:if="{{features.voice}}" class="tool-button {{voiceState === 'recording' ? 'tool-button--recording' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}" bindtap="toggleVoice" aria-label="{{voiceState === 'recording' ? '停止语音识别' : '开始语音识别'}}">
-              <view class="line-icon line-icon--microphone" aria-hidden="true"></view>
-            </button>
-            <button wx:if="{{features.datePhoto}}" class="tool-button {{photoStage !== 'idle' ? 'tool-button--active' : ''}}" disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}" bindtap="chooseDatePhoto" aria-label="{{photoStage !== 'idle' ? '收起拍日期' : '拍摄日期'}}">
-              <view class="line-icon line-icon--date-scan" aria-hidden="true"></view>
-            </button>
           </view>
           <button wx:if="{{features.text}}" class="quick-generate" disabled="{{saving || recognitionState !== 'idle'}}" form-type="submit" hover-class="pressable--pressed" aria-label="{{recognitionState === 'parsing' ? '正在生成' : '生成物品草稿'}}">
             <text class="quick-generate__label">{{recognitionState === 'parsing' ? '识别中…' : '识别生成'}}</text>
             <view class="{{recognitionState === 'parsing' ? 'quick-generate__loading' : 'quick-generate__arrow'}}" aria-hidden="true"></view>
           </button>
         </view>
-        <view wx:if="{{voiceState === 'recording'}}" class="quick-entry__notice">{{voiceSeconds}} / 30 秒 · {{voiceCancelling ? '松开取消录音' : '再次点击麦克风结束并转写'}}</view>
-        <text wx:if="{{features.voice && capabilities.voice}}" class="camera-help">麦克风仅用于识别本次录入内容，转写后可修改文字。</text>
         <text wx:if="{{draftLimitReached}}" class="feature-hint">已有 {{maxDrafts}} 条草稿，先加入库存或移除卡片再添加</text>
-        <text wx:for="{{unavailableHints}}" wx:key="*this" class="feature-hint">{{item}}</text>
       </form>
     </view>
 
     <scroll-view class="quick-body {{drafts.length ? 'quick-body--with-footer' : ''}}" scroll-y>
-      <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionState === 'transcribing' ? '正在转写语音…' : recognitionTip}}<button bindtap="cancelRecognition">取消本次识别</button></view>
-
-      <view wx:if="{{photoStage !== 'idle'}}" class="date-camera-panel">
-        <text class="section-heading__title">将包装上的日期喷码放入框内</text>
-        <text class="camera-help">避开反光、阴影和弯曲边缘，让日期尽量占满画面。</text>
-        <view wx:if="{{photoStage === 'camera' && !cameraError}}" class="camera-frame">
-          <camera class="date-camera" mode="normal" device-position="back" flash="off" binderror="cameraFailed" />
-          <cover-view class="camera-guide">对准生产日期、保质期或到期日</cover-view>
-        </view>
-        <image wx:if="{{photoStage === 'preview'}}" class="date-photo-preview" src="{{photoPreview}}" mode="aspectFit" />
-        <view class="quick-actions">
-          <button wx:if="{{photoStage === 'camera' && !cameraError}}" bindtap="takeDatePhoto">拍摄日期</button>
-          <button wx:if="{{cameraError}}" bindtap="openPermissionSettings">前往设置</button>
-          <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="recognizePhoto">{{inputError ? '重试本次识别' : '识别这张照片'}}</button>
-          <button wx:if="{{photoStage === 'preview'}}" disabled="{{recognitionState !== 'idle'}}" bindtap="retakePhoto">重拍</button>
-          <button disabled="{{recognitionState !== 'idle'}}" bindtap="chooseAlbum">从相册选择</button>
-        </view>
-        <button class="manual-button" bindtap="closePhoto">返回手动填写</button>
-      </view>
+      <view wx:if="{{recognitionState !== 'idle'}}" class="quick-entry__notice">{{recognitionTip}}<button bindtap="cancelRecognition">取消本次识别</button></view>
 
       <view wx:if="{{inputError}}" class="quick-entry__notice" role="alert">{{inputError}}</view>
 
@@ -122,9 +95,9 @@
         <view wx:if="{{saveSummary}}" class="quick-entry__notice">{{saveSummary}}</view>
       </view>
 
-      <view wx:if="{{!drafts.length && photoStage === 'idle' && recognitionState === 'idle'}}" class="quick-entry__tip">
+      <view wx:if="{{!drafts.length && recognitionState === 'idle'}}" class="quick-entry__tip">
         <text class="quick-entry__tip-title">一句话快速录入</text>
-        <text class="quick-entry__tip-text">说出或输入物品和日期，例如「牛奶2盒，3天后到期，放冰箱」，识别后点右上角编辑就能修改。</text>
+        <text class="quick-entry__tip-text">输入物品和日期，例如「牛奶2盒，3天后到期，放冰箱」，识别后点右上角编辑就能修改。</text>
       </view>
     </scroll-view>
   </view>
@@ -145,11 +118,9 @@
       <view class="draft-editor__head">
         <view class="draft-editor__handle" aria-hidden="true"></view>
         <text class="draft-editor__title">编辑物品信息</text>
-        <button wx:if="{{features.datePhoto && capabilities.datePhoto}}" class="draft-editor__camera" disabled="{{saving}}" bindtap="chooseDraftPhoto" aria-label="拍摄日期"><view class="line-icon line-icon--date-scan" aria-hidden="true"></view></button>
         <button class="draft-editor__close" bindtap="requestCloseDraftEditor" aria-label="退出编辑">×</button>
       </view>
       <scroll-view class="draft-editor__body" scroll-y>
-        <image wx:if="{{editingEvidence}}" class="date-photo-preview" src="{{editingEvidence}}" mode="aspectFit" />
         <item-form-sheet id="draftForm" purpose="draft" bind:draftsubmit="handleDraftFormSubmit" />
       </scroll-view>
       <view class="draft-editor__foot">

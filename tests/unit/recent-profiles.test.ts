@@ -155,7 +155,7 @@ describe('readRecentProfilesOnce 单次查询', () => {
 
     // 就一次查询，而不是双状态翻页的 2 × N 次。
     expect(fetchTop).toHaveBeenCalledTimes(1)
-    expect(fetchTop).toHaveBeenCalledWith(100)
+    expect(fetchTop).toHaveBeenCalledWith(200)
     // 同名去重保留 updatedAt 最新的那条（数量 2 而非 9）。
     expect(result.items).toHaveLength(2)
     expect(result.items[0]).toMatchObject({ name: '牛奶', quantity: 2 })

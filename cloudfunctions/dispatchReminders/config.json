@@ -4,7 +4,7 @@
     "openapi": ["subscribeMessage.send"]
   },
   "envVariables": {
-    "MINIPROGRAM_STATE": "developer"
+    "MINIPROGRAM_STATE": "formal"
   },
   "triggers": [
     {

@@ -33,7 +33,7 @@ function removedCount(result) {
  * `save` / `saveIdempotent` 不在这里：它们要保护「物品 + 提醒改期」以及幂等键，
  * 仍是单条低频写入，留在原地的开销可以接受。
  */
-function createWriteService({ db }) {
+function createWriteService({ db, deleteFile }) {
   assert(db, 'INTERNAL_ERROR', '数据库未初始化')
 
   async function readOwnedItem(ownerId, itemId) {
@@ -64,6 +64,17 @@ function createWriteService({ db }) {
       .remove()
     if (removedCount(result) !== 1) {
       throw new AppError('CONFLICT', '记录已更新，请刷新后重试')
+    }
+  }
+
+  async function removeUnreferencedCover(fileID) {
+    if (!fileID || typeof deleteFile !== 'function') return
+    try {
+      const references = await db.collection(ITEMS).where({ coverFileId: fileID }).limit(1).get()
+      if (references.data.length) return
+      await deleteFile({ fileList: [fileID] })
+    } catch (_error) {
+      console.warn(JSON.stringify({ action: 'coverCleanup', resultCode: 'FAILED' }))
     }
   }
 
@@ -129,6 +140,7 @@ function createWriteService({ db }) {
     )
     await removeOwnedItem(ownerId, itemId, lockOf(current, version))
     await cancelPendingReminder(ownerId, itemId, true)
+    await removeUnreferencedCover(current.coverFileId)
     return { deleted: true }
   }
 

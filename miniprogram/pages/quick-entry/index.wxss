@@ -184,38 +184,6 @@
   gap: 14rpx;
 }
 
-.tool-button {
-  display: flex;
-  box-sizing: border-box;
-  width: 68rpx;
-  height: 68rpx;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0;
-  border-radius: 50%;
-  background: #f3f6f4;
-  color: #527066;
-}
-
-.tool-button--recording {
-  background: #b84a3e;
-  color: #ffffff;
-  animation: recording-pulse 1200ms ease-in-out infinite;
-}
-
-.tool-button--active {
-  background: #dcece3;
-  color: #286d53;
-  box-shadow: 0 0 0 4rpx rgba(40, 109, 83, 0.1);
-}
-
-.tool-button[disabled] {
-  background: #f0f3f1;
-  color: #aab6b1;
-}
-
 .quick-generate {
   display: flex;
   box-sizing: border-box;
@@ -722,7 +690,6 @@
   font-weight: 650;
 }
 
-.draft-editor__camera,
 .draft-editor__close {
   position: absolute;
   top: 30rpx;
@@ -735,22 +702,6 @@
   padding: 0;
   border-radius: 50%;
   line-height: 1;
-}
-
-.draft-editor__camera {
-  left: 28rpx;
-  background: #eef4f0;
-  color: #32735b;
-}
-
-.draft-editor__camera .line-icon {
-  width: 30rpx;
-  height: 30rpx;
-}
-
-.draft-editor__camera[disabled] {
-  background: #f0f3f1;
-  color: #aab6b1;
 }
 
 .draft-editor__close {
@@ -817,89 +768,6 @@
 .draft-editor__button--pressed {
   opacity: 0.78;
 }
-.manual-button {
-  display: block;
-  min-height: 84rpx;
-  margin: 24rpx 0 0;
-  border: 2rpx solid #dce5e0;
-  border-radius: 14rpx;
-  background: #f7faf8;
-  color: #286d53;
-  font-size: 25rpx;
-  line-height: 80rpx;
-}
-
-.date-camera-panel {
-  margin: 24rpx 0;
-  padding: 24rpx;
-  border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 8rpx 26rpx rgba(40, 66, 56, 0.05);
-}
-
-.section-heading__title {
-  color: #354b42;
-  font-size: 28rpx;
-  font-weight: 650;
-}
-
-.camera-help {
-  display: block;
-  margin: 16rpx 0;
-  color: #64766e;
-  font-size: 24rpx;
-}
-
-.camera-frame {
-  position: relative;
-  overflow: hidden;
-  border: 4rpx solid #286d53;
-  border-radius: 16rpx;
-}
-
-.date-camera {
-  width: 100%;
-  height: 400rpx;
-}
-
-.camera-guide {
-  position: absolute;
-  right: 20rpx;
-  bottom: 20rpx;
-  left: 20rpx;
-  padding: 12rpx;
-  border-radius: 8rpx;
-  background: rgba(23, 59, 49, 0.88);
-  color: #ffffff;
-  font-size: 23rpx;
-  text-align: center;
-}
-
-.date-photo-preview {
-  display: block;
-  width: 100%;
-  height: 320rpx;
-  margin: 16rpx 0;
-  border-radius: 14rpx;
-  background: #f0f2f0;
-}
-
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14rpx;
-  margin-top: 18rpx;
-}
-
-.quick-actions button {
-  flex: 1;
-  border-radius: 12rpx;
-  background: #ffffff;
-  color: #286d53;
-  font-size: 24rpx;
-  line-height: 68rpx;
-}
-
 .line-icon {
   position: relative;
   display: inline-block;
@@ -974,54 +842,6 @@
   height: 7rpx;
   border-right: 2rpx solid currentColor;
   border-left: 2rpx solid currentColor;
-  content: "";
-}
-
-.line-icon--microphone::before {
-  position: absolute;
-  top: 2rpx;
-  left: 9rpx;
-  width: 14rpx;
-  height: 23rpx;
-  border: 3rpx solid currentColor;
-  border-radius: 12rpx;
-  content: "";
-}
-
-.line-icon--microphone::after {
-  position: absolute;
-  bottom: 3rpx;
-  left: 4rpx;
-  width: 24rpx;
-  height: 15rpx;
-  border: 3rpx solid currentColor;
-  border-top: 0;
-  border-radius: 0 0 18rpx 18rpx;
-  content: "";
-}
-
-.line-icon--date-scan {
-  border: 3rpx solid currentColor;
-  border-radius: 4rpx;
-}
-
-.line-icon--date-scan::before {
-  position: absolute;
-  top: 7rpx;
-  left: 4rpx;
-  width: 18rpx;
-  border-top: 3rpx solid currentColor;
-  content: "";
-}
-
-.line-icon--date-scan::after {
-  position: absolute;
-  right: -5rpx;
-  bottom: -5rpx;
-  width: 12rpx;
-  height: 12rpx;
-  border-right: 3rpx solid currentColor;
-  border-bottom: 3rpx solid currentColor;
   content: "";
 }
 
@@ -1107,23 +927,12 @@
   }
 }
 
-@keyframes recording-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(184, 74, 62, 0.35);
-  }
-  50% {
-    box-shadow: 0 0 0 12rpx rgba(184, 74, 62, 0);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .draft-card,
   .draft-editor__panel,
   .draft-editor__mask,
   .quick-footer,
   .quick-entry__tip,
-  .tool-button--recording,
   .quick-generate__loading {
     animation: none;
   }

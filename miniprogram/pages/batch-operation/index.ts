@@ -1,4 +1,4 @@
-import { CATEGORY_OPTIONS, INVENTORY_VIEW_STATUS_OPTIONS, toInventoryCardItem, type InventoryCardItem } from '../../domain/inventory'
+import { CATEGORY_OPTIONS, INVENTORY_VIEW_STATUS_OPTIONS, MAX_LIST_ITEMS, toInventoryCardItem, type InventoryCardItem } from '../../domain/inventory'
 import { getErrorMessage } from '../../services/cloud-client'
 import {
   batchCompleteItems,
@@ -111,7 +111,8 @@ Page({
               viewStatus: intent.viewStatus || (intent.source === 'home' ? 'expiring' : 'active_all'),
               cursor,
             })
-        collected.push(...result.items.map((item: import('../../types/inventory').InventoryItem) => ({
+        const remaining = Math.max(0, MAX_LIST_ITEMS - collected.length)
+        collected.push(...result.items.slice(0, remaining).map((item: import('../../types/inventory').InventoryItem) => ({
           ...toInventoryCardItem(item),
           selected: false,
         })))
@@ -124,9 +125,10 @@ Page({
             ...(intent.source === 'trash' ? { scopeLabel: trashScopeLabel(search, collected.length) } : {}),
           })
         }
-      } while (cursor)
+      } while (cursor && collected.length < MAX_LIST_ITEMS)
       this.setData({
         items: collected,
+        errorMessage: cursor ? `一次最多加载 ${MAX_LIST_ITEMS} 项，请缩小筛选范围后再批量操作` : '',
         ...(intent.source === 'trash' ? { scopeLabel: trashScopeLabel(search, collected.length) } : {}),
         loading: false,
       })

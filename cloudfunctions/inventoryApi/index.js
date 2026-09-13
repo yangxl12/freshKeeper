@@ -5,12 +5,8 @@ const cloud = require('wx-server-sdk')
 const { addDays, currentDateKey, getExpiryPresentation } = require('./date')
 const { AppError, assert, normalizeError } = require('./error')
 const {
-  getDecrementDecision,
-} = require('./rules')
-const {
   assertNoClientIdentity,
   validateBatchItems,
-  validateDecrementAmount,
   validateHistoryStatus,
   validateInventoryViewStatus,
   validateItemId,
@@ -19,6 +15,7 @@ const {
   validateOptionalCategory,
   validateOptionalStorage,
   validatePageSize,
+  validateQuantity,
   validateSaveInput,
   validateSearch,
   validateVersion,
@@ -26,7 +23,16 @@ const {
 const { PROFILE_STATUSES, readRecentProfilesOnce } = require('./recent')
 const { createWriteService } = require('./writes')
 const { fingerprint, stableItemId } = require('./idempotency')
-const { coverEnabled, createCoverService } = require('./image-cover')
+const { coverCloudPath, coverEnabled, createCoverService, extensionOf } = require('./image-cover')
+const { consumeCoverQuota } = require('./ai-quota')
+const {
+  decodeCompletedCursor,
+  decodeKeyCursor,
+  encodeCompletedCursor,
+  encodeKeyCursor,
+  querySignature,
+  toIsoKey,
+} = require('./cursor')
 
 // 懒加载 wx-server-sdk 的 ai/上传能力；单测注入假依赖时不会加载真 SDK。
 const generateCoverImage = createCoverService({})
@@ -62,7 +68,7 @@ const STATUS_LABELS = {
 
 // 状态流转类写操作（用完 / 删除 / 彻底删除 / 重新入库）已去事务化：
 // 改成「读一次 + 带 version 的条件更新」，批量时不再互相撞事务。详见 writes.js。
-const writes = createWriteService({ db })
+const writes = createWriteService({ db, deleteFile: (input) => cloud.deleteFile(input) })
 
 function shanghaiDateKey(value) {
   if (!value) return ''
@@ -120,61 +126,6 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function decodeCursor(value, expectedSignature = '') {
-  if (!value) return 0
-  try {
-    const payload = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
-    if (!Number.isInteger(payload.offset) || payload.offset < 0 || payload.offset > 10_000) {
-      throw new Error('invalid')
-    }
-    if (expectedSignature && payload.signature !== expectedSignature) throw new Error('invalid')
-    return payload.offset
-  } catch (_error) {
-    throw new AppError('INVALID_CURSOR', '分页位置已失效，请刷新后重试')
-  }
-}
-
-function encodeCursor(offset, signature = '') {
-  const payload = signature ? { offset, signature } : { offset }
-  return Buffer.from(JSON.stringify(payload)).toString('base64url')
-}
-
-// 复合游标：把上一页最后一条的排序键 (expiryDate, createdAt) 编进游标，
-// 下一页用「严格大于该键」的条件继续查 —— 深分页从 O(offset) 降到常数，
-// 也不再受 offset 10000 的硬上限约束（那是 skip 方案的遗留限制）。
-function decodeKeyCursor(value, expectedSignature = '') {
-  if (!value) return null
-  try {
-    const payload = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
-    if (payload.v !== 2 || typeof payload.expiryDate !== 'string' || typeof payload.createdAt !== 'string') {
-      throw new Error('invalid')
-    }
-    if (expectedSignature && payload.signature !== expectedSignature) throw new Error('invalid')
-    return { expiryDate: payload.expiryDate, createdAt: payload.createdAt }
-  } catch (_error) {
-    throw new AppError('INVALID_CURSOR', '分页位置已失效，请刷新后重试')
-  }
-}
-
-function encodeKeyCursor(after, sort, signature = '') {
-  return Buffer.from(JSON.stringify({ v: 2, ...after, sort, signature })).toString('base64url')
-}
-
-/** 时间字段统一转成 ISO 字符串，保证能编进游标且可比较。 */
-function toIsoKey(value) {
-  if (!value) return ''
-  const date = value instanceof Date ? value : new Date(value)
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
-}
-
-function querySignature(values) {
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify(values))
-    .digest('base64url')
-    .slice(0, 16)
-}
-
 async function getOwnedItem(ownerId, itemId) {
   const result = await db.collection(ITEMS).where({ _id: itemId, ownerId }).limit(1).get()
   if (!result.data.length) throw new AppError('NOT_FOUND', '物品不存在或已被删除')
@@ -192,6 +143,38 @@ async function getTransactionOwnedDoc(transaction, collectionName, ownerId, id) 
     .limit(1)
     .get()
   return result.data[0] || null
+}
+
+async function removeCoverFile(fileID) {
+  if (!fileID) return
+  try {
+    await cloud.deleteFile({ fileList: [fileID] })
+  } catch (_error) {
+    console.warn(JSON.stringify({ action: 'coverCleanup', resultCode: 'FAILED' }))
+  }
+}
+
+/**
+ * 上传与落库不是同一个原子操作。用一个很短的事务解决并发生图，并在落库失败、物品已删除
+ * 或另一请求抢先写入时回收刚上传的文件，避免从新版本开始继续制造孤儿封面。
+ */
+async function attachCover(ownerId, itemId, fileID) {
+  try {
+    const attachedFileID = await db.runTransaction(async (transaction) => {
+      const current = await getTransactionOwnedDoc(transaction, ITEMS, ownerId, itemId)
+      assert(current && current.inventoryStatus === 'active', 'INVALID_STATE', '该物品已不在库存中')
+      if (current.coverFileId) return current.coverFileId
+      await transaction.collection(ITEMS).doc(itemId).update({
+        data: { coverFileId: fileID, coverUpdatedAt: db.serverDate() },
+      })
+      return fileID
+    })
+    if (attachedFileID !== fileID) await removeCoverFile(fileID)
+    return attachedFileID
+  } catch (error) {
+    await removeCoverFile(fileID)
+    throw error
+  }
 }
 
 // 首页概览：原来 4 次 count（每次都要扫命中条件的全部记录）。
@@ -328,18 +311,21 @@ async function listInventory(ownerId, event) {
   if (after) {
     const createdBefore = { createdAt: command.lt(new Date(after.createdAt)) }
     const createdAfter = { createdAt: command.gt(new Date(after.createdAt)) }
+    const sameCreatedLaterId = { createdAt: new Date(after.createdAt), _id: command.gt(after.id) }
     let keyCondition
-    if (sort === 'created_asc') keyCondition = createdAfter
-    else if (sort === 'created_desc') keyCondition = createdBefore
+    if (sort === 'created_asc') keyCondition = command.or([createdAfter, sameCreatedLaterId])
+    else if (sort === 'created_desc') keyCondition = command.or([createdBefore, sameCreatedLaterId])
     else if (sort === 'expiry_desc') {
       keyCondition = command.or([
         { expiryDate: command.lt(after.expiryDate) },
         { expiryDate: after.expiryDate, ...createdBefore },
+        { expiryDate: after.expiryDate, ...sameCreatedLaterId },
       ])
     } else {
       keyCondition = command.or([
         { expiryDate: command.gt(after.expiryDate) },
         { expiryDate: after.expiryDate, ...createdBefore },
+        { expiryDate: after.expiryDate, ...sameCreatedLaterId },
       ])
     }
     where = command.and([where, keyCondition])
@@ -347,11 +333,12 @@ async function listInventory(ownerId, event) {
 
   let query = db.collection(ITEMS).where(where)
   if (sort === 'created_asc' || sort === 'created_desc') {
-    query = query.orderBy('createdAt', sort === 'created_asc' ? 'asc' : 'desc')
+    query = query.orderBy('createdAt', sort === 'created_asc' ? 'asc' : 'desc').orderBy('_id', 'asc')
   } else {
     query = query
       .orderBy('expiryDate', sort === 'expiry_desc' ? 'desc' : 'asc')
       .orderBy('createdAt', 'desc')
+      .orderBy('_id', 'asc')
   }
   const result = await query.limit(pageSize + 1).get()
   const hasMore = result.data.length > pageSize
@@ -365,7 +352,7 @@ async function listInventory(ownerId, event) {
     items: pageItems.map((item) => publicItem(item, today)),
     nextCursor: hasMore && last
       ? encodeKeyCursor(
-        { expiryDate: last.expiryDate || '', createdAt: toIsoKey(last.createdAt) },
+        { expiryDate: last.expiryDate || '', createdAt: toIsoKey(last.createdAt), id: last._id },
         sort,
         signature,
       )
@@ -484,18 +471,10 @@ async function saveIdempotent(ownerId, idempotencyKey, normalized) {
   }
 }
 
-async function decrement(ownerId, event) {
+async function setQuantity(ownerId, event) {
   const itemId = validateItemId(event.itemId)
   const version = validateVersion(event.version)
-  const amount = validateDecrementAmount(event.amount)
-  const item = await getOwnedItem(ownerId, itemId)
-  const decision = getDecrementDecision(item.inventoryStatus, item.quantity, amount)
-  assert(decision !== 'invalid_state', 'INVALID_ARGUMENT', '减少数量不能超过当前库存')
-  assert(item.version === version, 'CONFLICT', '记录已更新，请刷新后重试')
-  if (decision === 'requires_completion') {
-    throw new AppError('REQUIRES_COMPLETION_CONFIRM', '这是最后一件，请确认是否标记为已用完')
-  }
-
+  const quantity = validateQuantity(event.quantity)
   const result = await db
     .collection(ITEMS)
     .where({
@@ -503,11 +482,10 @@ async function decrement(ownerId, event) {
       ownerId,
       inventoryStatus: 'active',
       version,
-      quantity: item.quantity,
     })
     .update({
       data: {
-        quantity: command.inc(-amount),
+        quantity,
         version: command.inc(1),
         updatedAt: db.serverDate(),
       },
@@ -515,7 +493,7 @@ async function decrement(ownerId, event) {
   if (updatedCount(result) !== 1) {
     throw new AppError('CONFLICT', '记录已更新，请刷新后重试')
   }
-  return { quantity: item.quantity - amount, version: version + 1 }
+  return { quantity, version: version + 1 }
 }
 
 // 每批最多 20 条。每条 mutation 原来是 20 路并发事务，去事务化后（writes.js）改成
@@ -546,8 +524,9 @@ async function listHistory(ownerId, event) {
   const search = validateSearch(event.search)
   const status = validateHistoryStatus(event.status)
   const pageSize = validatePageSize(event.pageSize)
-  const offset = decodeCursor(event.cursor)
-  const where = {
+  const signature = querySignature({ search, status, pageSize, scope: 'history' })
+  const after = decodeCompletedCursor(event.cursor, signature)
+  let where = {
     ownerId,
     inventoryStatus: status === 'discarded'
       ? command.in(['deleted', 'discarded'])
@@ -556,18 +535,28 @@ async function listHistory(ownerId, event) {
   if (search) {
     where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
   }
+  if (after) {
+    where = command.and([
+      where,
+      command.or([
+        { completedAt: command.lt(new Date(after.completedAt)) },
+        { completedAt: new Date(after.completedAt), _id: command.gt(after.id) },
+      ]),
+    ])
+  }
 
   const result = await db
     .collection(ITEMS)
     .where(where)
     .orderBy('completedAt', 'desc')
-    .skip(offset)
+    .orderBy('_id', 'asc')
     .limit(pageSize + 1)
     .get()
   const hasMore = result.data.length > pageSize
+  const pageItems = result.data.slice(0, pageSize)
   return {
-    items: result.data.slice(0, pageSize).map((item) => publicItem(item, today)),
-    nextCursor: hasMore ? encodeCursor(offset + pageSize) : null,
+    items: pageItems.map((item) => publicItem(item, today)),
+    nextCursor: hasMore && pageItems.length ? encodeCompletedCursor(pageItems[pageItems.length - 1], signature) : null,
     serverToday: today,
   }
 }
@@ -577,24 +566,34 @@ async function listTrash(ownerId, event) {
   const search = validateSearch(event.search)
   const pageSize = validatePageSize(event.pageSize)
   const signature = querySignature({ search, pageSize, scope: 'trash' })
-  const offset = decodeCursor(event.cursor, signature)
-  const where = {
+  const after = decodeCompletedCursor(event.cursor, signature)
+  let where = {
     ownerId,
     inventoryStatus: command.in(['deleted', 'discarded']),
   }
   if (search) where.searchName = db.RegExp({ regexp: escapeRegExp(search), options: 'i' })
+  if (after) {
+    where = command.and([
+      where,
+      command.or([
+        { completedAt: command.lt(new Date(after.completedAt)) },
+        { completedAt: new Date(after.completedAt), _id: command.gt(after.id) },
+      ]),
+    ])
+  }
 
   const result = await db
     .collection(ITEMS)
     .where(where)
     .orderBy('completedAt', 'desc')
-    .skip(offset)
+    .orderBy('_id', 'asc')
     .limit(pageSize + 1)
     .get()
   const hasMore = result.data.length > pageSize
+  const pageItems = result.data.slice(0, pageSize)
   return {
-    items: result.data.slice(0, pageSize).map((item) => publicItem(item, today)),
-    nextCursor: hasMore ? encodeCursor(offset + pageSize, signature) : null,
+    items: pageItems.map((item) => publicItem(item, today)),
+    nextCursor: hasMore && pageItems.length ? encodeCompletedCursor(pageItems[pageItems.length - 1], signature) : null,
     serverToday: today,
   }
 }
@@ -604,6 +603,7 @@ async function generateCover(ownerId, event) {
   const itemId = validateItemId(event.itemId)
   assert(coverEnabled(), 'COVER_IMAGE_DISABLED', '封面生成未开启')
   const item = await getOwnedItem(ownerId, itemId)
+  assert(item.inventoryStatus === 'active', 'INVALID_STATE', '该物品已不在库存中')
   if (item.coverFileId) return { coverFileId: item.coverFileId, reused: 'self' }
 
   // 同名物品已有封面直接复用，省生图额度也不产生重复图。
@@ -613,17 +613,27 @@ async function generateCover(ownerId, event) {
     .get()
   const reusable = sameName.data.find((doc) => doc.coverFileId)
   if (reusable) {
-    await db.collection(ITEMS).doc(itemId).update({
-      data: { coverFileId: reusable.coverFileId, coverUpdatedAt: db.serverDate() },
+    const downloaded = await cloud.downloadFile({ fileID: reusable.coverFileId })
+    assert(downloaded?.fileContent?.length, 'IMAGE_COPY_FAILED', '封面复制失败，请稍后重试')
+    const copied = await cloud.uploadFile({
+      cloudPath: coverCloudPath(ownerId, itemId, extensionOf(reusable.coverFileId)),
+      fileContent: downloaded.fileContent,
     })
-    return { coverFileId: reusable.coverFileId, reused: 'same-name' }
+    assert(copied?.fileID, 'IMAGE_COPY_FAILED', '封面复制失败，请稍后重试')
+    const coverFileId = await attachCover(ownerId, itemId, copied.fileID)
+    return { coverFileId, reused: coverFileId === copied.fileID ? 'same-name-copy' : 'concurrent' }
   }
 
+  let quota
+  try {
+    quota = await consumeCoverQuota(db, ownerId, currentDateKey())
+  } catch (_error) {
+    throw new AppError('AI_QUOTA_UNAVAILABLE', '封面额度暂不可用，请稍后重试')
+  }
+  assert(quota.allowed, 'AI_QUOTA_EXCEEDED', '今天的封面生成额度已用完')
   const { fileID } = await generateCoverImage({ ownerId, itemId, name: item.name })
-  await db.collection(ITEMS).doc(itemId).update({
-    data: { coverFileId: fileID, coverUpdatedAt: db.serverDate() },
-  })
-  return { coverFileId: fileID, reused: false }
+  const coverFileId = await attachCover(ownerId, itemId, fileID)
+  return { coverFileId, reused: coverFileId === fileID ? false : 'concurrent' }
 }
 
 const handlers = {
@@ -633,7 +643,7 @@ const handlers = {
   get,
   save,
   generateCover,
-  decrement,
+  setQuantity,
   complete: (ownerId, event) => writes.transition(ownerId, event, 'used_up'),
   discard: writes.moveToTrash,
   delete: writes.moveToTrash,

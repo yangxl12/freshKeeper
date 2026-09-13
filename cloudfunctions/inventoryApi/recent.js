@@ -124,7 +124,7 @@ async function readRecentProfiles(fetchPage, limit = 100) {
  * 代价是把回收站物品也拉进来，不划算。
  */
 async function readRecentProfilesOnce(fetchTop, limit = 100) {
-  const rows = await fetchTop(limit)
+  const rows = await fetchTop(Math.min(limit * 2, 200))
   return { items: mergeRecentItems(rows || [], limit) }
 }
 

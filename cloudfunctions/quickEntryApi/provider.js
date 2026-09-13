@@ -1,21 +1,14 @@
 'use strict'
 
 const { assert, fail } = require('./validation')
-const tencent = require('./tencent-provider')
 
-function providerConfigured(kind) {
-  return Boolean(process.env[`QUICK_ENTRY_${kind}_ENDPOINT`] && process.env[`QUICK_ENTRY_${kind}_API_KEY`]) || (['STT', 'OCR'].includes(kind) && tencent.configured())
+function providerConfigured() {
+  return Boolean(process.env.QUICK_ENTRY_TEXT_ENDPOINT && process.env.QUICK_ENTRY_TEXT_API_KEY)
 }
 
-async function requestProvider(kind, payload) {
-  assert(providerConfigured(kind), 'AI_UNAVAILABLE', '识别服务暂未配置，请使用完整填写')
-  const endpoint = process.env[`QUICK_ENTRY_${kind}_ENDPOINT`]
-  if (!endpoint && ['STT', 'OCR'].includes(kind)) {
-    try { return await tencent.request(kind, payload) } catch (error) {
-      if (['NO_SPEECH', 'INVALID_PROVIDER_RESPONSE'].includes(error.code)) throw error
-      fail('AI_UNAVAILABLE', '识别服务暂时不可用，请重试或改用手动填写')
-    }
-  }
+async function requestProvider(_kind, payload) {
+  assert(providerConfigured(), 'AI_UNAVAILABLE', '识别服务暂未配置，请使用完整填写')
+  const endpoint = process.env.QUICK_ENTRY_TEXT_ENDPOINT
   assert(/^https:\/\//i.test(endpoint), 'AI_UNAVAILABLE', '识别服务地址配置不正确')
   const timeout = Math.min(30000, Math.max(1000, Number(process.env.QUICK_ENTRY_TIMEOUT_MS) || 8000))
   const controller = new AbortController()
@@ -24,11 +17,11 @@ async function requestProvider(kind, payload) {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env[`QUICK_ENTRY_${kind}_API_KEY`]}`,
+        Authorization: `Bearer ${process.env.QUICK_ENTRY_TEXT_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ...(process.env[`QUICK_ENTRY_${kind}_MODEL`] ? { model: process.env[`QUICK_ENTRY_${kind}_MODEL`] } : {}),
+        ...(process.env.QUICK_ENTRY_TEXT_MODEL ? { model: process.env.QUICK_ENTRY_TEXT_MODEL } : {}),
         ...payload,
       }),
       signal: controller.signal,

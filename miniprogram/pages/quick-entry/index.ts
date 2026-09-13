@@ -15,15 +15,11 @@ import {
   getQuickEntryCapabilities,
   listRecentProfiles,
   parseQuickText,
-  recognizeDatePhoto,
-  transcribeVoice,
-  uploadQuickEntryMedia,
-  removeMedia,
 } from '../../services/quick-entry-service'
 import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
 import { resolveReminderTime } from '../../domain/reminder-time'
 import { getSettings } from '../../services/settings-service'
-import type { QuickEntryCapabilities, QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
+import type { QuickEntryDraft, QuickEntryDraftFields, QuickEntryParseResult, QuickEntrySource, RecentItemProfile } from '../../types/quick-entry'
 import { track } from '../../utils/analytics'
 import { markPendingHomeSort } from '../../utils/home-intent'
 import { QUICK_ENTRY_FEATURES } from '../../config/runtime'
@@ -35,44 +31,6 @@ const MAX_DRAFTS = 20
 const MAX_RECENT_PROFILES = 100
 /** AI 识别超过这个时长就换一句更耐等的文案，别让「AI 识别中…」僵在那儿。 */
 const AI_PATIENCE_MS = 3000
-let recorderManager: WechatMiniprogram.RecorderManager | null = null
-let recorderBound = false
-let activePage: any = null
-let cancelCurrentRecording = false
-let recordingOwner: any = null
-let silenceTimer: ReturnType<typeof setTimeout> | null = null
-
-function clearSilenceTimer() {
-  if (silenceTimer) clearTimeout(silenceTimer)
-  silenceTimer = null
-}
-
-function bindRecorder(page: any) {
-  activePage = page
-  if (recorderBound) return
-  recorderManager = wx.getRecorderManager()
-  recorderManager.onStop((result: { tempFilePath: string }) => {
-    const owner = recordingOwner
-    recordingOwner = null
-    if (!owner) return
-    owner.clearVoiceTimer()
-    clearSilenceTimer()
-    if (cancelCurrentRecording) {
-      cancelCurrentRecording = false
-      owner.setData({ voiceState: 'idle', voicePressing: false })
-      return
-    }
-    if (owner === activePage) void owner.handleRecordedFile(result.tempFilePath)
-  })
-  recorderManager.onError(() => {
-    clearSilenceTimer()
-    recordingOwner?.clearVoiceTimer()
-    recordingOwner = null
-    activePage?.setData({ voiceState: 'idle', voicePressing: false, inputError: '录音失败，请重试或改用文字输入' })
-  })
-  recorderBound = true
-}
-
 /** 识别不到结构化结果时的兜底名称，保证用户始终能看到一条可编辑草稿。 */
 function fallbackDraftName(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, 40)
@@ -81,8 +39,6 @@ function fallbackDraftName(text: string): string {
 const SOURCE_LABELS: Record<QuickEntrySource, string> = {
   recent: '最近记录',
   text: '文字识别',
-  voice: '语音识别',
-  date_photo: '拍照识别',
   manual: '手动填写',
 }
 
@@ -144,31 +100,9 @@ function aiMissingHint(draft: QuickEntryDraft): string {
   return `AI 没在原文里找到${labels.join('和')}，已按默认值填上，请核对`
 }
 
-/**
- * 云端没开语音/拍日期能力时按钮会置灰，用户点了没反应会以为坏了，所以给一行静态说明。
- * 不能用 toast：微信标题超过 7 个汉字会被截断，出现过被吐槽的残缺提示。
- */
-function unavailableHintsOf(capabilities: QuickEntryCapabilities, reachable: boolean): string[] {
-  const features = QUICK_ENTRY_FEATURES
-  if (!reachable) {
-    return features.voice || features.datePhoto
-      ? ['识别服务暂时不可用，可先手动输入或选择日期']
-      : []
-  }
-  const hints: string[] = []
-  if (features.voice && !capabilities.voice) hints.push('语音识别暂未接入，可先手动输入')
-  if (features.datePhoto && !capabilities.datePhoto) hints.push('拍照识别暂未接入，可先手动选择日期')
-  return hints
-}
-
 Page({
   data: {
     today: todayKey(),
-    voiceSeconds: 0,
-    voiceCancelling: false,
-    photoTargetId: '',
-    photoStage: 'idle' as 'idle' | 'camera' | 'preview',
-    cameraError: false,
     inputError: '',
     inputText: '',
     quickInputFocused: true,
@@ -179,14 +113,10 @@ Page({
     recentProfiles: [] as RecentItemProfile[],
     drafts: [] as QuickEntryDraft[],
     features: QUICK_ENTRY_FEATURES,
-    capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
-    unavailableHints: [] as string[],
+    capabilities: { text: true, aiText: false },
     defaultReminderLeadDays: 1,
-    recognitionState: 'idle' as 'idle' | 'parsing' | 'transcribing' | 'recognizing_photo',
+    recognitionState: 'idle' as 'idle' | 'parsing',
     recognitionTip: '正在识别…',
-    voiceState: 'idle' as 'idle' | 'authorizing' | 'recording' | 'uploading',
-    voicePressing: false,
-    photoPreview: '',
     saving: false,
     selectableCount: 0,
     pendingCount: 0,
@@ -195,24 +125,18 @@ Page({
     draftLimitReached: false,
     maxDrafts: MAX_DRAFTS,
     editingIndex: -1,
-    /** 编辑表单顶部回显的日期照片，只在草稿带照片证据时有值。 */
-    editingEvidence: '',
   },
 
   onLoad() {
     this.recognitionId = 0
     this.openedAt = Date.now()
-    bindRecorder(this)
     track('quick_entry_open')
     void this.preparePage()
   },
 
   onUnload() {
     track('quick_entry_session_end', { saved_count: this.savedCount, duration_ms: Date.now() - this.openedAt })
-    this.cancelVoice()
     this.cancelRecognition()
-    this.clearVoiceTimer()
-    if (activePage === this) activePage = null
   },
 
   recognitionId: 0,
@@ -221,21 +145,17 @@ Page({
   manualHandoff: false,
   exitOnShow: false,
   pendingRecognition: false,
-  voiceTimer: null as ReturnType<typeof setInterval> | null,
   recognitionTipTimer: null as ReturnType<typeof setTimeout> | null,
-  voiceBounds: null as { left: number; right: number; top: number; bottom: number } | null,
 
   onShow() {
     this.manualHandoff = false
     wx.setNavigationBarTitle({ title: '物品录入' })
     if (this.exitOnShow) { wx.disableAlertBeforeUnload?.(); wx.navigateBack(); return }
-    activePage = this
     this.setData({ today: todayKey() })
     this.syncUnloadPrompt()
   },
 
   onHide() {
-    this.cancelVoice()
     this.resetQuickKeyboardHeight()
   },
 
@@ -244,7 +164,7 @@ Page({
     this.recognitionId += 1
     this.pendingRecognition = false
     this.clearRecognitionTip()
-    this.setData({ recognitionState: 'idle', voiceState: 'idle' })
+    this.setData({ recognitionState: 'idle' })
   },
 
   clearRecognitionTip() {
@@ -271,10 +191,9 @@ Page({
     // 最近记录在本页只用来给识别结果补分类和存放位置；列表交互已经搬到 pages/recent-entry，
     // 所以这里拉失败就静默降级，不拿「最近物品不可用」去打扰正在录入的人。
     const recentProfiles = (recentResult.status === 'fulfilled' ? recentResult.value.items : []).slice(0, MAX_RECENT_PROFILES)
-    const capabilityReady = capabilityResult.status === 'fulfilled'
-    const capabilities = capabilityReady
+    const capabilities = capabilityResult.status === 'fulfilled'
       ? capabilityResult.value
-      : { text: false, voice: false, datePhoto: false, aiText: false }
+      : { text: false, aiText: false }
     const features = QUICK_ENTRY_FEATURES
     const defaultReminderLeadDays = settingsResult.status === 'fulfilled'
       ? settingsResult.value.defaultReminderLeadDays
@@ -284,12 +203,11 @@ Page({
       recentProfiles,
       features,
       capabilities: normalizedCapabilities,
-      unavailableHints: unavailableHintsOf(normalizedCapabilities, capabilityReady),
       defaultReminderLeadDays,
     })
     // 一路都没有可用的录入方式时直接落到完整录入，别让用户对着空白页发呆。
     if (recentResult.status === 'fulfilled' && !recentProfiles.length
-      && !features.text && !features.voice && !features.datePhoto) {
+      && !features.text) {
       this.openFullTab()
     }
   },
@@ -309,13 +227,11 @@ Page({
     if (this.data.saving && tab === 'full') return
     if (tab === 'full') this.openFullTab()
     else {
-      this.cancelVoice()
       this.setData({ activeTab: 'quick', quickInputFocused: true })
     }
   },
 
   openFullTab() {
-    this.cancelVoice()
     this.cancelRecognition()
     this.blurQuickInput()
     track('quick_entry_switch_tab', { tab: 'full' })
@@ -361,10 +277,9 @@ Page({
       this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先加入库存或删除已有卡片` })
       return
     }
-    this.cancelVoice()
     this.cancelRecognition()
     this.blurQuickInput()
-    this.setData({ photoStage: 'idle', photoPreview: '', photoTargetId: '', cameraError: false, inputError: '' })
+    this.setData({ inputError: '' })
     track('recent_entry_open', { slots })
     wx.navigateTo({
       url: `/pages/recent-entry/index?slots=${slots}`,
@@ -403,19 +318,14 @@ Page({
    * 表单里的改动先留在表单里，只有点「完成」才回写草稿（handleDraftFormSubmit）。
    */
   openDraftForm(index: number) {
-    const draft = this.data.drafts[index]
-    const evidence = draft?.evidence
-    this.setData({
-      editingIndex: index,
-      editingEvidence: evidence?.kind === 'photo' ? (evidence.localPath || '') : '',
-    }, () => {
+    this.setData({ editingIndex: index }, () => {
       const target = this.data.drafts[index]
       if (target) this.withForm('#draftForm', (form) => form.applyPrefill(draftToFormPrefill(target), ''))
     })
   },
 
   dismissDraftEditor() {
-    this.setData({ editingIndex: -1, editingEvidence: '' })
+    this.setData({ editingIndex: -1 })
   },
 
   closeDraftEditor() {
@@ -469,24 +379,6 @@ Page({
     track('draft_form_submit', { source: draft.source })
   },
 
-  /** 编辑表单里的「拍日期」：认结果会替换这一条草稿，未确定的改动要先问一句。 */
-  chooseDraftPhoto() {
-    const index = this.data.editingIndex
-    if (index < 0) return
-    if (this.isDraftFormDirty()) {
-      wx.showModal({
-        title: '先放弃当前修改？',
-        content: '拍照识别会替换这一条草稿，没点「完成」的改动不会保留。',
-        confirmText: '去拍照',
-        cancelText: '继续编辑',
-        confirmColor: '#b84a3e',
-        success: (result) => { if (result.confirm) this.startDatePhoto(index) },
-      })
-      return
-    }
-    this.startDatePhoto(index)
-  },
-
   /** 底部「继续添加」：先复位再聚焦，已聚焦时也能可靠拉起键盘。 */
   focusQuickInput() {
     this.setData({ quickInputFocused: false })
@@ -535,7 +427,7 @@ Page({
 
   syncUnloadPrompt() {
     if (this.manualHandoff) return
-    const shouldWarn = Boolean(this.data.inputText.trim() || this.data.photoPreview || this.data.drafts.some((draft) => draft.status !== 'saved'))
+    const shouldWarn = Boolean(this.data.inputText.trim() || this.data.drafts.some((draft) => draft.status !== 'saved'))
     if (shouldWarn) wx.enableAlertBeforeUnload?.({ message: '放弃本次录入？' })
     else wx.disableAlertBeforeUnload?.()
   },
@@ -569,7 +461,7 @@ Page({
   handleQuickTextInput(event: WechatMiniprogram.Input) {
     // 原文没有变化的重复事件不应让正在生成的结果作废。
     if (event.detail.value === this.data.inputText) return
-    if (this.data.recognitionState === 'parsing' || this.data.recognitionState === 'transcribing') this.cancelRecognition()
+    if (this.data.recognitionState === 'parsing') this.cancelRecognition()
     this.setData({ inputText: event.detail.value, inputError: '' }, () => this.syncUnloadPrompt())
   },
 
@@ -588,8 +480,8 @@ Page({
     return this.handleGenerateTap()
   },
 
-  async generateDrafts(sourceOrEvent: Extract<QuickEntrySource, 'text' | 'voice'> | WechatMiniprogram.BaseEvent = 'text') {
-    const source: Extract<QuickEntrySource, 'text' | 'voice'> = sourceOrEvent === 'voice' ? 'voice' : 'text'
+  async generateDrafts(_event?: WechatMiniprogram.BaseEvent | 'text') {
+    const source: Extract<QuickEntrySource, 'text'> = 'text'
     const text = this.data.inputText.trim()
     if (!text) {
       this.setData({ inputError: '请输入物品和日期' })
@@ -597,7 +489,7 @@ Page({
     }
     if (this.pendingRecognition || this.data.saving) return
     // 上一次识别异常中断留下状态时再点会完全没反应，这里先自愈。
-    if (this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') this.cancelRecognition()
+    if (this.data.recognitionState !== 'idle') this.cancelRecognition()
     // 先把输入法收起来，草稿卡片才不会被键盘挡住。
     this.blurQuickInput()
     const recognitionId = ++this.recognitionId
@@ -630,13 +522,13 @@ Page({
         wx.hideLoading?.()
         this.pendingRecognition = false
         this.clearRecognitionTip()
-        this.setData({ recognitionState: 'idle', voiceState: 'idle' })
+        this.setData({ recognitionState: 'idle' })
       }
     }
   },
 
   /** 云端优先，失败或结果为空时退到本地解析；仍识别不出时产出一条可手填的草稿。 */
-  async buildDraftsFromText(text: string, source: Extract<QuickEntrySource, 'text' | 'voice'>): Promise<{ drafts: QuickEntryDraft[]; notice: string }> {
+  async buildDraftsFromText(text: string, source: Extract<QuickEntrySource, 'text'>): Promise<{ drafts: QuickEntryDraft[]; notice: string }> {
     const { items, parserVersion } = await this.recognizeTextItems(text)
     if (!items.length) {
       const draft = createDraftFromParsed(
@@ -705,199 +597,6 @@ Page({
     } })
   },
 
-  async startVoice() {
-    // 未接入语音能力时静默返回，避免弹出体验很差的权限框或 toast。
-    if (!this.data.capabilities.voice) return
-    if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
-    this.setData({ voicePressing: true, voiceState: 'authorizing', inputError: '' })
-    try {
-      await new Promise<void>((resolve, reject) => wx.authorize({ scope: 'scope.record', success: () => resolve(), fail: reject }))
-      track('voice_permission_result', { result: 'granted' })
-      if (!this.data.voicePressing) {
-        this.setData({ voiceState: 'idle' })
-        return
-      }
-      cancelCurrentRecording = false
-      recordingOwner = this
-      this.createSelectorQuery().select('.voice-button').boundingClientRect(rect => { if (rect && !Array.isArray(rect)) this.voiceBounds = rect }).exec()
-      recorderManager?.start({ duration: 30000, sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, format: 'mp3' })
-      this.setData({ voiceState: 'recording', voiceSeconds: 0, voiceCancelling: false })
-      clearSilenceTimer()
-      silenceTimer = setTimeout(() => {
-        if (recordingOwner === this && this.data.voiceState === 'recording') {
-          this.setData({ inputError: '暂未听到语音，已自动停止，请靠近麦克风重试' })
-          recorderManager?.stop()
-        }
-      }, 5000)
-      this.clearVoiceTimer()
-      this.voiceTimer = setInterval(() => this.setData({ voiceSeconds: Math.min(30, this.data.voiceSeconds + 1) }), 1000)
-    } catch (_error) {
-      this.setData({ voiceState: 'idle', voicePressing: false, inputError: '需要麦克风权限才能录音，也可以继续使用文字或完整填写' })
-      track('voice_permission_result', { result: 'denied' })
-      wx.showModal({ title: '麦克风权限未开启', content: '麦克风只用于本次语音录入，可在设置中开启。', confirmText: '去设置', success: (result) => { if (result.confirm) wx.openSetting() } })
-    }
-  },
-
-  stopVoice() {
-    clearSilenceTimer()
-    this.setData({ voicePressing: false })
-    cancelCurrentRecording = this.data.voiceCancelling
-    if (this.data.voiceState === 'recording') recorderManager?.stop()
-  },
-
-  cancelVoice() {
-    clearSilenceTimer()
-    this.setData({ voicePressing: false })
-    if (this.data.voiceState === 'recording') {
-      cancelCurrentRecording = true
-      recorderManager?.stop()
-    }
-  },
-
-  toggleVoice() {
-    if (this.data.voiceState === 'recording') this.stopVoice()
-    else void this.startVoice()
-  },
-
-  moveVoice(event: WechatMiniprogram.TouchEvent) {
-    const touch = event.touches[0]
-    const rect = this.voiceBounds
-    if (!touch || !rect || this.data.voiceState !== 'recording') return
-    this.setData({ voiceCancelling: touch.clientX < rect.left || touch.clientX > rect.right || touch.clientY < rect.top || touch.clientY > rect.bottom })
-  },
-
-  clearVoiceTimer() {
-    if (this.voiceTimer) clearInterval(this.voiceTimer)
-    this.voiceTimer = null
-  },
-
-  async handleRecordedFile(localPath: string) {
-    const recognitionId = ++this.recognitionId
-    this.setData({ voiceState: 'uploading', recognitionState: 'transcribing', inputError: '' })
-    try {
-      const fileID = await uploadQuickEntryMedia(localPath, 'audio')
-      if (recognitionId !== this.recognitionId) { await removeMedia(fileID); return }
-      const result = await transcribeVoice(fileID, 'audio')
-      if (recognitionId !== this.recognitionId) return
-      this.setData({ inputText: result.text, voiceState: 'idle', recognitionState: 'idle' })
-      track('voice_transcribe_result', { result: 'success' })
-      await this.generateDrafts('voice')
-    } catch (error) {
-      if (recognitionId !== this.recognitionId) return
-      this.setData({ voiceState: 'idle', recognitionState: 'idle', inputError: getErrorMessage(error) })
-      track('voice_transcribe_result', { result: 'failed', failure_code: error instanceof CloudServiceError ? error.code : 'UNKNOWN' })
-    }
-  },
-
-  chooseDatePhoto(event?: WechatMiniprogram.BaseEvent) {
-    const rawIndex = event?.currentTarget?.dataset?.index
-    this.startDatePhoto(rawIndex == null ? null : Number(rawIndex))
-  },
-
-  /** index 为 null 表示从输入卡片发起（新建草稿），否则补全指定草稿的日期。 */
-  startDatePhoto(index: number | null) {
-    // 未接入拍日期能力时静默返回，按钮在页面上已经是置灰状态。
-    if (!this.data.capabilities.datePhoto) return
-    if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
-    if (this.data.photoStage !== 'idle') {
-      this.closePhoto()
-      return
-    }
-    const target = index == null ? undefined : this.data.drafts[index]
-    if (target && ['saved', 'saving', 'failed'].includes(target.status)) return
-    if (!target && this.data.drafts.length >= MAX_DRAFTS) {
-      this.setData({ inputError: `一次最多 ${MAX_DRAFTS} 条草稿，请先处理当前草稿` })
-      return
-    }
-    // 从编辑表单里发起拍日期时先收起表单，相机面板才可见。
-    this.setData({ editingIndex: -1, editingEvidence: '', photoTargetId: target?.draftId || '', photoStage: 'camera', photoPreview: '', cameraError: false, inputError: '' })
-  },
-
-  cameraFailed() {
-    this.setData({ cameraError: true, inputError: '相机不可用，可在设置中允许本次日期拍摄，或从相册选择、手动填写' })
-  },
-
-  openPermissionSettings() { wx.openSetting() },
-
-  takeDatePhoto() {
-    wx.createCameraContext().takePhoto({
-      quality: 'normal',
-      success: result => this.setData({ photoPreview: result.tempImagePath, photoStage: 'preview' }, () => this.syncUnloadPrompt()),
-      fail: () => this.cameraFailed(),
-    })
-  },
-
-  retakePhoto() { this.setData({ photoStage: 'camera', cameraError: false }) },
-
-  closePhoto() {
-    this.cancelRecognition()
-    this.setData({ photoStage: 'idle' })
-  },
-
-  async chooseAlbum() {
-    try {
-      const media = await new Promise<WechatMiniprogram.ChooseMediaSuccessCallbackResult>((resolve, reject) =>
-        wx.chooseMedia({ count: 1, mediaType: ['image'], sourceType: ['album'], success: resolve, fail: reject }))
-      const localPath = media.tempFiles[0]?.tempFilePath
-      if (localPath) this.setData({ photoPreview: localPath, photoStage: 'preview', inputError: '' }, () => this.syncUnloadPrompt())
-    } catch (error) {
-      if (!String((error as { errMsg?: string }).errMsg || '').includes('cancel')) {
-        this.setData({ inputError: '相册暂不可用，请检查权限，或继续手动填写日期' })
-      }
-    }
-  },
-
-  async recognizePhoto() {
-    const localPath = this.data.photoPreview
-    if (!localPath || this.data.saving || this.data.recognitionState !== 'idle') return
-    const recognitionId = ++this.recognitionId
-    const targetId = this.data.photoTargetId
-    this.setData({ recognitionState: 'recognizing_photo', inputError: '' })
-    wx.showLoading?.({ title: '正在识别日期…', mask: true })
-    try {
-      const fileID = await uploadQuickEntryMedia(localPath, 'image')
-      if (recognitionId !== this.recognitionId) { await removeMedia(fileID); return }
-      const result = await recognizeDatePhoto(fileID, 'image')
-      if (recognitionId !== this.recognitionId) return
-      wx.hideLoading?.()
-      if (result.unsupported === 'opened_period') {
-        this.setData({ recognitionState: 'idle', inputError: '当前版本暂不支持“开封后使用期”，请手动选择日期' })
-        return
-      }
-      const current = this.data.drafts.find(draft => draft.draftId === targetId)
-      if (targetId && (!current || ['saved', 'saving', 'failed'].includes(current.status))) {
-        this.setData({ recognitionState: 'idle', inputError: '原草稿已变化，请重新选择要补充日期的草稿' })
-        return
-      }
-      const draft = createDraftFromParsed({
-        ...(current ? {
-          name: current.fields.name, quantity: current.fields.quantity ?? undefined,
-          unit: current.fields.unit, category: current.fields.category || undefined,
-          storageLocation: current.fields.storageLocation,
-        } : {}),
-        shelfLifeValue: result.shelfLifeValue ?? current?.fields.shelfLifeValue ?? undefined,
-        shelfLifeUnit: result.shelfLifeUnit ?? current?.fields.shelfLifeUnit ?? undefined,
-        dateCandidates: result.candidates,
-      }, 'date_photo', current?.fields.reminderLeadDays ?? this.data.defaultReminderLeadDays,
-      undefined, { kind: 'photo', localPath, sourceText: result.sourceText })
-      if (current) {
-        draft.draftId = current.draftId
-        draft.saveKey = current.saveKey
-        draft.confirmationFields = [...new Set([...(draft.confirmationFields || []), ...(current.confirmationFields || []).filter(field => !field.startsWith('date:'))])]
-      }
-      const drafts = current ? this.data.drafts.map(item => item.draftId === targetId ? refreshDraftValidation(draft) : item) : [draft, ...this.data.drafts]
-      this.setData({ recognitionState: 'idle', photoStage: 'idle', photoPreview: '' })
-      this.commitDrafts(drafts)
-      track('date_photo_result', { result: 'success', candidate_count: result.candidates.length })
-    } catch (error) {
-      if (recognitionId !== this.recognitionId) return
-      this.setData({ recognitionState: 'idle', inputError: getErrorMessage(error) })
-      track('date_photo_result', { result: 'failed' })
-    } finally {
-      wx.hideLoading?.()
-    }
-  },
-
   continueManual(event?: WechatMiniprogram.BaseEvent) {
     if (this.data.saving) return
     this.cancelRecognition()
@@ -910,7 +609,7 @@ Page({
     track('quick_entry_manual', { source: draft?.source || 'manual' })
     this.manualHandoff = true
     wx.disableAlertBeforeUnload?.()
-    this.setData({ activeTab: 'full', fullMounted: true, inputText: '', photoPreview: '', photoStage: 'idle', inputError: '' }, () => {
+    this.setData({ activeTab: 'full', fullMounted: true, inputText: '', inputError: '' }, () => {
       this.withForm('#fullForm', (form) => form.applyPrefill(draft ? draftToManualFields(draft) : null, draft?.saveKey || ''))
       this.commitDrafts(this.data.drafts.filter(item => item.status === 'saved'))
       this.manualHandoff = false
@@ -937,7 +636,7 @@ Page({
   },
 
   async saveDrafts() {
-    if (this.data.saving || this.data.recognitionState !== 'idle' || this.data.voiceState !== 'idle') return
+    if (this.data.saving || this.data.recognitionState !== 'idle') return
     const targets = this.data.drafts.map((draft, index) => ({ draft, index })).filter(({ draft }) => draft.selected && !draft.issues.length && draft.status === 'savable')
     await this.persistDrafts(targets)
   },

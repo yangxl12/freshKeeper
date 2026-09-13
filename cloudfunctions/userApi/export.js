@@ -2,7 +2,7 @@
 
 const { shanghaiDateKey } = require('./date')
 
-const EXPORT_SCHEMA_VERSION = 1
+const EXPORT_SCHEMA_VERSION = 2
 
 /** 内部字段：主键、归属、模板 ID 都不属于用户的个人信息，导出时必须剔掉。 */
 const STRIPPED_KEYS = ['_id', 'ownerId', '_openid', 'templateId']
@@ -19,10 +19,13 @@ function strip(doc) {
 function reminderEntry(doc) {
   const entry = strip(doc)
   return {
-    remindAt: entry.remindAt ?? null,
+    itemId: entry.itemId ?? null,
+    remindDate: entry.remindDate ?? null,
+    acceptedAt: entry.acceptedAt ?? null,
+    sendAttemptedAt: entry.sendAttemptedAt ?? null,
+    sentAt: entry.sentAt ?? null,
     status: entry.status ?? null,
-    createdAt: entry.createdAt ?? null,
-    inventoryItemId: entry.inventoryItemId ?? null,
+    failureCode: entry.failureCode ?? null,
   }
 }
 

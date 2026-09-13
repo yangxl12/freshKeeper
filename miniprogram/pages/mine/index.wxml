@@ -26,12 +26,6 @@
       <text class="entry__value">删除后保留 30 天</text>
       <view class="entry__chevron" aria-hidden="true"></view>
     </button>
-    <button class="entry" data-entry="feedback" bindtap="openEntry" hover-class="entry--pressed">
-      <view class="entry__icon entry__icon--feedback" aria-hidden="true"></view>
-      <text class="entry__label">意见反馈</text>
-      <text class="entry__value">说说你的想法</text>
-      <view class="entry__chevron" aria-hidden="true"></view>
-    </button>
     <button class="entry" data-entry="help" bindtap="openEntry" hover-class="entry--pressed">
       <view class="entry__icon entry__icon--help" aria-hidden="true"></view>
       <text class="entry__label">使用帮助</text>
@@ -196,26 +190,6 @@
     </view>
   </view>
 
-  <!-- 意见反馈 -->
-  <view wx:if="{{activeModal === 'feedback'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
-    <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="意见反馈">
-      <text class="modal__title">意见反馈</text>
-      <text class="modal__subtitle">遇到的问题或想要的改进都可以告诉我们</text>
-      <textarea
-        class="feedback-input"
-        value="{{feedbackText}}"
-        maxlength="300"
-        placeholder="例如：希望支持批量修改位置"
-        placeholder-class="field-placeholder"
-        bindinput="handleFeedbackInput"
-      />
-      <view class="modal__actions">
-        <button class="secondary-button modal__button" bindtap="closeModal" hover-class="pressable--pressed">取消</button>
-        <button class="primary-button modal__button" bindtap="submitFeedback" hover-class="pressable--pressed">提交</button>
-      </view>
-    </view>
-  </view>
-
   <!-- 使用帮助 -->
   <view wx:if="{{activeModal === 'help'}}" class="modal-mask" bindtap="closeModal" catchtouchmove="noop">
     <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="使用帮助">
@@ -223,7 +197,7 @@
       <view class="help-list">
         <view class="help-item">
           <text class="help-item__q">怎么快速记一件物品？</text>
-          <text class="help-item__a">点击底部中间的「+」，说出或输入名称和到期时间即可，识别结果还能再编辑。</text>
+          <text class="help-item__a">点击底部中间的「+」，输入名称和到期时间即可，识别结果还能再编辑。</text>
         </view>
         <view class="help-item">
           <text class="help-item__q">搜索能查什么？</text>

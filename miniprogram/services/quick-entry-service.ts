@@ -1,5 +1,4 @@
 import type {
-  DatePhotoResult,
   QuickEntryCapabilities,
   QuickEntryParseResult,
   RecentItemProfile,
@@ -18,7 +17,7 @@ const LOCAL_TEXT_FALLBACK_CODES = new Set([
   'QUICK_ENTRY_TIMEOUT',
 ])
 
-const RECENT_FALLBACK_PAGE_SIZE = 100
+const RECENT_FALLBACK_PAGE_SIZE = 30
 
 /** 旧部署没有 listRecentProfiles 时，用现有库存列表本地归并，保证最近使用可用。 */
 async function listRecentProfilesFromInventory(limit: number): Promise<{ items: RecentItemProfile[] }> {
@@ -29,7 +28,7 @@ async function listRecentProfilesFromInventory(limit: number): Promise<{ items: 
     viewStatus: 'active_all',
     sort: 'created_desc',
     cursor: null,
-    pageSize: Math.min(RECENT_FALLBACK_PAGE_SIZE, limit),
+    pageSize: Math.min(RECENT_FALLBACK_PAGE_SIZE, limit * 2),
   })
   return { items: recentProfilesFromItems(result.items || [], limit) }
 }
@@ -55,37 +54,4 @@ export async function parseQuickText(text: string): Promise<QuickEntryParseResul
     if (!(error instanceof CloudServiceError) || !LOCAL_TEXT_FALLBACK_CODES.has(error.code)) throw error
     return parseQuickTextLocally(text)
   }
-}
-
-export async function transcribeVoice(fileID: string, mediaType: string) {
-  try { return await callCloud<{ text: string; serverToday: string }>('quickEntryApi', {
-    action: 'transcribeVoice',
-    fileID,
-    mediaType,
-  }) } finally { await removeMedia(fileID) }
-}
-
-export async function recognizeDatePhoto(fileID: string, mediaType: string) {
-  try { return await callCloud<DatePhotoResult>('quickEntryApi', {
-    action: 'recognizeDatePhoto',
-    fileID,
-    mediaType,
-  }) } finally { await removeMedia(fileID) }
-}
-
-
-export async function uploadQuickEntryMedia(localPath: string, kind: 'audio' | 'image'): Promise<string> {
-  const { cloudPath } = await callCloud<{ cloudPath: string }>('quickEntryApi', { action: 'createMediaUpload', mediaType: kind })
-  return new Promise((resolve, reject) => {
-    wx.cloud.uploadFile({
-      cloudPath,
-      filePath: localPath,
-      success: (result) => resolve(result.fileID),
-      fail: reject,
-    })
-  })
-}
-
-export async function removeMedia(fileID: string): Promise<void> {
-  try { await wx.cloud.deleteFile({ fileList: [fileID] }) } catch (_error) { /* Server also deletes in finally; storage lifecycle is the final fallback. */ }
 }

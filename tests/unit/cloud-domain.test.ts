@@ -12,7 +12,7 @@ const validation = require('../../cloudfunctions/inventoryApi/validation') as {
   validateSaveInput(input: Record<string, unknown>): Record<string, unknown>
   validateSearch(value: unknown): string
   validateInventoryViewStatus(value: unknown): string
-  validateDecrementAmount(value: unknown): number
+  validateQuantity(value: unknown): number
   validateBatchItems(value: unknown): Array<{ itemId: string; version: number }>
 }
 const reminderRules = require('../../cloudfunctions/reminderApi/rules') as {
@@ -115,11 +115,12 @@ describe('cloud inventory domain', () => {
     })).toMatchObject({
       storageLocation: '',
     })
-    expect(validation.validateSaveInput({
+    expect(() => validation.validateSaveInput({
       ...validSaveInput(),
-      storageLocation: `冰箱-${'很长的位置'.repeat(20)}`,
-    })).toMatchObject({
-      storageLocation: `冰箱-${'很长的位置'.repeat(20)}`,
+      storageLocation: '位'.repeat(81),
+    })).toThrow(/80/)
+    expect(validation.validateSaveInput({ ...validSaveInput(), storageLocation: '😀'.repeat(80) })).toMatchObject({
+      storageLocation: '😀'.repeat(80),
     })
     expect(() => validation.validateSaveInput({
       ...validSaveInput(),
@@ -127,10 +128,9 @@ describe('cloud inventory domain', () => {
     })).toThrow(/存放位置/)
   })
 
-  it('validates decrement amounts and bounded batch references', () => {
-    expect(validation.validateDecrementAmount(undefined)).toBe(1)
-    expect(validation.validateDecrementAmount(3)).toBe(3)
-    expect(() => validation.validateDecrementAmount(0)).toThrow(/整数/)
+  it('validates quantity updates and bounded batch references', () => {
+    expect(validation.validateQuantity(3)).toBe(3)
+    expect(() => validation.validateQuantity(0)).toThrow(/整数/)
     expect(validation.validateBatchItems([{ itemId: 'a', version: 1 }])).toEqual([
       { itemId: 'a', version: 1 },
     ])
@@ -182,22 +182,21 @@ describe('cloud inventory domain', () => {
 })
 
 describe('reminder states', () => {
-  it('maps the reminder template to 名称/到期日期/类型/位置/数量', () => {
-    expect(
-      reminderTemplate.buildReminderTemplateData({
+  it('maps the approved reminder template to 名称/到期日期/剩余天数/当前数量/备注', () => {
+    const data = reminderTemplate.buildReminderTemplateData({
         name: '鲜牛奶',
         expiryDate: '2026-09-09',
         quantity: 2,
         category: 'food',
         storageLocation: 'refrigerated',
-      }),
-    ).toEqual({
-      thing1: { value: '鲜牛奶' },
+      })
+    expect(data).toMatchObject({
+      thing7: { value: '鲜牛奶' },
       time2: { value: '2026年9月9日' },
-      thing3: { value: '食品' },
-      thing4: { value: '冷藏' },
-      number5: { value: '2' },
+      thing3: { value: '食品 · 冷藏' },
+      number4: { value: '2' },
     })
+    expect(data.number5.value).toMatch(/^\d+$/)
   })
 
   it('falls back to readable labels for missing category and free-text location', () => {
@@ -208,7 +207,7 @@ describe('reminder states', () => {
         quantity: 1,
         storageLocation: '床头柜',
       }),
-    ).toMatchObject({ thing3: { value: '其他' }, thing4: { value: '床头柜' } })
+    ).toMatchObject({ thing3: { value: '其他 · 床头柜' } })
     expect(
       reminderTemplate.buildReminderTemplateData({
         name: '牛奶',
@@ -217,7 +216,7 @@ describe('reminder states', () => {
         category: 'food',
         storageLocation: '',
       }),
-    ).toMatchObject({ thing4: { value: '未填写' } })
+    ).toMatchObject({ thing3: { value: '食品 · 未填写' } })
   })
 
   it('truncates long values to the 20-character thing limit', () => {
@@ -228,8 +227,8 @@ describe('reminder states', () => {
       category: 'food',
       storageLocation: '柜'.repeat(40),
     })
-    expect(item.thing1.value).toHaveLength(20)
-    expect(item.thing4.value).toHaveLength(20)
+    expect(item.thing7.value).toHaveLength(20)
+    expect(item.thing3.value).toHaveLength(20)
   })
 
   it('keeps sending, sent and unknown states terminal', () => {

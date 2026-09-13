@@ -36,34 +36,27 @@ function nearestMonthDay(today, month, day) {
   return null
 }
 
-function parseDateString(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-  const [year, month, day] = value.split('-').map(Number)
-  const normalized = dateKey(year, month, day)
-  return normalized === value ? normalized : null
-}
-
 function safeText(value, max, field) {
   if (value == null) return undefined
   assert(typeof value === 'string' && value.trim().length <= max, 'INVALID_PROVIDER_RESPONSE', `${field}格式不正确`)
   return value.trim()
 }
 
-function normalizeFacts(facts, source, today) {
+function normalizeFacts(facts, today) {
   assert(Array.isArray(facts), 'INVALID_PROVIDER_RESPONSE', '日期事实格式不正确')
   assert(facts.length <= 12, 'INVALID_PROVIDER_RESPONSE', '日期候选过多')
   return facts.filter((fact) => fact && typeof fact === 'object').map((fact) => {
     const rawText = safeText(fact.rawText || '', 120, '日期原文') || ''
     const role = DATE_ROLES.has(fact.label) ? fact.label : fact.kind === 'expiry' ? 'expiry' : fact.kind === 'production' ? 'production' : 'unknown'
     let value = null
-    if (source === 'text' && fact.kind === 'relative' && role !== 'unknown' && Number.isInteger(fact.offsetDays) && Math.abs(fact.offsetDays) <= 3650) {
+    if (fact.kind === 'relative' && role !== 'unknown' && Number.isInteger(fact.offsetDays) && Math.abs(fact.offsetDays) <= 3650) {
       value = addDays(today, fact.offsetDays)
     } else if (Number.isInteger(fact.year) && Number.isInteger(fact.month) && Number.isInteger(fact.day)) {
       value = dateKey(fact.year, fact.month, fact.day)
-    } else if (source === 'text' && role !== 'production' && !fact.year && Number.isInteger(fact.month) && Number.isInteger(fact.day)) {
+    } else if (role !== 'production' && !fact.year && Number.isInteger(fact.month) && Number.isInteger(fact.day)) {
       value = nearestMonthDay(today, fact.month, fact.day)
     }
-    return { date: value, role, rawText, complete: Boolean(value), source }
+    return { date: value, role, rawText, complete: Boolean(value), source: 'text' }
   })
 }
 
@@ -92,37 +85,14 @@ function normalizeTextResult(payload, today = currentDateKey()) {
       quantity,
       unit: safeText(item.unit, 8, '单位'),
       category,
-      storageLocation: safeText(item.storageLocation, 500, '存放位置'),
+      storageLocation: safeText(item.storageLocation, 80, '存放位置'),
       expiryInputMode: shelfFact ? 'shelf_life' : undefined,
       shelfLifeValue: shelfFact?.value,
       shelfLifeUnit: shelfFact?.unit,
-      dateCandidates: normalizeFacts(dateFacts.filter((fact) => fact?.kind !== 'shelf_life'), 'text', today),
+      dateCandidates: normalizeFacts(dateFacts.filter((fact) => fact?.kind !== 'shelf_life'), today),
     }
   })
   return { items, serverToday: today, parserVersion: safeText(body.parserVersion, 40, '解析版本') || 'provider-v1' }
 }
 
-function normalizePhotoResult(payload, today = currentDateKey()) {
-  const body = providerBody(payload)
-  assert(body && typeof body === 'object', 'INVALID_PROVIDER_RESPONSE', '日期识别结果格式不正确')
-  const unsupported = body.unsupported === 'opened_period' ? 'opened_period' : undefined
-  const shelfFact = Array.isArray(body.dateFacts) ? body.dateFacts.find(fact => fact?.kind === 'shelf_life') : undefined
-  const shelfLifeValue = shelfFact?.value ?? body.shelfLifeValue
-  const shelfLifeUnit = shelfFact?.unit ?? body.shelfLifeUnit
-  if (shelfLifeValue != null) assert(Number.isInteger(shelfLifeValue) && shelfLifeValue > 0 && SHELF_UNITS.has(shelfLifeUnit), 'INVALID_PROVIDER_RESPONSE', '保质期候选不正确')
-  let candidates
-  if (Array.isArray(body.candidates)) {
-    assert(body.candidates.length <= 12, 'INVALID_PROVIDER_RESPONSE', '日期候选过多')
-    candidates = body.candidates.map((candidate) => {
-      assert(candidate && DATE_ROLES.has(candidate.role), 'INVALID_PROVIDER_RESPONSE', '日期候选角色不正确')
-      const value = parseDateString(candidate.date)
-      return { date: value, role: candidate.role, rawText: safeText(candidate.rawText || '', 120, '日期原文') || '', complete: Boolean(value && candidate.complete !== false), source: 'photo' }
-    })
-  } else {
-    candidates = normalizeFacts(Array.isArray(body.dateFacts) ? body.dateFacts.filter(fact => fact?.kind !== 'shelf_life') : [], 'photo', today)
-  }
-  if (!candidates.length && !unsupported && !shelfLifeValue) fail('OCR_NO_DATE', '没有识别到完整日期，请重拍或手动选择')
-  return { candidates, unsupported, shelfLifeValue, shelfLifeUnit, sourceText: safeText(body.sourceText, 2000, '识别原文'), serverToday: today }
-}
-
-module.exports = { currentDateKey, normalizePhotoResult, normalizeTextResult }
+module.exports = { currentDateKey, normalizeTextResult }

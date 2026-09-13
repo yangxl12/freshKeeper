@@ -20,6 +20,7 @@ const MAX_BATCHES = 20
 // （where status='scheduled'，updatedCount 必须为 1），重复/并发处理只会返回 skipped，
 // 不会有两条路径同时给同一 job 发消息。
 const JOB_CONCURRENCY = 8
+const STALE_SENDING_MS = 15 * 60 * 1000
 const MILLIS_PER_DAY = 86_400_000
 class AppError extends Error {
   constructor(code, message) {
@@ -81,7 +82,7 @@ function todayKey() {
 
 function loadConfig() {
   const config = {
-    miniprogramState: process.env.MINIPROGRAM_STATE || 'developer',
+    miniprogramState: process.env.MINIPROGRAM_STATE || 'formal',
   }
   assert(
     ['developer', 'trial', 'formal'].includes(config.miniprogramState),
@@ -131,106 +132,144 @@ async function cancelJob(job, code, reason) {
     })
 }
 
+async function failScheduledJob(job, code) {
+  await db.collection(REMINDERS)
+    .where({ _id: job._id, ownerId: job.ownerId, status: 'scheduled' })
+    .update({
+      data: {
+        status: 'failed',
+        failureCode: truncate(code, 40),
+        failureReason: '派发前处理失败，可重新预约',
+        updatedAt: db.serverDate(),
+      },
+    })
+}
+
+function jobIdHash(job) {
+  return crypto.createHash('sha256').update(String(job?._id || '')).digest('hex').slice(0, 16)
+}
+
+function outcome(job, stage, result, claimed = false) {
+  return { jobIdHash: jobIdHash(job), stage, result, claimed }
+}
+
 function isUncertainError(error) {
   const text = `${error?.errMsg || ''} ${error?.message || ''}`.toLowerCase()
   return /timeout|timed out|network|econnreset|socket hang up/.test(text)
 }
 
 async function processJob(job, today, config) {
-  // 提醒只认当天 09:30 那一刻：过了就是「已错过」，不补发，否则用户会在几天后
-  // 突然收到一串「还有 -3 天到期」的骚扰消息。
-  if (job.remindDate !== today) {
-    await cancelJob(job, 'REMINDER_MISSED', '提醒时间已过，不再补发')
-    return 'cancelled'
-  }
-
-  const item = await findOwnedItem(job.ownerId, job.itemId)
-  const expectedRemindDate = item
-    ? addDays(item.expiryDate, -normalizedLeadDays(item.reminderLeadDays))
-    : null
-  const expiryOrdinal = item ? toOrdinal(item.expiryDate) : null
-  const todayOrdinal = toOrdinal(today)
-  if (
-    !item ||
-    item.inventoryStatus !== 'active' ||
-    expectedRemindDate !== job.remindDate ||
-    expiryOrdinal === null ||
-    expiryOrdinal < todayOrdinal
-  ) {
-    await cancelJob(job, 'ITEM_NOT_ELIGIBLE', '物品状态或提醒日期已变化')
-    return 'cancelled'
-  }
-
-  const claimResult = await db
-    .collection(REMINDERS)
-    .where({
-      _id: job._id,
-      ownerId: job.ownerId,
-      status: 'scheduled',
-      remindDate: job.remindDate,
-    })
-    .update({
-      data: {
-        status: 'sending',
-        updatedAt: db.serverDate(),
-      },
-    })
-  if (updatedCount(claimResult) !== 1) return 'skipped'
-
-  const sendItem = await findOwnedItem(job.ownerId, job.itemId)
-  const sendExpiryOrdinal = sendItem ? toOrdinal(sendItem.expiryDate) : null
-  const sendRemindDate = sendItem
-    ? addDays(sendItem.expiryDate, -normalizedLeadDays(sendItem.reminderLeadDays))
-    : null
-  if (
-    !sendItem ||
-    sendItem.inventoryStatus !== 'active' ||
-    sendRemindDate !== job.remindDate ||
-    sendExpiryOrdinal === null ||
-    sendExpiryOrdinal < todayOrdinal
-  ) {
-    await updateJob(job, 'cancelled', {
-      failureCode: 'ITEM_CHANGED_BEFORE_SEND',
-      failureReason: '发送前物品状态或提醒日期已变化',
-    })
-    return 'cancelled'
-  }
-
-  await db
-    .collection(REMINDERS)
-    .where({ _id: job._id, ownerId: job.ownerId, status: 'sending' })
-    .update({
-      data: {
-        sendAttemptedAt: db.serverDate(),
-        updatedAt: db.serverDate(),
-      },
-    })
-
+  let claimed = false
+  let stage = 'validate'
   try {
-    await cloud.openapi.subscribeMessage.send({
-      touser: job.ownerId,
-      templateId: job.templateId,
-      page: `pages/item-detail/index?id=${encodeURIComponent(job.itemId)}&source=subscribe`,
-      miniprogramState: config.miniprogramState,
-      lang: 'zh_CN',
-      data: buildReminderTemplateData(sendItem),
-    })
-    await updateJob(job, 'sent', {
-      sentAt: db.serverDate(),
-      failureCode: null,
-      failureReason: null,
-    })
-    return 'sent'
+    // 提醒只认当天 09:30；错过后不补发。
+    if (job.remindDate !== today) {
+      await cancelJob(job, 'REMINDER_MISSED', '提醒时间已过，不再补发')
+      return outcome(job, stage, 'cancelled')
+    }
+
+    const item = await findOwnedItem(job.ownerId, job.itemId)
+    const expectedRemindDate = item
+      ? addDays(item.expiryDate, -normalizedLeadDays(item.reminderLeadDays))
+      : null
+    const expiryOrdinal = item ? toOrdinal(item.expiryDate) : null
+    const todayOrdinal = toOrdinal(today)
+    if (!item || item.inventoryStatus !== 'active' || expectedRemindDate !== job.remindDate
+      || expiryOrdinal === null || expiryOrdinal < todayOrdinal) {
+      await cancelJob(job, 'ITEM_NOT_ELIGIBLE', '物品状态或提醒日期已变化')
+      return outcome(job, stage, 'cancelled')
+    }
+
+    stage = 'claim'
+    const claimResult = await db.collection(REMINDERS)
+      .where({ _id: job._id, ownerId: job.ownerId, status: 'scheduled', remindDate: job.remindDate })
+      .update({ data: { status: 'sending', updatedAt: db.serverDate() } })
+    if (updatedCount(claimResult) !== 1) return outcome(job, stage, 'skipped')
+    claimed = true
+
+    stage = 'revalidate'
+    const sendItem = await findOwnedItem(job.ownerId, job.itemId)
+    const sendExpiryOrdinal = sendItem ? toOrdinal(sendItem.expiryDate) : null
+    const sendRemindDate = sendItem
+      ? addDays(sendItem.expiryDate, -normalizedLeadDays(sendItem.reminderLeadDays))
+      : null
+    if (!sendItem || sendItem.inventoryStatus !== 'active' || sendRemindDate !== job.remindDate
+      || sendExpiryOrdinal === null || sendExpiryOrdinal < todayOrdinal) {
+      await updateJob(job, 'cancelled', {
+        failureCode: 'ITEM_CHANGED_BEFORE_SEND',
+        failureReason: '发送前物品状态或提醒日期已变化',
+      })
+      return outcome(job, stage, 'cancelled', true)
+    }
+
+    stage = 'attempt'
+    await db.collection(REMINDERS)
+      .where({ _id: job._id, ownerId: job.ownerId, status: 'sending' })
+      .update({ data: { sendAttemptedAt: db.serverDate(), updatedAt: db.serverDate() } })
+
+    stage = 'send'
+    try {
+      await cloud.openapi.subscribeMessage.send({
+        touser: job.ownerId,
+        templateId: job.templateId,
+        page: `pages/item-detail/index?id=${encodeURIComponent(job.itemId)}&source=subscribe`,
+        miniprogramState: config.miniprogramState,
+        lang: 'zh_CN',
+        data: buildReminderTemplateData(sendItem),
+      })
+    } catch (error) {
+      const uncertain = isUncertainError(error)
+      const status = uncertain ? 'unknown' : 'failed'
+      await updateJob(job, status, {
+        failureCode: truncate(error?.errCode || (uncertain ? 'RESULT_UNKNOWN' : 'OPENAPI_REJECTED'), 40),
+        failureReason: uncertain ? '发送结果不确定，不自动重试' : '微信平台明确返回发送失败',
+      })
+      return outcome(job, stage, status, true)
+    }
+
+    stage = 'finalize'
+    await updateJob(job, 'sent', { sentAt: db.serverDate(), failureCode: null, failureReason: null })
+    return outcome(job, stage, 'sent', true)
   } catch (error) {
-    const uncertain = isUncertainError(error)
-    const status = uncertain ? 'unknown' : 'failed'
-    const failureCode = truncate(error?.errCode || (uncertain ? 'RESULT_UNKNOWN' : 'OPENAPI_REJECTED'), 40)
-    await updateJob(job, status, {
-      failureCode,
-      failureReason: uncertain ? '发送结果不确定，不自动重试' : '微信平台明确返回发送失败',
-    })
-    return status
+    const failureCode = truncate(error?.code || 'DISPATCH_STAGE_FAILED', 40)
+    try {
+      if (claimed) {
+        await updateJob(job, 'unknown', {
+          failureCode,
+          failureReason: '领取任务后处理异常，发送结果不确定，不自动重试',
+        })
+      } else {
+        await failScheduledJob(job, failureCode)
+      }
+    } catch (_updateError) {
+      // 状态修复也失败时仍返回明确阶段；僵尸 sending 会由下次对账收敛为 unknown。
+    }
+    return outcome(job, stage, claimed ? 'unknown' : 'failed', claimed)
   }
+}
+
+async function reconcileStaleSending() {
+  const staleBefore = new Date(Date.now() - STALE_SENDING_MS)
+  const result = await db.collection(REMINDERS)
+    .where({ status: 'sending', updatedAt: command.lt(staleBefore) })
+    .orderBy('updatedAt', 'asc')
+    .limit(BATCH_SIZE)
+    .get()
+  let reconciled = 0
+  for (const job of result.data) {
+    const update = await db.collection(REMINDERS)
+      .where({ _id: job._id, ownerId: job.ownerId, status: 'sending', updatedAt: command.lt(staleBefore) })
+      .update({
+        data: {
+          status: 'unknown',
+          failureCode: 'STALE_SENDING',
+          failureReason: '发送过程超时，结果待确认，不自动重试',
+          updatedAt: db.serverDate(),
+        },
+      })
+    reconciled += updatedCount(update)
+  }
+  return reconciled
 }
 
 exports.main = async () => {
@@ -241,7 +280,8 @@ exports.main = async () => {
     assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发')
     const config = loadConfig()
     const today = todayKey()
-    const summary = { processed: 0, sent: 0, failed: 0, unknown: 0, cancelled: 0, skipped: 0 }
+    const summary = { due: 0, claimed: 0, sent: 0, failed: 0, unknown: 0, cancelled: 0, skipped: 0, staleSending: 0 }
+    summary.staleSending = await reconcileStaleSending()
 
     for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
       const result = await db
@@ -255,19 +295,11 @@ exports.main = async () => {
       // 内层并发（见 JOB_CONCURRENCY 说明）；受控分批，避免一次打太多开放接口。
       for (let index = 0; index < result.data.length; index += JOB_CONCURRENCY) {
         const slice = result.data.slice(index, index + JOB_CONCURRENCY)
-        const outcomes = await Promise.all(
-          slice.map(async (job) => {
-            try {
-              return await processJob(job, today, config)
-            } catch (_error) {
-              // 单条异常不能掀翻整批：留成 failed，剩下的继续发。
-              return 'failed'
-            }
-          }),
-        )
-        for (const outcome of outcomes) {
-          summary.processed += 1
-          summary[outcome] += 1
+        const outcomes = await Promise.all(slice.map((job) => processJob(job, today, config)))
+        for (const jobOutcome of outcomes) {
+          summary.due += 1
+          if (jobOutcome.claimed) summary.claimed += 1
+          summary[jobOutcome.result] += 1
         }
       }
       if (result.data.length < BATCH_SIZE) break

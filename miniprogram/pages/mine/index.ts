@@ -30,7 +30,6 @@ function reminderDayIndexOf(value: number): number {
 
 const PROFILE_STORAGE_KEY = 'mine_profile'
 const PROFILE_MIGRATED_KEY = 'profile_migrated'
-const FEEDBACK_STORAGE_KEY = 'mine_feedback'
 
 const DEFAULT_NICKNAME = '保质记用户'
 /** 资料读取节流：60s 内重复 onShow 不再请求云端。 */
@@ -41,7 +40,7 @@ interface Profile {
   avatar: string
 }
 
-type EntryKey = 'settings' | 'trash' | 'feedback' | 'help' | 'about' | 'account'
+type EntryKey = 'settings' | 'trash' | 'help' | 'about' | 'account'
 
 let trashSearchTimer: number | undefined
 let trashRequestSequence = 0
@@ -112,7 +111,6 @@ Page({
     trashNextCursor: null as string | null,
     /** 回收站到达 200 条上限后停止自动加载。 */
     trashLoadMoreLimited: false,
-    feedbackText: '',
     /** 注销中：锁住弹窗关闭与按钮，避免删一半被打断。 */
     deletingAccount: false,
   },
@@ -121,7 +119,7 @@ Page({
     this.syncTabBar()
     this.setData({ profile: readProfile() })
     // 资料与设置并发读：资料读失败静默降级，不该拖慢设置。
-    void Promise.all([this.loadSettings(), this.loadProfile()])
+    void Promise.all([this.loadSettings(), this.loadProfile(), this.refreshReminderAuthorization()])
     // 去「批量管理」彻底删完再回来时回收站还开着，必须重拉，否则残留已删除的物品。
     if (this.data.activeModal === 'trash') void this.loadTrash(true)
   },
@@ -148,9 +146,6 @@ Page({
     // 与 loadProfile 同一套节流：设置项在弹窗里改，改完会主动刷新，onShow 不必每次都打云函数。
     if (!force && settingsReadAt && Date.now() - settingsReadAt < PROFILE_READ_TTL_MS) return
     this.setData({ settingsLoading: true, settingsError: '' })
-    // 授权状态是本机系统状态，读失败不影响默认天数的展示；和云端读取并行，不串行等待。
-    const [authorization] = await Promise.all([readReminderAuthorization()])
-    this.setData({ notificationSummary: authorization.summary })
     try {
       const settings = await getSettings()
       settingsReadAt = Date.now()
@@ -162,6 +157,12 @@ Page({
     } catch (error) {
       this.setData({ settingsLoading: false, settingsError: getErrorMessage(error) })
     }
+  },
+
+  /** 微信设置是本机即时状态，每次 onShow 都单独刷新，不受云端设置 60 秒缓存影响。 */
+  async refreshReminderAuthorization() {
+    const authorization = await readReminderAuthorization()
+    this.setData({ notificationSummary: authorization.summary })
   },
 
   /** 系统级订阅状态只能跳到微信设置页改，小程序侧的任何控件都只是镜像。 */
@@ -441,27 +442,6 @@ Page({
 
   retryTrash() {
     void this.loadTrash(true)
-  },
-
-  /* 意见反馈 */
-  handleFeedbackInput(event: WechatMiniprogram.Input) {
-    this.setData({ feedbackText: event.detail.value })
-  },
-
-  submitFeedback() {
-    const content = this.data.feedbackText.trim()
-    if (!content) {
-      wx.showToast({ title: '请先写下你的建议', icon: 'none' })
-      return
-    }
-    try {
-      const history = (wx.getStorageSync(FEEDBACK_STORAGE_KEY) as string[]) || []
-      wx.setStorageSync(FEEDBACK_STORAGE_KEY, [...history, content].slice(-20))
-    } catch (error) {
-      // 本地保存失败不影响反馈提示
-    }
-    this.setData({ feedbackText: '', activeModal: '' })
-    wx.showToast({ title: '已收到，感谢反馈', icon: 'success' })
   },
 
   /* 数据导出（B2） */

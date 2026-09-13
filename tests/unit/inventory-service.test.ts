@@ -1,12 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  batchCompleteItems,
   batchDeleteItems,
+  batchPermanentlyDeleteItems,
+  completeItem,
   deleteItem,
   generateItemCover,
   listTrash,
   onItemCoverReady,
+  permanentlyDeleteItem,
+  restoreItem,
+  saveItem,
+  updateQuantity,
 } from '../../miniprogram/services/inventory-service'
+import { cachedOverviewUsable, clearOverviewCache, writeOverviewCache } from '../../miniprogram/services/overview-cache'
+import { shanghaiTodayKey } from '../../miniprogram/utils/shanghai-time'
+import type { InventoryItem, InventorySaveInput } from '../../miniprogram/types/inventory'
 
 const originalWx = globalThis.wx
 
@@ -21,9 +31,36 @@ function installCloudCall(
 }
 
 afterEach(() => {
+  clearOverviewCache()
   globalThis.wx = originalWx
   vi.restoreAllMocks()
 })
+
+const saveInput: InventorySaveInput = {
+  name: '牛奶',
+  quantity: 2,
+  unit: '盒',
+  category: 'food',
+  storageLocation: 'refrigerated',
+  expiryInputMode: 'direct',
+  productionDate: null,
+  shelfLifeValue: null,
+  shelfLifeUnit: null,
+  expiryDate: '2026-10-01',
+  reminderLeadDays: 1,
+}
+
+function primeOverview() {
+  writeOverviewCache({
+    activeTotal: 1,
+    expired: 0,
+    expiringWithin7Days: 0,
+    usedUpTotal: 0,
+    safe: 1,
+    serverToday: shanghaiTodayKey(),
+  })
+  expect(cachedOverviewUsable(shanghaiTodayKey())).toBe(true)
+}
 
 describe('inventory service compatibility', () => {
   it('uses the explicit move-to-trash contract instead of a legacy status transition', async () => {
@@ -92,6 +129,51 @@ describe('inventory service compatibility', () => {
       { action: 'listTrash', search: '', cursor: null, pageSize: 30 },
       { action: 'listHistory', search: '', status: 'discarded', cursor: null, pageSize: 30 },
     ])
+  })
+})
+
+describe('overview cache invalidation', () => {
+  it('invalidates every mutation that changes overview counts or membership', async () => {
+    installCloudCall((request) => {
+      const action = String(request.data.action)
+      const data = action.startsWith('batch')
+        ? { succeeded: ['item-1'], failed: [] }
+        : action === 'permanentDelete'
+          ? { deleted: true }
+          : { itemId: 'item-1', version: 2, expiryDate: '2026-10-01' }
+      request.success({ result: { ok: true, data, requestId: `req-${action}` } })
+    })
+
+    const calls = [
+      () => saveItem(saveInput),
+      () => completeItem('item-1', 1),
+      () => deleteItem('item-1', 1),
+      () => permanentlyDeleteItem('item-1', 1),
+      () => restoreItem({ ...saveInput, itemId: 'item-1', version: 1 }),
+      () => batchCompleteItems([{ itemId: 'item-1', version: 1 }]),
+      () => batchDeleteItems([{ itemId: 'item-1', version: 1 }]),
+      () => batchPermanentlyDeleteItems([{ itemId: 'item-1', version: 1 }]),
+    ]
+
+    for (const mutate of calls) {
+      primeOverview()
+      await mutate()
+      expect(cachedOverviewUsable(shanghaiTodayKey())).toBe(false)
+    }
+  })
+
+  it('keeps overview cache valid for quantity-only updates', async () => {
+    let requestData: Record<string, unknown> | undefined
+    installCloudCall((request) => {
+      requestData = request.data
+      request.success({ result: { ok: true, data: { quantity: 3, version: 2 }, requestId: 'req-quantity' } })
+    })
+    primeOverview()
+
+    await updateQuantity({ _id: 'item-1', version: 1 } as InventoryItem, 3)
+
+    expect(cachedOverviewUsable(shanghaiTodayKey())).toBe(true)
+    expect(requestData).toEqual({ action: 'setQuantity', itemId: 'item-1', version: 1, quantity: 3 })
   })
 })
 

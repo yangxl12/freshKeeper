@@ -99,7 +99,7 @@ function cleanItem(item, traceText) {
   const name = cleanText(item.name, 40)
   const quantity = cleanInteger(item.quantity, 1, 9999)
   const unit = cleanText(item.unit, 8)
-  const storageLocation = cleanText(item.storageLocation, 500)
+  const storageLocation = cleanText(item.storageLocation, 80)
 
   const clean = { name: null, quantity: null, unit: null, storageLocation: null }
   if (name) {

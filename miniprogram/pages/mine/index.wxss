@@ -156,25 +156,6 @@
   border-radius: 0 0 4rpx 4rpx;
 }
 
-.entry__icon--feedback::before {
-  top: 16rpx;
-  left: 15rpx;
-  box-sizing: border-box;
-  width: 24rpx;
-  height: 17rpx;
-  border: 3rpx solid #1f5d49;
-  border-radius: 4rpx;
-  background: transparent;
-}
-
-.entry__icon--feedback::after {
-  bottom: 14rpx;
-  left: 19rpx;
-  width: 14rpx;
-  height: 3rpx;
-  background: #1f5d49;
-}
-
 .entry__icon--help::before {
   top: 14rpx;
   left: 17rpx;
@@ -592,21 +573,7 @@
 
 .trash-foot__batch[disabled] { opacity: 0.42; }
 
-/* 反馈 / 帮助 / 关于 */
-.feedback-input {
-  box-sizing: border-box;
-  width: 100%;
-  height: 240rpx;
-  margin-top: 22rpx;
-  padding: 20rpx 22rpx;
-  border: 2rpx solid #dde5e0;
-  border-radius: 16rpx;
-  background: #fbfdfc;
-  color: #173b31;
-  font-size: 26rpx;
-  line-height: 1.6;
-}
-
+/* 帮助 / 关于 */
 .help-list { margin-top: 20rpx; }
 
 .help-item {

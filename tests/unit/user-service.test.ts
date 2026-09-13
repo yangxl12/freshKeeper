@@ -33,6 +33,9 @@ function stubWx(respond: (request: { data: Record<string, unknown> }) => void) {
     setStorageSync: (key: string, value: unknown) => {
       storage[key] = value
     },
+    removeStorageSync: (key: string) => {
+      delete storage[key]
+    },
   } as never
   return storage
 }
@@ -78,7 +81,7 @@ describe('user service contract', () => {
 
   it('deleteAccount 必须带确认词 DELETE', async () => {
     let requestData: Record<string, unknown> | undefined
-    stubWx((request) => {
+    const storage = stubWx((request) => {
       requestData = request.data
       ;(request as unknown as {
         success: (response: unknown) => void
@@ -90,9 +93,11 @@ describe('user service contract', () => {
         },
       })
     })
+    storage.home_overview_cache = { stale: true }
 
     await expect(deleteAccount()).resolves.toMatchObject({ deleted: { items: 3 } })
     expect(requestData).toEqual({ action: 'deleteAccount', data: { confirm: 'DELETE' } })
+    expect(storage.home_overview_cache).toBeUndefined()
   })
 })
 

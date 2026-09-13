@@ -75,6 +75,7 @@ function validateSaveInput(input) {
       ? input.storageLocation.trim()
       : null
   assert(storageLocation !== null, 'INVALID_ARGUMENT', '存放位置不正确')
+  assert(Array.from(storageLocation).length <= 80, 'INVALID_ARGUMENT', '存放位置不能超过 80 个字符')
   assert(INPUT_MODES.has(input.expiryInputMode), 'INVALID_ARGUMENT', '到期录入方式不正确')
   assert(Number.isInteger(input.reminderLeadDays) && input.reminderLeadDays >= 0 && input.reminderLeadDays <= 30, 'INVALID_ARGUMENT', '提前提醒需为 0～30 天的整数')
 
@@ -118,9 +119,8 @@ function validateVersion(value) {
   return value
 }
 
-function validateDecrementAmount(value) {
-  if (value === undefined || value === null) return 1
-  assert(Number.isInteger(value) && value >= 1 && value <= 9999, 'INVALID_ARGUMENT', '减少数量需为 1～9999 的整数')
+function validateQuantity(value) {
+  assert(Number.isInteger(value) && value >= 1 && value <= 9999, 'INVALID_ARGUMENT', '数量需为 1～9999 的整数')
   return value
 }
 
@@ -186,7 +186,7 @@ module.exports = {
   validateHistoryStatus,
   validateInventorySort,
   validateBatchItems,
-  validateDecrementAmount,
+  validateQuantity,
   validateInventoryViewStatus,
   validateItemId,
   validateIdempotencyKey,

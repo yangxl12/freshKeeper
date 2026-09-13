@@ -26,10 +26,10 @@ export interface ReminderAuthorization {
 }
 
 const AUTHORIZATION_SUMMARY: Record<ReminderAuthorizationState, string> = {
-  authorized: '已开启，到期前会自动推送',
-  'main-switch-off': '微信通知总开关已关闭，收不到提醒',
-  'template-rejected': '本小程序的订阅消息已关闭，收不到提醒',
-  unrequested: '首次保存物品时会申请一次授权',
+  authorized: '保存物品时会申请本次微信服务通知',
+  'main-switch-off': '微信服务通知总开关已关闭',
+  'template-rejected': '本小程序的服务通知已关闭',
+  unrequested: '保存物品时会申请本次微信服务通知',
 }
 
 /**

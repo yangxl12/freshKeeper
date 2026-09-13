@@ -2,36 +2,20 @@
 
 const crypto = require('node:crypto')
 const cloud = require('wx-server-sdk')
-const { currentDateKey, normalizePhotoResult, normalizeTextResult } = require('./date-facts')
+const { currentDateKey, normalizeTextResult } = require('./date-facts')
 const { providerConfigured, requestProvider } = require('./provider')
-const { assert, assertNoClientIdentity, validateMedia, validateText, mediaOwnerPrefix } = require('./validation')
+const { assert, assertNoClientIdentity, validateText } = require('./validation')
 const { parseText: parseLocally } = require('./quick-text')
 const { aiEnabled } = require('./ai-client')
 const { aiParseText } = require('./ai-parse')
 const { cacheKey, consumeAiQuota, readCachedResult, writeCachedResult } = require('./ai-quota')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 })
-
-async function removeTemporaryFile(fileID) {
-  try {
-    await cloud.deleteFile({ fileList: [fileID] })
-  } catch (_error) {
-    console.warn(JSON.stringify({ resultCode: 'MEDIA_CLEANUP_FAILED' }))
-  }
-}
-
-async function downloadMedia(fileID, maxBytes) {
-  const result = await cloud.downloadFile({ fileID })
-  const buffer = result.fileContent
-  assert(Buffer.isBuffer(buffer) && buffer.length > 0 && buffer.length <= maxBytes, 'MEDIA_INVALID', '临时媒体大小不正确')
-  return buffer
-}
+const db = cloud.database()
 
 async function getCapabilities() {
   return {
     text: true,
-    voice: providerConfigured('STT'),
-    datePhoto: providerConfigured('OCR'),
     aiText: aiEnabled(),
   }
 }
@@ -47,7 +31,13 @@ async function parseWithAi(text, serverToday) {
     console.info(JSON.stringify({ resultCode: 'AI_PARSE_CACHE_HIT' }))
     return cached
   }
-  const quota = consumeAiQuota(cloud.getWXContext().OPENID, serverToday)
+  let quota
+  try {
+    quota = await consumeAiQuota(db, cloud.getWXContext().OPENID, serverToday)
+  } catch (_error) {
+    console.warn(JSON.stringify({ resultCode: 'AI_QUOTA_UNAVAILABLE' }))
+    return null
+  }
   if (!quota.allowed) {
     console.warn(JSON.stringify({ resultCode: 'AI_QUOTA_EXCEEDED', used: quota.used, limit: quota.limit }))
     return null
@@ -81,36 +71,7 @@ async function parseText(event) {
   return normalizeTextResult(await requestProvider('TEXT', { text, serverToday }), serverToday)
 }
 
-async function transcribeVoice(event) {
-  const fileID = validateMedia(event, 'audio', cloud.getWXContext().OPENID)
-  try {
-    const buffer = await downloadMedia(fileID, 4 * 1024 * 1024)
-    const result = await requestProvider('STT', { mediaType: 'audio', mediaBase64: buffer.toString('base64') })
-    const body = result?.data && typeof result.data === 'object' ? result.data : result
-    return { text: validateText(body?.text), serverToday: currentDateKey() }
-  } finally {
-    await removeTemporaryFile(fileID)
-  }
-}
-
-async function recognizeDatePhoto(event) {
-  const fileID = validateMedia(event, 'image', cloud.getWXContext().OPENID)
-  try {
-    const buffer = await downloadMedia(fileID, 10 * 1024 * 1024)
-    const serverToday = currentDateKey()
-    return normalizePhotoResult(await requestProvider('OCR', { mediaType: 'image', mediaBase64: buffer.toString('base64'), serverToday }), serverToday)
-  } finally {
-    await removeTemporaryFile(fileID)
-  }
-}
-
-async function createMediaUpload(event) {
-  assert(['audio', 'image'].includes(event.mediaType), 'MEDIA_INVALID', '媒体类型不正确')
-  const extension = event.mediaType === 'audio' ? 'mp3' : 'jpg'
-  return { cloudPath: `${mediaOwnerPrefix(cloud.getWXContext().OPENID)}${event.mediaType}/${Date.now()}-${crypto.randomUUID()}.${extension}` }
-}
-
-const handlers = { getCapabilities, parseText, transcribeVoice, recognizeDatePhoto, createMediaUpload }
+const handlers = { getCapabilities, parseText }
 
 exports.main = async (event = {}) => {
   const requestId = crypto.randomUUID()

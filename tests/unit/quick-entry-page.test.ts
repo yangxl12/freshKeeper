@@ -5,19 +5,18 @@ import { applyFormValuesToDraft, createDraftFromParsed, createDraftFromRecent, p
 
 import { CloudServiceError } from '../../miniprogram/services/cloud-client'
 
-const { getQuickEntryCapabilitiesMock, getSettingsMock, listRecentProfilesMock, parseMock, photoMock, uploadMock, saveMock, requestReminderAuthorizationMock, armReminderMock } = vi.hoisted(() => ({
+const { getQuickEntryCapabilitiesMock, getSettingsMock, listRecentProfilesMock, parseMock, saveMock, requestReminderAuthorizationMock, armReminderMock } = vi.hoisted(() => ({
   getQuickEntryCapabilitiesMock: vi.fn(),
   getSettingsMock: vi.fn(),
   listRecentProfilesMock: vi.fn(),
-  parseMock: vi.fn(), photoMock: vi.fn(), uploadMock: vi.fn(), saveMock: vi.fn(),
+  parseMock: vi.fn(), saveMock: vi.fn(),
   requestReminderAuthorizationMock: vi.fn(), armReminderMock: vi.fn(),
 }))
 
 vi.mock('../../miniprogram/services/quick-entry-service', () => ({
   getQuickEntryCapabilities: getQuickEntryCapabilitiesMock,
   listRecentProfiles: listRecentProfilesMock,
-  parseQuickText: parseMock, recognizeDatePhoto: photoMock, uploadQuickEntryMedia: uploadMock,
-  removeMedia: vi.fn(),
+  parseQuickText: parseMock,
 }))
 vi.mock('../../miniprogram/services/inventory-service', () => ({ saveItem: saveMock }))
 vi.mock('../../miniprogram/services/reminder-service', () => ({
@@ -428,31 +427,6 @@ describe('quick entry page compatibility', () => {
     expect(page.data.drafts).toHaveLength(0)
     expect(page.data.inputText).toBe('牛奶明天到期')
   })
-  it('applies photo results to the chosen draft without replacing neighbours', async () => {
-    const page = pageInstance()
-    const first = completeDraft('牛奶')
-    const second = completeDraft('酸奶')
-    page.data.drafts = [first, second]
-    page.data.photoTargetId = second.draftId
-    page.data.photoPreview = '/tmp/date.jpg'
-    uploadMock.mockResolvedValueOnce('cloud://temporary')
-    photoMock.mockResolvedValueOnce({ candidates: [{ date: '2027-01-01', role: 'expiry', complete: true, rawText: 'EXP 2027-01-01', source: 'photo' }] })
-    await page.recognizePhoto()
-    expect(draftBody(page.data.drafts[0])).toEqual(first)
-    expect(page.data.drafts[1].draftId).toBe(second.draftId)
-    expect(page.data.drafts[1].fields.expiryDate).toBe('2027-01-01')
-  })
-  it('keeps the same photo preview when recognition fails', async () => {
-    const page = pageInstance()
-    page.data.photoPreview = '/tmp/date.jpg'
-    page.data.photoStage = 'preview'
-    uploadMock.mockResolvedValueOnce('cloud://temporary')
-    photoMock.mockRejectedValueOnce(new Error('识别超时'))
-    await page.recognizePhoto()
-    expect(page.data.photoPreview).toBe('/tmp/date.jpg')
-    expect(page.data.photoStage).toBe('preview')
-    expect(page.data.inputError).toBe('识别超时')
-  })
   it('retries only a failed record with its original payload and key', async () => {
     const page = pageInstance()
     page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
@@ -589,7 +563,6 @@ describe('quick entry page compatibility', () => {
     const page = pageInstance()
     page.data.inputText = '牛奶明天到期'
     page.data.recognitionState = 'parsing'
-    page.data.voiceState = 'recording'
     parseMock.mockResolvedValueOnce(parseQuickTextLocally(page.data.inputText, '2026-09-08'))
     await page.generateDrafts()
     expect(page.data.drafts).toHaveLength(1)
@@ -626,7 +599,7 @@ describe('quick entry page compatibility', () => {
   })
   it('keeps local text entry visible when remote recognition is not configured', async () => {
     listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
-    getQuickEntryCapabilitiesMock.mockResolvedValueOnce({ text: false, voice: false, datePhoto: false })
+    getQuickEntryCapabilitiesMock.mockResolvedValueOnce({ text: false })
     getSettingsMock.mockResolvedValueOnce({ defaultReminderLeadDays: 2 })
     const setData = vi.fn()
     const openManual = vi.fn()
@@ -638,27 +611,26 @@ describe('quick entry page compatibility', () => {
 
     expect(openManual).not.toHaveBeenCalled()
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
-      features: { recent: true, text: true, voice: false, datePhoto: false, aiParse: true },
-      capabilities: { text: true, voice: false, datePhoto: false, aiText: false },
+      features: { recent: true, text: true, aiParse: true },
+      capabilities: { text: true, aiText: false },
       defaultReminderLeadDays: 2,
     }))
   })
 
-  it('hides the voice and photo entries so no unavailable hints are shown', async () => {
+  it('keeps only text capabilities after the retired inputs are removed', async () => {
     listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
-    getQuickEntryCapabilitiesMock.mockResolvedValueOnce({ text: true, voice: false, datePhoto: false, aiText: true })
+    getQuickEntryCapabilitiesMock.mockResolvedValueOnce({ text: true, aiText: true })
     getSettingsMock.mockResolvedValueOnce({ defaultReminderLeadDays: 1 })
     const setData = vi.fn()
 
     await (quickEntryPage.preparePage as () => Promise<void>).call({ setData })
 
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
-      capabilities: { text: true, voice: false, datePhoto: false, aiText: true },
-      unavailableHints: [],
+      capabilities: { text: true, aiText: true },
     }))
   })
 
-  it('keeps the unavailable hints silent when the capability probe fails and the entries are hidden', async () => {
+  it('keeps local text available when the capability probe fails', async () => {
     listRecentProfilesMock.mockResolvedValueOnce({ items: [] })
     getQuickEntryCapabilitiesMock.mockRejectedValueOnce(new CloudServiceError('CLOUD_CALL_FAILED', '网络异常'))
     getSettingsMock.mockResolvedValueOnce({ defaultReminderLeadDays: 1 })
@@ -667,36 +639,15 @@ describe('quick entry page compatibility', () => {
     await (quickEntryPage.preparePage as () => Promise<void>).call({ setData })
 
     expect(setData).toHaveBeenCalledWith(expect.objectContaining({
-      unavailableHints: [],
+      capabilities: { text: true, aiText: false },
     }))
   })
 
-  it('keeps the voice and photo controls visibly disabled while the capability is missing', () => {
+  it('does not ship retired voice, camera, upload, or OCR entry points', () => {
     const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.wxml'), 'utf8')
-    // 按钮不能「看着能点、点了没反应」：置灰必须绑到云端能力，说明文字必须有一处渲染。
-    expect(template).toContain(`disabled="{{saving || recognitionState !== 'idle' || !capabilities.voice}}"`)
-    expect(template).toContain(`disabled="{{saving || recognitionState !== 'idle' || !capabilities.datePhoto}}"`)
-    expect(template).toContain('{{features.datePhoto && capabilities.datePhoto}}')
-    expect(template).toContain('wx:for="{{unavailableHints}}"')
-  })
-
-  it('keeps the voice entry mounted but silent when the service is not configured', async () => {
-    const page = pageInstance()
-    page.data.capabilities.voice = false
-    await page.startVoice()
-    expect(globalThis.wx.showToast).not.toHaveBeenCalled()
-    expect(page.data.voiceState).toBe('idle')
-    expect(page.data.voicePressing).toBe(false)
-    expect(globalThis.wx.reportAnalytics).not.toHaveBeenCalled()
-  })
-
-  it('keeps the date photo entry mounted but silent when the service is not configured', () => {
-    const page = pageInstance()
-    page.data.capabilities.datePhoto = false
-    page.chooseDatePhoto()
-    expect(globalThis.wx.showToast).not.toHaveBeenCalled()
-    expect(page.data.photoStage).toBe('idle')
-    expect(page.data.inputError).toBe('')
+    expect(template).not.toMatch(/<camera|chooseMedia|datePhoto|voiceState/)
+    const script = readFileSync(resolve(process.cwd(), 'miniprogram/pages/quick-entry/index.ts'), 'utf8')
+    expect(script).not.toMatch(/scope\.record|getRecorderManager|transcribeVoice|recognizeDatePhoto/)
   })
 
   it('turns a draft handed back by the recent page into a savable item', async () => {
@@ -705,7 +656,7 @@ describe('quick entry page compatibility', () => {
       name: '鲜牛奶', quantity: 2, unit: '盒', category: 'food', storageLocation: '冰箱',
       reminderLeadDays: 1, expiryInputMode: 'direct', shelfLifeValue: null, shelfLifeUnit: null, invalidFields: [],
     }] })
-    getQuickEntryCapabilitiesMock.mockResolvedValue({ text: true, voice: false, datePhoto: false })
+    getQuickEntryCapabilitiesMock.mockResolvedValue({ text: true })
     getSettingsMock.mockResolvedValue({ defaultReminderLeadDays: 1 })
 
     await page.preparePage()

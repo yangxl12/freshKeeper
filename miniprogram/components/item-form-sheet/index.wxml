@@ -151,6 +151,7 @@
           <input
             class="form-row__input"
             value="{{storageLocation}}"
+            maxlength="80"
             placeholder="如：冰箱、床头柜（选填）"
             placeholder-class="field-placeholder"
             data-field="storageLocation"

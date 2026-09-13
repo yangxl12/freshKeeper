@@ -32,10 +32,13 @@ function decorateItem(item: InventoryItem) {
   if (!reminder) reminderAtNote = ''
   else if (item.inventoryStatus !== 'active') reminderAtNote = '已停止'
   else if (reminderStatus === 'sent') reminderAtNote = '已推送'
-  else if (reminderStatus === 'sending') reminderAtNote = '推送中'
-  else if (reminderStatus === 'unknown') reminderAtNote = '结果未确定'
-  else if (reminder.missed) reminderAtNote = '已错过'
-  else reminderAtNote = '到点自动推送'
+  else if (reminderStatus === 'sending') reminderAtNote = '正在推送'
+  else if (reminderStatus === 'failed') reminderAtNote = '推送失败'
+  else if (reminderStatus === 'unknown') reminderAtNote = '发送结果待确认，不会自动重发'
+  else if (reminder.missed) reminderAtNote = '已错过，不补发'
+  else if (reminderStatus === 'scheduled') reminderAtNote = '已预约，将于指定时间推送'
+  else if (reminderStatus === 'cancelled') reminderAtNote = '已停止'
+  else reminderAtNote = '本次未预约'
 
   return {
     ...item,

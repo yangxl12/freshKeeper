@@ -180,7 +180,7 @@ describe('批量操作 → 回收站范围', () => {
   })
 
   it('翻多页时按档位下发，不把已加载数组反复重传', async () => {
-    // 250 条 = 9 页（每页 30）：应只在跨过 100 / 200 档位和结束时下发，远少于「每页一次」。
+    // 数据超过 200 条时必须停在产品上限，并提示缩小筛选范围。
     // 不能用一次性 mockResolvedValue：批量页会一直翻到 nextCursor 为 null。
     const pages = Array.from({ length: 9 }, (_, page) =>
       trashPage(
@@ -201,13 +201,14 @@ describe('批量操作 → 回收站范围', () => {
     page.onLoad({ source: 'trash' })
     await flush()
 
-    expect(listTrashMock).toHaveBeenCalledTimes(9)
-    expect(page.data.items).toHaveLength(270)
+    expect(listTrashMock).toHaveBeenCalledTimes(7)
+    expect(page.data.items).toHaveLength(200)
     const itemEmits = setDataCalls.filter((patch) => 'items' in patch)
     // 9 页只有 4 次下发（onLoad 清空一次 + 100 条档 + 200 条档 + 收尾），而不是 9 次。
     expect(itemEmits.length).toBeLessThanOrEqual(4)
     expect(itemEmits.length).toBeLessThan(9)
-    expect(page.data.scopeLabel).toBe('回收站全部 · 270 件')
+    expect(page.data.scopeLabel).toBe('回收站全部 · 200 件')
+    expect(page.data.errorMessage).toContain('最多加载 200 项')
   })
 
   it('单项点选与取消', async () => {

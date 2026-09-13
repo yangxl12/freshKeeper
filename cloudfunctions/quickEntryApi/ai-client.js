@@ -36,12 +36,10 @@ function localAiForced() {
   return ['1', 'true', 'on', 'yes'].includes(value)
 }
 
-// 默认开启。微信云函数的环境变量只能在云开发控制台设置（config.json 的 envVariables
-// 不随 CLI 部署生效），所以开启不能依赖环境变量，否则新环境部署完是死的。
-// 这个变量是急停开关：免费额度耗尽时在控制台把它设成 false/0/off 即可整体停用。
+// 默认关闭；只有控制台显式配置 true/on/1/yes 才启用，避免新环境未配额度时意外产生费用。
 function aiEnabled() {
   const value = String(process.env.QUICK_ENTRY_AI_ENABLED || '').trim().toLowerCase()
-  if (['0', 'false', 'off', 'no'].includes(value)) return false
+  if (!['1', 'true', 'on', 'yes'].includes(value)) return false
   return !isLocalDebug() || localAiForced()
 }
 

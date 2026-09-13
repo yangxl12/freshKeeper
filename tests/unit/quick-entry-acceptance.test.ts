@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { assignDateCandidate, createDraftFromParsed, createDraftFromRecent, draftToInventoryInput, draftToManualFields, getExpirySummary, parseQuickTextLocally, refreshDraftValidation } from '../../miniprogram/domain/quick-entry'
 import { todayKey } from '../../miniprogram/domain/quick-text'
 const cloudParser = require('../../cloudfunctions/quickEntryApi/quick-text')
-const cloudDates = require('../../cloudfunctions/quickEntryApi/date-facts')
-const { normalizeOcrLines } = require('../../cloudfunctions/quickEntryApi/tencent-provider')
-const { validateMedia, mediaOwnerPrefix } = require('../../cloudfunctions/quickEntryApi/validation')
 const { mergeRecentItems, readRecentProfiles } = require('../../cloudfunctions/inventoryApi/recent')
 const today = '2026-09-08'
 const draft = (text: string) => createDraftFromParsed(parseQuickTextLocally(text, today).items[0], 'text')
@@ -78,17 +75,6 @@ describe('quick entry product acceptance', () => {
     expect(draftToInventoryInput(assignDateCandidate(item, 1, 'expiry')).input).toBeNull()
     expect(draftToManualFields(item).expiryDate).toBeUndefined()
   })
-  it('preserves OCR shelf life and keeps incomplete and low-confidence dates blocked', () => {
-    const body = normalizeOcrLines([{ DetectedText: 'MFG 2026-09-01 保质期2年', Confidence: 99 }], today)
-    const result = cloudDates.normalizePhotoResult(body, today)
-    const item = createDraftFromParsed({ ...result, dateCandidates: result.candidates }, 'date_photo')
-    expect(item.fields.shelfLifeValue).toBe(2)
-    expect(item.fields.productionDate).toBe('2026-09-01')
-    expect(item.fields.name).toBe('')
-    expect(draftToInventoryInput(item).input).toBeNull()
-    expect(normalizeOcrLines([{ DetectedText: 'EXP 2026-09-20', Confidence: 30 }], today).candidates[0].complete).toBe(false)
-    expect(cloudDates.normalizePhotoResult({ dateFacts: [{ kind: 'expiry', month: 9, day: 20 }] }, today).candidates[0].date).toBeNull()
-  })
   it('uses recent non-date fields but never copies old batch dates', () => {
     const recent = { name: '牛奶', quantity: 0, unit: '盒', category: 'food' as const, storageLocation: '冰箱', reminderLeadDays: 0, expiryInputMode: 'shelf_life' as const, shelfLifeValue: 7, shelfLifeUnit: 'day' as const }
     const reused = createDraftFromRecent(recent)
@@ -117,11 +103,6 @@ describe('quick entry product acceptance', () => {
   it('rejects out-of-range calculated expiry before enabling save', () => {
     const item = draft('面包生产日期2200-12-31，保质期1年')
     expect(refreshDraftValidation(item).issues.some(issue => issue.field === 'shelfLifeValue')).toBe(true)
-  })
-  it('isolates media ownership before downloading or deleting', () => {
-    const fileID = `cloud://env.bucket/${mediaOwnerPrefix('alice')}image/example.jpg`
-    expect(validateMedia({ fileID, mediaType: 'image' }, 'image', 'alice')).toBe(fileID)
-    expect(() => validateMedia({ fileID, mediaType: 'image' }, 'image', 'bob')).toThrow('不属于当前用户')
   })
   it('does not turn unrelated conversations into inventory names', () => {
     expect(() => parseQuickTextLocally('请问今天天气怎么样', today)).toThrow('没有识别出物品和日期')

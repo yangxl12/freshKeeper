@@ -16,6 +16,7 @@ const USERS = 'users'
 const ITEMS = 'inventory_items'
 const REMINDERS = 'reminder_jobs'
 const SETTINGS = 'user_settings'
+const AI_USAGE = 'ai_usage_daily'
 
 const SCHEMA_VERSION = 1
 /** 平台限制：单次 deleteFile 最多 50 个 fileID。 */
@@ -331,9 +332,10 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     const items = await removeAll(ITEMS, { ownerId })
     const reminders = await removeAll(REMINDERS, { ownerId })
     const settings = await removeAll(SETTINGS, { ownerId })
+    const aiUsage = await removeAll(AI_USAGE, { ownerId })
     // _id 就是 openid，按主键删；删掉后重新进入会重新 touch 出一条空档案。
     await removeAll(USERS, { _id: ownerId })
-    return { deleted: { items, reminders, settings, files } }
+    return { deleted: { items, reminders, settings, aiUsage, files } }
   }
 
   return { confirmExport, createAvatarUpload, deleteAccount, exportData, getProfile, touch, updateProfile }

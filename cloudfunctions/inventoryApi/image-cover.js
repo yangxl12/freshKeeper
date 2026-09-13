@@ -38,7 +38,7 @@ function loadSdk() {
 
 function coverEnabled() {
   const value = String(process.env.COVER_IMAGE_ENABLED || '').trim().toLowerCase()
-  return !['0', 'false', 'off', 'no'].includes(value)
+  return ['1', 'true', 'on', 'yes'].includes(value)
 }
 
 // 名称直接进 prompt，不能带控制字符/超长内容；截断即可，不做更多猜测。

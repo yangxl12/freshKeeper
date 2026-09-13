@@ -29,6 +29,12 @@ import type {
 } from '../../types/inventory'
 import { track, trackDuration } from '../../utils/analytics'
 import { shanghaiTodayKey, millisecondsUntilShanghaiTomorrow } from '../../utils/shanghai-time'
+import {
+  cachedOverviewUsable,
+  markOverviewDirty,
+  readOverviewCache,
+  writeOverviewCache,
+} from '../../services/overview-cache'
 
 interface MoreSheet {
   visible: boolean
@@ -38,60 +44,6 @@ interface MoreSheet {
 
 // 到期提醒需要看得见任务状态才能决策，只在物品详情里操作，不放进这个看不见状态的快捷菜单。
 type MoreAction = 'complete' | 'delete'
-
-const OVERVIEW_STORAGE_KEY = 'home_overview_cache'
-
-/**
- * 概览缓存：4 次 count 是首页最贵的一段，而从详情/编辑/批量页返回首页是高频动作，
- * 数据却大概率没变。这里做 SWR —— 进页面先用缓存渲染，再按需静默刷新。
- *
- * 失效条件有三条，缺一不可：
- * 1. 任何写操作（增删改、批量）后置脏标记；
- * 2. 缓存日期 ≠ 今天：跨日会让「临期 3 件」一直挂着昨天算出来的数字；
- * 3. `statsDirty` 由 refresh() 翻页时发现列表与缓存不一致时置位。
- */
-interface OverviewCache {
-  dateKey: string
-  overview: InventoryOverviewResult
-  at: number
-}
-
-let overviewCache: OverviewCache | null = null
-let overviewDirty = true
-
-/** 写操作后调用：下次进首页必须重新统计。 */
-export function markOverviewDirty() {
-  overviewDirty = true
-}
-
-function readOverviewCache(): OverviewCache | null {
-  if (overviewCache) return overviewCache
-  try {
-    const stored = wx.getStorageSync(OVERVIEW_STORAGE_KEY) as OverviewCache | ''
-    if (stored && typeof stored === 'object' && stored.overview && typeof stored.dateKey === 'string') {
-      overviewCache = stored
-    }
-  } catch (_error) {
-    // 读不到就当没有缓存，走正常请求
-  }
-  return overviewCache
-}
-
-function writeOverviewCache(overview: InventoryOverviewResult) {
-  const next: OverviewCache = { dateKey: shanghaiTodayKey(), overview, at: Date.now() }
-  overviewCache = next
-  overviewDirty = false
-  try {
-    wx.setStorageSync(OVERVIEW_STORAGE_KEY, next)
-  } catch (_error) {
-    // 缓存写失败不影响本次展示
-  }
-}
-
-function cachedOverviewUsable(dateKey: string): boolean {
-  const cache = readOverviewCache()
-  return Boolean(cache && !overviewDirty && cache.dateKey === dateKey)
-}
 
 let searchTimer: number | undefined
 let midnightTimer: number | undefined
@@ -419,7 +371,7 @@ Page({
     const card = event.currentTarget.dataset.card as keyof typeof HOME_CARD_VIEW_STATUS
     const viewStatus = HOME_CARD_VIEW_STATUS[card]
     if (!viewStatus) return
-    this.setData({ viewStatus }, () => this.applyFilters())
+    this.setData({ search: '', category: '', viewStatus }, () => this.applyFilters())
   },
 
   resetFilters() {
@@ -475,8 +427,6 @@ Page({
       // 成功不弹 toast：数字本身会跳一下（inventory-row 的 quantityFlash），
       // 数量就在原地变化，再盖一层遮罩式提示反而碍事。
       this.patchItem(item._id, { quantity, version: result.version })
-      // 数量变化会影响「状态良好」计数（不改变 active 总数），保险起见置脏。
-      this.invalidateOverview()
     } catch (error) {
       this.handleActionError(error)
     }

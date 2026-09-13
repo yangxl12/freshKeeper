@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const { createWriteService } = require('../../cloudfunctions/inventoryApi/writes') as {
-  createWriteService(options: { db: unknown }): {
+  createWriteService(options: { db: unknown; deleteFile?: (input: { fileList: string[] }) => Promise<unknown> }): {
     moveToTrash(ownerId: string, event: unknown): Promise<Record<string, unknown>>
     removePermanently(ownerId: string, event: unknown): Promise<Record<string, unknown>>
     restore(ownerId: string, event: unknown): Promise<Record<string, unknown>>
@@ -174,6 +174,36 @@ describe('inventory writes 去事务化', () => {
     })
     expect(fake.items).toHaveLength(0)
     expect(fake.reminders).toHaveLength(0)
+  })
+
+  it('彻底删除会回收不再被引用的独占封面', async () => {
+    const coverFileId = 'cloud://env/covers/unique.png'
+    const fake = createFakeDb({
+      items: [activeItem({ inventoryStatus: 'deleted', coverFileId })],
+    })
+    const deleteFile = vi.fn(async () => ({ fileList: [{ fileID: coverFileId, status: 0 }] }))
+    const writes = createWriteService({ db: fake.db, deleteFile })
+
+    await writes.removePermanently(OWNER, { itemId: 'item-1', version: 3 })
+
+    expect(deleteFile).toHaveBeenCalledWith({ fileList: [coverFileId] })
+  })
+
+  it('彻底删除兼容历史共享封面：仍有引用时不删文件', async () => {
+    const coverFileId = 'cloud://env/covers/shared.png'
+    const fake = createFakeDb({
+      items: [
+        activeItem({ inventoryStatus: 'deleted', coverFileId }),
+        activeItem({ _id: 'item-2', inventoryStatus: 'active', coverFileId }),
+      ],
+    })
+    const deleteFile = vi.fn(async () => ({}))
+    const writes = createWriteService({ db: fake.db, deleteFile })
+
+    await writes.removePermanently(OWNER, { itemId: 'item-1', version: 3 })
+
+    expect(fake.items).toHaveLength(1)
+    expect(deleteFile).not.toHaveBeenCalled()
   })
 
   it('彻底删除在库物品会被拒绝', async () => {

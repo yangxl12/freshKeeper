@@ -10,9 +10,16 @@ import type {
   InventoryStatus,
   InventoryViewStatus,
 } from '../types/inventory'
-import { toInventorySaveInput } from '../domain/inventory'
 import { CloudServiceError, callCloud } from './cloud-client'
 import { trackDuration } from '../utils/analytics'
+import { markOverviewDirty } from './overview-cache'
+
+function invalidateAfter<T>(request: Promise<T>): Promise<T> {
+  return request.then((result) => {
+    markOverviewDirty()
+    return result
+  })
+}
 
 export function getOverview(): Promise<InventoryOverviewResult> {
   return callCloud('inventoryApi', { action: 'getOverview' })
@@ -69,37 +76,29 @@ export function saveItem(
     () => trackDuration('item_save_result', startedAt, { result: 'success', reason }),
     () => trackDuration('item_save_result', startedAt, { result: 'failed', reason }),
   )
-  return request
+  return invalidateAfter(request)
 }
 
 export function updateQuantity(
   item: InventoryItem,
   quantity: number,
-): Promise<{ itemId: string; version: number; expiryDate: string }> {
-  return saveItem({ ...toInventorySaveInput(item), quantity }, { reason: 'quantity' })
-}
-
-export function decrementItem(
-  itemId: string,
-  version: number,
-  amount: number,
 ): Promise<{ quantity: number; version: number }> {
-  return callCloud('inventoryApi', { action: 'decrement', itemId, version, amount })
+  return callCloud('inventoryApi', { action: 'setQuantity', itemId: item._id, version: item.version, quantity })
 }
 
 export function completeItem(
   itemId: string,
   version: number,
 ): Promise<{ version: number }> {
-  return callCloud('inventoryApi', { action: 'complete', itemId, version })
+  return invalidateAfter(callCloud('inventoryApi', { action: 'complete', itemId, version }))
 }
 
 export function deleteItem(itemId: string, version: number): Promise<{ version: number }> {
-  return callCloud('inventoryApi', { action: 'moveToTrash', itemId, version })
+  return invalidateAfter(callCloud('inventoryApi', { action: 'moveToTrash', itemId, version }))
 }
 
 export function permanentlyDeleteItem(itemId: string, version: number): Promise<{ deleted: true }> {
-  return callCloud('inventoryApi', { action: 'permanentDelete', itemId, version })
+  return invalidateAfter(callCloud('inventoryApi', { action: 'permanentDelete', itemId, version }))
 }
 
 export function restoreItem(input: InventorySaveInput): Promise<{
@@ -107,7 +106,7 @@ export function restoreItem(input: InventorySaveInput): Promise<{
   version: number
   expiryDate: string
 }> {
-  return callCloud('inventoryApi', { action: 'restore', data: input })
+  return invalidateAfter(callCloud('inventoryApi', { action: 'restore', data: input }))
 }
 
 // 生成/补取物品 AI 封面小图。失败由调用方吞掉（封面缺失时卡片用默认占位图）。
@@ -152,12 +151,12 @@ export async function generateItemCover(itemId: string): Promise<{ coverFileId: 
 }
 
 export function batchCompleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
-  return callCloud('inventoryApi', { action: 'batchComplete', items })
+  return invalidateAfter(callCloud('inventoryApi', { action: 'batchComplete', items }))
 }
 
 export function batchDeleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
   const request = callCloud<BatchMutationResult>('inventoryApi', { action: 'batchDelete', items })
-  return request.catch((error) => {
+  return invalidateAfter(request.catch((error) => {
     if (!(error instanceof CloudServiceError) || error.code !== 'INVALID_ACTION') throw error
     return Promise.all(
       items.map(async (item) => {
@@ -177,11 +176,11 @@ export function batchDeleteItems(items: BatchItemReference[]): Promise<BatchMuta
         .filter((result) => !result.succeeded)
         .map((result) => ({ itemId: result.itemId, ...result.error })),
     }))
-  })
+  }))
 }
 
 export function batchPermanentlyDeleteItems(items: BatchItemReference[]): Promise<BatchMutationResult> {
-  return callCloud('inventoryApi', { action: 'batchPermanentDelete', items })
+  return invalidateAfter(callCloud('inventoryApi', { action: 'batchPermanentDelete', items }))
 }
 
 export function listTrash(params: {

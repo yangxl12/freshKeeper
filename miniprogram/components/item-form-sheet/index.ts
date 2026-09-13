@@ -344,6 +344,7 @@ Component({
       const unit = this.data.unit.trim()
       const reminderLeadDays = Number(this.data.reminderLeadDays)
       if (!name || name.length > 40) return '物品名称需为 1～40 个字符'
+      if (Array.from(this.data.storageLocation.trim()).length > 80) return '存放位置不能超过 80 个字符'
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
         return '数量需为 1～9999 的整数'
       }

@@ -73,9 +73,9 @@ describe('ai parse json extraction', () => {
 })
 
 describe('ai client adapter', () => {
-  it('defaults to enabled so a fresh deployment is not dead', () => {
+  it('fails closed until the cloud console explicitly enables AI', () => {
     withEnv('QUICK_ENTRY_AI_ENABLED', undefined, () => {
-      expect(aiClient.aiEnabled()).toBe(true)
+      expect(aiClient.aiEnabled()).toBe(false)
     })
     withEnv('QUICK_ENTRY_AI_ENABLED', 'true', () => expect(aiClient.aiEnabled()).toBe(true))
   })
@@ -90,7 +90,7 @@ describe('ai client adapter', () => {
   it('skips AI inside the devtool local debugger', () => {
     withEnv('TENCENTCLOUD_RUNENV', 'WX_LOCAL_SCF', () => {
       expect(aiClient.isLocalDebug()).toBe(true)
-      withEnv('QUICK_ENTRY_AI_ENABLED', undefined, () => {
+      withEnv('QUICK_ENTRY_AI_ENABLED', 'true', () => {
         withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', undefined, () => expect(aiClient.aiEnabled()).toBe(false))
         // 逃生门：确实要联调云端 AI 时显式打开
         withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', 'true', () => expect(aiClient.aiEnabled()).toBe(true))
@@ -104,7 +104,7 @@ describe('ai client adapter', () => {
     withEnv('TENCENTCLOUD_RUNENV', 'SCF', () => {
       expect(aiClient.isLocalDebug()).toBe(false)
       withEnv('QUICK_ENTRY_AI_ENABLED', undefined, () => {
-        withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', undefined, () => expect(aiClient.aiEnabled()).toBe(true))
+        withEnv('QUICK_ENTRY_AI_LOCAL_DEBUG', undefined, () => expect(aiClient.aiEnabled()).toBe(false))
       })
     })
   })

@@ -45,11 +45,12 @@ describe('image-cover sanitize / prompt', () => {
     expect(prompt).toContain('纯白色')
   })
 
-  it('treats the kill switch as enabled by default and off only for explicit values', () => {
-    withEnv('COVER_IMAGE_ENABLED', undefined, () => expect(imageCover.coverEnabled()).toBe(true))
+  it('fails closed and enables cover generation only for explicit true values', () => {
+    withEnv('COVER_IMAGE_ENABLED', undefined, () => expect(imageCover.coverEnabled()).toBe(false))
     withEnv('COVER_IMAGE_ENABLED', 'false', () => expect(imageCover.coverEnabled()).toBe(false))
     withEnv('COVER_IMAGE_ENABLED', '0', () => expect(imageCover.coverEnabled()).toBe(false))
     withEnv('COVER_IMAGE_ENABLED', '1', () => expect(imageCover.coverEnabled()).toBe(true))
+    withEnv('COVER_IMAGE_ENABLED', 'true', () => expect(imageCover.coverEnabled()).toBe(true))
   })
 })
 

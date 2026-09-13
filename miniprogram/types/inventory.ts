@@ -136,6 +136,7 @@ export interface DeleteAccountResult {
     items: number
     reminders: number
     settings: number
+    aiUsage: number
     files: number
   }
 }

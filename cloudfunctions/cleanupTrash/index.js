@@ -62,7 +62,7 @@ async function migrateLegacyTrash(now) {
 }
 
 async function removeTrashItem(item) {
-  return db.runTransaction(async (transaction) => {
+  const removed = await db.runTransaction(async (transaction) => {
     const result = await transaction.collection(ITEMS).doc(item._id).get()
     const current = result.data
     if (!current || current.inventoryStatus !== 'deleted') return false
@@ -78,6 +78,23 @@ async function removeTrashItem(item) {
     if (reminder.data.length) await transaction.collection(REMINDERS).doc(item._id).remove()
     return true
   })
+  return { removed, coverFileId: removed ? item.coverFileId || '' : '' }
+}
+
+async function removeUnreferencedCovers(fileIDs) {
+  const unique = [...new Set(fileIDs.filter(Boolean))]
+  let deleted = 0
+  for (const fileID of unique) {
+    try {
+      const references = await db.collection(ITEMS).where({ coverFileId: fileID }).limit(1).get()
+      if (references.data.length) continue
+      await cloud.deleteFile({ fileList: [fileID] })
+      deleted += 1
+    } catch (_error) {
+      console.warn(JSON.stringify({ action: 'cleanupTrashCover', resultCode: 'FAILED' }))
+    }
+  }
+  return deleted
 }
 
 exports.main = async () => {
@@ -86,19 +103,22 @@ exports.main = async () => {
   const now = new Date()
   const migratedCount = await migrateLegacyTrash(now)
   let deletedCount = 0
+  let deletedCoverCount = 0
 
   for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
     const items = await queryExpiredTrash(now)
     if (!items.length) break
     const results = await runInBatches(items.map((item) => () => removeTrashItem(item)))
-    const batchDeletedCount = results.filter(
-      (result) => result.status === 'fulfilled' && result.value,
-    ).length
+    const removed = results
+      .filter((result) => result.status === 'fulfilled' && result.value?.removed)
+      .map((result) => result.value)
+    const batchDeletedCount = removed.length
+    deletedCoverCount += await removeUnreferencedCovers(removed.map((entry) => entry.coverFileId))
     deletedCount += batchDeletedCount
     if (batchDeletedCount === 0) break
     if (items.length < BATCH_SIZE) break
   }
 
-  console.info(JSON.stringify({ action: 'cleanupTrash', migratedCount, deletedCount }))
-  return { migratedCount, deletedCount }
+  console.info(JSON.stringify({ action: 'cleanupTrash', migratedCount, deletedCount, deletedCoverCount }))
+  return { migratedCount, deletedCount, deletedCoverCount }
 }

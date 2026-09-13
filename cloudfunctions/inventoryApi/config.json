@@ -1,4 +1,8 @@
 {
   "timeout": 60,
-  "envVariables": {}
+  "envVariables": {
+    "COVER_IMAGE_ENABLED": "false",
+    "COVER_IMAGE_DAILY_LIMIT": "5",
+    "COVER_IMAGE_GLOBAL_DAILY_LIMIT": "100"
+  }
 }

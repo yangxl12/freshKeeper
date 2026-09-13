@@ -50,6 +50,7 @@ function createFakeDb(options: {
     inventory_items: [...(options.items ?? [])],
     reminder_jobs: [...(options.reminders ?? [])],
     user_settings: [...(options.settings ?? [])],
+    ai_usage_daily: [],
   }
   const calls: string[] = []
 
@@ -240,7 +241,11 @@ describe('buildExportPayload', () => {
       expiryDate: '2026-09-20',
     },
   ]
-  const reminders = [{ _id: 'r1', ownerId: OWNER, templateId: 'TPL', remindAt: '2026-09-18', status: 'scheduled' }]
+  const reminders = [{
+    _id: 'r1', ownerId: OWNER, templateId: 'TPL', itemId: 'item-1', remindDate: '2026-09-18',
+    acceptedAt: new Date('2026-09-11T01:00:00Z'), sendAttemptedAt: null, sentAt: null,
+    status: 'scheduled', failureCode: null,
+  }]
   const user = { _id: OWNER, ownerId: OWNER, nickname: '龙哥', createdAt: new Date('2026-09-01T10:00:00+08:00') }
 
   it('快照结构稳定，且不含任何标识字段', () => {
@@ -251,7 +256,7 @@ describe('buildExportPayload', () => {
       reminders,
       exportedAt: '2026-09-11',
     })
-    expect(payload.schemaVersion).toBe(1)
+    expect(payload.schemaVersion).toBe(2)
     expect(payload.exportedAt).toBe('2026-09-11')
 
     const serialized = JSON.stringify(payload)
@@ -267,7 +272,7 @@ describe('buildExportPayload', () => {
   it('缺数据时给空壳而不是报错', () => {
     const payload = buildExportPayload({})
     expect(payload).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: '',
       profile: { nickname: null, createdAt: null, lastSeenAt: null },
       settings: { defaultReminderLeadDays: null },
@@ -276,13 +281,16 @@ describe('buildExportPayload', () => {
     })
   })
 
-  it('提醒只带时间与状态，不带模板 ID', () => {
+  it('提醒按 schema v2 导出真实预约字段，不带模板 ID 和 ownerId', () => {
     const payload = buildExportPayload({ reminders })
     expect(payload.reminders[0]).toEqual({
-      remindAt: '2026-09-18',
+      itemId: 'item-1',
+      remindDate: '2026-09-18',
+      acceptedAt: '2026-09-11T01:00:00.000Z',
+      sendAttemptedAt: null,
+      sentAt: null,
       status: 'scheduled',
-      createdAt: null,
-      inventoryItemId: null,
+      failureCode: null,
     })
   })
 })

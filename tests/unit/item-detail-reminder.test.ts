@@ -91,7 +91,7 @@ describe('物品详情 · 提醒时间', () => {
   it('把到期日与提前天数折算成当天 09:30', async () => {
     const page = await loadWith({ reminderStatus: null })
     expect(page.data.item.reminderAtText).toBe('2099年9月27日 09:30')
-    expect(page.data.item.reminderAtNote).toBe('到点自动推送')
+    expect(page.data.item.reminderAtNote).toBe('本次未预约')
   })
 
   it('提前 0 天时提醒时间就是到期日当天 09:30', async () => {
@@ -106,8 +106,8 @@ describe('物品详情 · 提醒时间', () => {
   })
 
   it.each([
-    ['sending', '推送中'],
-    ['unknown', '结果未确定'],
+      ['sending', '正在推送'],
+      ['unknown', '发送结果待确认，不会自动重发'],
   ])('推送中/结果未确定（%s）如实标注', async (status, note) => {
     const page = await loadWith({ reminderStatus: status })
     expect(page.data.item.reminderAtNote).toBe(note)
@@ -117,7 +117,7 @@ describe('物品详情 · 提醒时间', () => {
     // 到期 2020-01-01、提前 3 天 → 2019-12-29 09:30，早就过去了。
     const page = await loadWith({ expiryDate: '2020-01-01', reminderStatus: null })
     expect(page.data.item.reminderAtText).toBe('2019年12月29日 09:30')
-    expect(page.data.item.reminderAtNote).toBe('已错过')
+    expect(page.data.item.reminderAtNote).toBe('已错过，不补发')
   })
 
   it('非在库物品直接标为已停止推送', async () => {

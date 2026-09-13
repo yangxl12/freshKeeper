@@ -5,7 +5,7 @@ import type {
   ShelfLifeUnit,
 } from './inventory'
 
-export type QuickEntrySource = 'recent' | 'text' | 'voice' | 'date_photo' | 'manual'
+export type QuickEntrySource = 'recent' | 'text' | 'manual'
 
 export type QuickDraftStatus =
   | 'recognizing'
@@ -23,7 +23,6 @@ export type QuickDraftIssueCode =
   | 'AMBIGUOUS_DATE'
   | 'DATE_CONFLICT'
   | 'UNSUPPORTED_OPENED_PERIOD'
-  | 'OCR_NO_DATE'
   | 'TOO_MANY_DRAFTS'
   | 'SERVICE_UNAVAILABLE'
 
@@ -46,7 +45,7 @@ export interface DateCandidate {
   role: 'expiry' | 'production' | 'unknown'
   rawText: string
   complete: boolean
-  source: 'text' | 'photo'
+  source: 'text'
 }
 
 export interface QuickEntryDraftIssue {
@@ -88,7 +87,7 @@ export interface QuickEntryDraft {
   view?: QuickEntryDraftView
   confirmationFields?: string[]
   expanded?: boolean
-  evidence?: { kind: 'text' | 'photo'; localPath?: string; sourceText?: string }
+  evidence?: { kind: 'text'; sourceText?: string }
   /** 云端解析器版本；以 `ai-` 开头表示这条草稿来自大模型。 */
   parserVersion?: string
   /** AI 在原文里没找到、已按默认值填充的字段，仅用于提示用户确认。 */
@@ -130,19 +129,8 @@ export interface QuickEntryParseResult {
 
 export interface QuickEntryCapabilities {
   text: boolean
-  voice: boolean
-  datePhoto: boolean
   /** 云端文字解析走大模型；false 或缺失时页面按确定性规则识别展示。 */
   aiText?: boolean
-}
-
-export interface DatePhotoResult {
-  candidates: DateCandidate[]
-  shelfLifeValue?: number
-  shelfLifeUnit?: ShelfLifeUnit
-  sourceText?: string
-  unsupported?: 'opened_period'
-  serverToday: string
 }
 
 export function asInventorySaveInput(fields: QuickEntryDraftFields): InventorySaveInput {

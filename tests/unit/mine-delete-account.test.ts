@@ -68,7 +68,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   getSettingsMock.mockResolvedValue({ defaultReminderLeadDays: 1, hasReminderJobs: false })
   readReminderAuthorizationMock.mockResolvedValue({ authorized: false, summary: '未授权' })
-  deleteAccountMock.mockResolvedValue({ deleted: { items: 3, reminders: 1, settings: 1, files: 2 } })
+  deleteAccountMock.mockResolvedValue({ deleted: { items: 3, reminders: 1, settings: 1, aiUsage: 0, files: 2 } })
   stubWx(async () => ({ confirm: true }))
 })
 

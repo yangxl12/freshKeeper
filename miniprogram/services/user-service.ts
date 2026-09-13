@@ -8,6 +8,7 @@ import type {
   UserTouchResult,
 } from '../types/inventory'
 import { callCloud } from './cloud-client'
+import { clearOverviewCache } from './overview-cache'
 
 /**
  * 本地节流标记：值与「上海日期串」相同则跳过上报。
@@ -24,7 +25,11 @@ export function getUserProfile(): Promise<UserProfile> {
 }
 
 export function deleteAccount(): Promise<DeleteAccountResult> {
-  return callCloud('userApi', { action: 'deleteAccount', data: { confirm: 'DELETE' } })
+  return callCloud<DeleteAccountResult>('userApi', { action: 'deleteAccount', data: { confirm: 'DELETE' } })
+    .then((result) => {
+      clearOverviewCache()
+      return result
+    })
 }
 
 /** 局部更新：只改传入的字段，null 表示清空回默认态。 */

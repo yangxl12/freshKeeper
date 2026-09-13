@@ -79,6 +79,9 @@ export function validateQuickEntryFields(fields: QuickEntryDraftFields): QuickEn
   if (!fields.category || !CATEGORY_OPTIONS.some((option) => option.value === fields.category)) {
     issues.push(issue('INVALID_FIELD', 'category', '请选择物品分类'))
   }
+  if (Array.from(fields.storageLocation.trim()).length > 80) {
+    issues.push(issue('INVALID_FIELD', 'storageLocation', '存放位置不能超过 80 个字符'))
+  }
   if (!Number.isInteger(fields.reminderLeadDays) || (fields.reminderLeadDays as number) < 0 || (fields.reminderLeadDays as number) > 30) {
     issues.push(issue('INVALID_FIELD', 'reminderLeadDays', '提醒天数需为 0～30 的整数'))
   }
@@ -246,7 +249,7 @@ export function refreshDraftValidation(draft: QuickEntryDraft): QuickEntryDraft 
 
 export function createDraftFromParsed(
   item: QuickEntryParseResult['items'][number],
-  source: Extract<QuickEntrySource, 'text' | 'voice' | 'date_photo'>,
+  source: Extract<QuickEntrySource, 'text'>,
   reminderLeadDays = 1,
   recentProfile?: RecentItemProfile,
   evidence?: QuickEntryDraft['evidence'],
@@ -269,7 +272,7 @@ export function createDraftFromParsed(
 
   // AI 只在原文里找得到证据时才返回字段，没找到就是 null。这里把「它没说」和「它说错了」区分开：
   // 不写进 confirmationFields（那会挡住本来就合法的草稿），只提示用户核对默认填充值。
-  const aiMissingFields = source !== 'date_photo' && parserVersion?.startsWith('ai-') && !recent
+  const aiMissingFields = parserVersion?.startsWith('ai-') && !recent
     ? [
       ...(item.quantity == null ? ['quantity'] : []),
       ...(!item.unit ? ['unit'] : []),

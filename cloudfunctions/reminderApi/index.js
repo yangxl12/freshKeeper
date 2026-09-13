@@ -15,7 +15,7 @@ const REMINDERS = 'reminder_jobs'
  * 云函数的 envVariables 只在**首次创建**时写入云端，之后改 config.json 或重新部署都不会更新，
  * 留着旧环境变量反而会把代码里的新配置盖掉。模板建好后只改这一行 + 重新部署。
  */
-const REMINDER_TEMPLATE_ID = 'TODO_REPLACE_WITH_REAL_TEMPLATE_ID'
+const REMINDER_TEMPLATE_ID = 'jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8'
 
 /** 提醒统一在提前 N 天的 09:30（Asia/Shanghai）推送，与 dispatchReminders 的定时触发器一致。 */
 const REMIND_HOUR = 9
