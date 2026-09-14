@@ -18,9 +18,27 @@
     <view class="hero hero--{{item.expiryTone}}">
       <view class="hero__head">
         <view class="hero__cover">
+          <!-- 兜底占位图常驻最底层：真图未就绪、解码失败或机型不触发 bindload 时，
+               这一层保证封面区始终有内容，不会出现"空白 → 蹦图"的跳变。 -->
           <image
-            class="hero__cover-img {{coverLoaded ? 'hero__cover-img--loaded' : ''}}"
-            src="{{coverFailed || !item.coverUrl ? coverPlaceholder : item.coverUrl}}"
+            class="hero__cover-fallback"
+            src="{{coverPlaceholder}}"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
+          <!-- 解码中的过渡态：转圈提示，真图就绪后淡出 -->
+          <view
+            class="hero__cover-spinner {{coverStatus === 'loading' ? 'hero__cover-spinner--on' : ''}}"
+            aria-hidden="true"
+          >
+            <view class="hero__cover-spinner-ring"></view>
+          </view>
+          <!-- 真图：透明是静态初始态（不是动画起点），就绪后过渡到不透明。
+               这样任何时刻都不会出现"已经显示又被拉回透明"的闪动。 -->
+          <image
+            wx:if="{{item.coverUrl && coverStatus !== 'failed'}}"
+            class="hero__cover-img {{coverStatus === 'ready' ? 'hero__cover-img--ready' : ''}}"
+            src="{{item.coverUrl}}"
             mode="aspectFit"
             binderror="handleCoverError"
             bindload="handleCoverLoad"

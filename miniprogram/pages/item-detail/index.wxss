@@ -67,20 +67,62 @@
   background: #f4f8f5;
 }
 
-/* 解码完成才淡入。刻意不用 opacity:0 做初始态：万一某机型不触发 bindload，
-   图片也只是少了入场动画，而不是永远看不见。 */
-.hero__cover-img {
+/* 封面区分三层，从下往上：兜底占位图 / 转圈过渡 / 真图。
+   2026-09-14 修闪动：原来真图静默态是 opacity:1，解码完成后再播一段
+   `from opacity:0` 的入场动画 —— 图片先以不透明状态渲染出来，紧接着被动画
+   拉回全透明再淡入，用户看到的就是"闪一下"。现在改成静态 opacity:0 +
+   transition 到 1，透明不再需要动画去施加，闪动从根上消失。
+   兜底占位图常驻，所以哪怕某机型不触发 bindload，封面区也不会空白。 */
+.hero__cover-fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: block;
   width: 100%;
   height: 100%;
 }
 
-.hero__cover-img--loaded { animation: cover-fade-in 260ms ease-out; }
-
-@keyframes cover-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.hero__cover-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: 44rpx;
+  height: 44rpx;
+  margin: -22rpx 0 0 -22rpx;
+  opacity: 0;
+  transition: opacity 180ms ease-out;
 }
+
+.hero__cover-spinner--on { opacity: 1; }
+
+.hero__cover-spinner-ring {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 4rpx solid rgba(36, 91, 73, 0.16);
+  border-top-color: #245b49;
+  border-radius: 50%;
+  animation: cover-spin 720ms linear infinite;
+}
+
+@keyframes cover-spin {
+  to { transform: rotate(360deg); }
+}
+
+.hero__cover-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 220ms ease-out;
+}
+
+.hero__cover-img--ready { opacity: 1; }
 
 .hero__head-main {
   display: flex;
@@ -284,5 +326,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero__cover-img--loaded { animation: none; }
+  .hero__cover-img { transition: none; }
+  .hero__cover-spinner { transition: none; }
+  /* 不转圈，但保留高亮缺口的那一环，仍然能看出"在加载" */
+  .hero__cover-spinner-ring { animation: none; }
 }

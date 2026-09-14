@@ -157,10 +157,21 @@ describe('物品详情 · 封面', () => {
     expect(page.data.item.coverUrl).toBe(cover)
   })
 
-  it('没有封面时交给占位图兜底', async () => {
+  it('有封面时先进加载态，解码完成才淡入', async () => {
+    const page = await loadWith({ coverFileId: 'cloud://env.bucket/covers/item-1.png' })
+    // 进页面就是 loading：占位图垫底 + 转圈，真图要等 bindload 之后才被淡入，
+    // 不再出现"先显示再被动画拉回透明"的闪动。
+    expect(page.data.coverStatus).toBe('loading')
+
+    page.handleCoverLoad()
+    expect(page.data.coverStatus).toBe('ready')
+  })
+
+  it('没有封面时只显示占位图，不空转圈', async () => {
     const page = await loadWith({})
     expect(page.data.item.coverUrl).toBe('')
     expect(page.data.coverPlaceholder).toBe('/assets/inventory-placeholder.svg')
+    expect(page.data.coverStatus).toBe('idle')
   })
 
   it('生图完成时把封面补到已经打开的详情页，不必退出重进', async () => {
@@ -172,7 +183,20 @@ describe('物品详情 · 封面', () => {
     listener({ itemId: 'item-1', coverFileId: cover })
 
     expect(page.data.item.coverUrl).toBe(cover)
-    expect(page.data.coverFailed).toBe(false)
+    // 走一遍加载态（占位图 + 转圈 → 淡入），而不是把占位图直接切成真图。
+    expect(page.data.coverStatus).toBe('loading')
+  })
+
+  it('封面广播重复到达且是同一张图时不动状态', async () => {
+    const cover = 'cloud://env.bucket/covers/item-1.png'
+    const page = await loadWith({ coverFileId: cover })
+    page.handleCoverLoad()
+    page.subscribeCoverUpdates()
+
+    const listener = coverReadyMock.mock.calls[0][0]
+    listener({ itemId: 'item-1', coverFileId: cover })
+
+    expect(page.data.coverStatus).toBe('ready')
   })
 
   it('只认自己这一件物品的封面广播', async () => {
@@ -185,27 +209,32 @@ describe('物品详情 · 封面', () => {
     expect(page.data.item.coverUrl).toBe('')
   })
 
-  it('加载失败回退占位图且不反复重试；成功解码后淡入', async () => {
+  it('加载失败回退占位图且不反复重试', async () => {
     const page = await loadWith({ coverFileId: 'cloud://env.bucket/covers/gone.png' })
 
     page.handleCoverError()
-    expect(page.data.coverFailed).toBe(true)
+    expect(page.data.coverStatus).toBe('failed')
     page.handleCoverError()
-    expect(page.data.coverFailed).toBe(true)
-
-    page.handleCoverLoad()
-    expect(page.data.coverLoaded).toBe(true)
+    expect(page.data.coverStatus).toBe('failed')
   })
 
-  it('重新加载物品时重置封面状态，避免沿用上一件的失败态', async () => {
-    const page = await loadWith({ coverFileId: 'cloud://env.bucket/covers/gone.png' })
-    page.handleCoverError()
+  it('封面没变时重新加载不改状态，避免每次 onShow 都闪一次', async () => {
+    const cover = 'cloud://env.bucket/covers/item-1.png'
+    const page = await loadWith({ coverFileId: cover })
+    page.handleCoverLoad()
+    await page.loadItem()
+
+    // onShow 会重跑 loadItem：状态必须停在 ready，不能被打回 loading 重播淡入。
+    expect(page.data.coverStatus).toBe('ready')
+  })
+
+  it('换成另一张封面才回到加载态', async () => {
+    const page = await loadWith({ coverFileId: 'cloud://env.bucket/covers/old.png' })
     page.handleCoverLoad()
     getItemMock.mockResolvedValue(itemWith({ coverFileId: 'cloud://env.bucket/covers/new.png' }))
     await page.loadItem()
 
-    expect(page.data.coverFailed).toBe(false)
-    expect(page.data.coverLoaded).toBe(false)
     expect(page.data.item.coverUrl).toBe('cloud://env.bucket/covers/new.png')
+    expect(page.data.coverStatus).toBe('loading')
   })
 })
