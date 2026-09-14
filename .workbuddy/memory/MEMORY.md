@@ -71,6 +71,13 @@
   列表与详情页现在都用原 fileID（`coverThumbUrl` 的 `COVER_THUMB_QUERY` 为空）。
   真要做缩略图必须两条同时满足：`getTempFileURL` 转 https **且** 云存储开通「图像处理」扩展。
   `inventory-row` 的 observer 判据始终是原图 `coverFileId`（`coverFor`），这点不变。
+  **首页卡片和详情页 hero 都用这张原图**；两处都订阅 `onItemCoverReady()` 回填
+  （详情页只认自己那件物品，退订句柄挂**页面实例**，别用模块级变量会被多实例吞掉）。
+  **详情页封面用状态机 `coverStatus: idle|loading|ready|failed`**（不是两个布尔）：三层结构
+  = 常驻占位图垫底 + 转圈层 + 真图。真图**静态 `opacity:0` + `transition` 到 1**；
+  ⚠️ 别再用「静默态可见 + `animation from opacity:0`」的淡入 —— 那会先显示再被拉回透明，
+  就是 2026-09-14 修的「进详情页图片闪一下」。`loadItem` 只在 coverUrl 变化时才改状态，
+  否则每次 `onShow` 都会重播淡入。兜底定时器 2.5s 防转圈不停，`onUnload` 要 clear。
 - **列表**：`MAX_LIST_ITEMS=200` + `canLoadMoreItems()`。游标是**复合键**（`encodeKeyCursor`，payload `v:2`，
   键 `(expiryDate, createdAt)`，`createdAt` 走 `toIsoKey()`）；旧 offset 游标判 `INVALID_CURSOR`；
   `created_asc` 用 `gt`、其余用 `lt`。`listHistory`/`listTrash` 仍用老 offset 游标。
