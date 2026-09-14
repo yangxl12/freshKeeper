@@ -6,6 +6,7 @@ interface SavedDetail {
   source: string
   name: string
   expiryDate: string
+  reminderSetupState?: 'unchanged' | 'ready' | 'not-enabled' | 'failed' | 'missed'
 }
 
 /** 完整录入表单页；表单本体在 components/item-form-sheet，编辑、重新入库走同一套实现。 */
@@ -26,9 +27,16 @@ Page({
     const detail = event.detail as unknown as SavedDetail
     // 只有「新增」才让首页切到录入时间排序；编辑和重新入库保持用户原有排序。
     if (!detail.itemId && !detail.restoring) markPendingHomeSort()
+    const reminderIncomplete = detail.reminderSetupState === 'not-enabled' || detail.reminderSetupState === 'failed'
+    const reminderMissed = detail.reminderSetupState === 'missed'
     wx.showToast({
-      title: detail.restoring ? '已重新入库' : detail.itemId ? '修改成功' : '已加入库存',
-      icon: 'success',
+      title: reminderIncomplete
+        ? '已保存，提醒未开启'
+        : reminderMissed
+          ? '已保存，提醒时间已过'
+          : detail.restoring ? '已重新入库' : detail.itemId ? '修改成功' : '已加入库存',
+      icon: reminderIncomplete || reminderMissed ? 'none' : 'success',
+      duration: reminderIncomplete || reminderMissed ? 2500 : 1500,
     })
     wx.navigateBack()
   },

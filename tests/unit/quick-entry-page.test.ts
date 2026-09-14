@@ -512,7 +512,7 @@ describe('quick entry page compatibility', () => {
       await page.saveDrafts()
 
       expect(page.data.drafts).toHaveLength(0)
-      expect(wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '已加入库存' }))
+      expect(wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '已入库，部分提醒未开启' }))
     })
   })
   it('resolves an ambiguous date conflict only when the form actually changed the dates', () => {

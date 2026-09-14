@@ -6,15 +6,17 @@ import {
   permanentlyDeleteItem,
 } from '../../services/inventory-service'
 import { resolveReminderTime } from '../../domain/reminder-time'
+import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
 import type { InventoryItem } from '../../types/inventory'
 import { track } from '../../utils/analytics'
 
 /**
- * 把物品折算成「提醒时间 + 一句状态」。
+ * 把物品折算成「微信提醒时间 + 一句状态」。
  *
  * 提醒时间完全由「到期日期 - 提前天数（到点 09:30）」推出来，不落库、不可编辑。
  * 微信一次性订阅的事实：额度用完就结束，所以已推送/推送中不再给任何操作入口，
- * 也没有「取消提醒」——取消的语义已经被「删物品 / 标记已用完」覆盖。
+ * 也没有「取消提醒」——取消的语义已经被「删物品 / 标记已用完」覆盖。任务为空、
+ * 失败或已停止时则允许原地补开，避免老物品和偶发建任务失败只能显示死状态。
  */
 function decorateItem(item: InventoryItem) {
   const shelfLifeText = item.shelfLifeValue
@@ -30,21 +32,29 @@ function decorateItem(item: InventoryItem) {
 
   let reminderAtNote = ''
   if (!reminder) reminderAtNote = ''
-  else if (item.inventoryStatus !== 'active') reminderAtNote = '已停止'
-  else if (reminderStatus === 'sent') reminderAtNote = '已推送'
-  else if (reminderStatus === 'sending') reminderAtNote = '正在推送'
-  else if (reminderStatus === 'failed') reminderAtNote = '推送失败'
-  else if (reminderStatus === 'unknown') reminderAtNote = '发送结果待确认，不会自动重发'
-  else if (reminder.missed) reminderAtNote = '已错过，不补发'
-  else if (reminderStatus === 'scheduled') reminderAtNote = '已预约，将于指定时间推送'
-  else if (reminderStatus === 'cancelled') reminderAtNote = '已停止'
-  else reminderAtNote = '本次未预约'
+  else if (item.inventoryStatus !== 'active') reminderAtNote = '微信服务通知已停止'
+  else if (reminderStatus === 'sent') reminderAtNote = '微信服务通知已发送'
+  else if (reminderStatus === 'sending') reminderAtNote = '微信服务通知发送中'
+  else if (reminderStatus === 'failed') reminderAtNote = '微信服务通知发送失败'
+  else if (reminderStatus === 'unknown') reminderAtNote = '微信通知结果待确认，不会自动重发'
+  else if (reminder.missed) reminderAtNote = '提醒时间已过，不再发送'
+  else if (reminderStatus === 'scheduled') reminderAtNote = '届时发送微信服务通知'
+  else if (reminderStatus === 'cancelled') reminderAtNote = '微信服务通知已停止'
+  else reminderAtNote = '本次微信服务通知尚未开启'
+
+  const canEnableReminder = Boolean(
+    reminder &&
+    !reminder.missed &&
+    item.inventoryStatus === 'active' &&
+    (!reminderStatus || reminderStatus === 'failed' || reminderStatus === 'cancelled'),
+  )
 
   return {
     ...item,
     shelfLifeText,
     reminderAtText: reminder?.text || '',
     reminderAtNote,
+    canEnableReminder,
   }
 }
 
@@ -76,6 +86,33 @@ Page({
       wx.setNavigationBarTitle({ title: item.name })
     } catch (error) {
       this.setData({ loading: false, errorMessage: getErrorMessage(error) })
+    }
+  },
+
+  /**
+   * 为没有有效任务的物品补开一次微信服务通知。
+   * requestSubscribeMessage 必须由用户点击触发，不能在 onShow 里偷偷自动申请。
+   */
+  async enableReminder() {
+    const item = this.data.item
+    if (!item?.canEnableReminder || this.data.actionLoading) return
+    this.setData({ actionLoading: true })
+    try {
+      const accepted = await requestReminderAuthorization()
+      if (!accepted) {
+        this.setData({ actionLoading: false })
+        return
+      }
+      const result = await armReminder(item._id)
+      await this.loadItem()
+      this.setData({ actionLoading: false })
+      wx.showToast({
+        title: result.status === 'missed' ? '提醒时间已过' : '微信提醒已开启',
+        icon: result.status === 'missed' ? 'none' : 'success',
+      })
+    } catch (error) {
+      this.setData({ actionLoading: false })
+      wx.showToast({ title: getErrorMessage(error), icon: 'none', duration: 2500 })
     }
   },
 

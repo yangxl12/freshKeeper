@@ -280,7 +280,7 @@ describe('item-form-sheet 到期提醒', () => {
     await sheet.save()
 
     expect(sheet.data.errorMessage).toBe('')
-    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
+    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.objectContaining({ reminderSetupState: 'failed' }))
   })
 
   it('用户拒绝授权时不挂提醒，保存照常完成', async () => {
@@ -292,7 +292,7 @@ describe('item-form-sheet 到期提醒', () => {
 
     expect(armReminderMock).not.toHaveBeenCalled()
     expect(globalThis.wx.showToast).not.toHaveBeenCalled()
-    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.anything())
+    expect(sheet.triggerEvent).toHaveBeenCalledWith('saved', expect.objectContaining({ reminderSetupState: 'not-enabled' }))
   })
 
   it('草稿回传字段里不再有提醒意向', () => {

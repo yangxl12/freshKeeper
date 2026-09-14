@@ -239,9 +239,23 @@ Page({
   },
 
   handleFullFormSaved(event: WechatMiniprogram.CustomEvent) {
-    const detail = event.detail as unknown as { restoring: boolean; name: string }
+    const detail = event.detail as unknown as {
+      restoring: boolean
+      name: string
+      reminderSetupState?: 'unchanged' | 'ready' | 'not-enabled' | 'failed' | 'missed'
+    }
     wx.disableAlertBeforeUnload?.()
-    wx.showToast({ title: detail.restoring ? '已重新入库' : '已加入库存', icon: 'success' })
+    const reminderIncomplete = detail.reminderSetupState === 'not-enabled' || detail.reminderSetupState === 'failed'
+    const reminderMissed = detail.reminderSetupState === 'missed'
+    wx.showToast({
+      title: reminderIncomplete
+        ? '已保存，提醒未开启'
+        : reminderMissed
+          ? '已保存，提醒时间已过'
+          : detail.restoring ? '已重新入库' : '已加入库存',
+      icon: reminderIncomplete || reminderMissed ? 'none' : 'success',
+      duration: reminderIncomplete || reminderMissed ? 2500 : 1500,
+    })
     // 保存成功后直接回首页，配合录入时间排序让用户看到刚录入的物品。
     markPendingHomeSort()
     wx.navigateBack()
@@ -677,12 +691,16 @@ Page({
     if (savedItemIds.length) void this.requestCovers(savedItemIds)
     // 提醒授权必须在保存期间完成：这里还压着 saving 状态，用户不会重复点「加入库存」，
     // 而下面的 exitToHome 也要等授权弹窗收完才跳转。
-    if (reminderTargets.length) await this.armSavedReminders(reminderTargets)
+    const remindersReady = reminderTargets.length ? await this.armSavedReminders(reminderTargets) : true
     this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
     track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draft_count: targets.length, duration_ms: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
     if (!updated.some((draft) => draft.status !== 'saved')) {
       wx.disableAlertBeforeUnload?.()
-      wx.showToast({ title: '已加入库存', icon: 'success' })
+      wx.showToast({
+        title: remindersReady ? '已加入库存' : '已入库，部分提醒未开启',
+        icon: remindersReady ? 'success' : 'none',
+        duration: remindersReady ? 1500 : 2500,
+      })
       this.commitDrafts([])
       void this.refreshRecentProfiles()
       this.exitToHome()
@@ -695,7 +713,8 @@ Page({
    * 用户拒绝（或授权调用失败）就停下、不再连弹；单条挂失败也只跳过这一条——
    * 物品已经入库，提醒始终是附加动作，不影响保存结果。
    */
-  async armSavedReminders(targets: Array<{ itemId: string; draft: QuickEntryDraft }>) {
+  async armSavedReminders(targets: Array<{ itemId: string; draft: QuickEntryDraft }>): Promise<boolean> {
+    let allReady = true
     for (const { itemId, draft } of targets) {
       if (!itemId) continue
       // 提醒日已经过去（含日期还没落定的草稿）不申请授权，与「完整录入」同一判据。
@@ -710,13 +729,16 @@ Page({
       } catch (_error) {
         accepted = false
       }
-      if (!accepted) return
+      if (!accepted) return false
       try {
-        await armReminder(itemId)
+        const result = await armReminder(itemId)
+        if (result.status === 'missed') allReady = false
       } catch (_error) {
         // 单条挂失败不阻断后面的条目。
+        allReady = false
       }
     }
+    return allReady
   },
 })
 

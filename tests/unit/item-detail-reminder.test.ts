@@ -3,11 +3,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 /**
  * 锁死物品详情页的「提醒时间」展示。
  *
- * 提醒已经全部改走订阅消息，详情页不再有任何开关或按钮：
- * 时间由「到期日期 - 提前天数（当天 09:30）」算出来，状态只读。
+ * 提醒已经全部改走订阅消息，详情页不再有旧提醒开关或取消按钮：
+ * 时间由「到期日期 - 提前天数（当天 09:30）」算出来，缺少任务时可补开本次微信通知。
  */
 
-const { getItemMock } = vi.hoisted(() => ({ getItemMock: vi.fn() }))
+const { armReminderMock, getItemMock, requestReminderAuthorizationMock } = vi.hoisted(() => ({
+  armReminderMock: vi.fn(),
+  getItemMock: vi.fn(),
+  requestReminderAuthorizationMock: vi.fn(),
+}))
 
 vi.mock('../../miniprogram/services/inventory-service', () => ({
   completeItem: vi.fn(),
@@ -16,6 +20,10 @@ vi.mock('../../miniprogram/services/inventory-service', () => ({
   permanentlyDeleteItem: vi.fn(),
 }))
 vi.mock('../../miniprogram/utils/analytics', () => ({ track: vi.fn() }))
+vi.mock('../../miniprogram/services/reminder-service', () => ({
+  armReminder: (...args: unknown[]) => armReminderMock(...(args as [string])),
+  requestReminderAuthorization: () => requestReminderAuthorizationMock(),
+}))
 
 const originalPage = globalThis.Page
 const originalWx = globalThis.wx
@@ -35,6 +43,8 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  requestReminderAuthorizationMock.mockResolvedValue(true)
+  armReminderMock.mockResolvedValue({ status: 'scheduled', remindDate: '2099-09-27' })
   globalThis.wx = {
     showToast: vi.fn(),
     setNavigationBarTitle: vi.fn(),
@@ -88,10 +98,11 @@ async function loadWith(overrides: Record<string, unknown> = {}) {
 }
 
 describe('物品详情 · 提醒时间', () => {
-  it('把到期日与提前天数折算成当天 09:30', async () => {
+  it('没有通知任务时明确说明微信通知未开启，并允许原地补开', async () => {
     const page = await loadWith({ reminderStatus: null })
     expect(page.data.item.reminderAtText).toBe('2099年9月27日 09:30')
-    expect(page.data.item.reminderAtNote).toBe('本次未预约')
+    expect(page.data.item.reminderAtNote).toBe('本次微信服务通知尚未开启')
+    expect(page.data.item.canEnableReminder).toBe(true)
   })
 
   it('提前 0 天时提醒时间就是到期日当天 09:30', async () => {
@@ -102,12 +113,13 @@ describe('物品详情 · 提醒时间', () => {
   it('已经推送过的只标注状态，不再给任何操作暗示', async () => {
     const page = await loadWith({ reminderStatus: 'sent' })
     expect(page.data.item.reminderAtText).toBe('2099年9月27日 09:30')
-    expect(page.data.item.reminderAtNote).toBe('已推送')
+    expect(page.data.item.reminderAtNote).toBe('微信服务通知已发送')
+    expect(page.data.item.canEnableReminder).toBe(false)
   })
 
   it.each([
-      ['sending', '正在推送'],
-      ['unknown', '发送结果待确认，不会自动重发'],
+      ['sending', '微信服务通知发送中'],
+      ['unknown', '微信通知结果待确认，不会自动重发'],
   ])('推送中/结果未确定（%s）如实标注', async (status, note) => {
     const page = await loadWith({ reminderStatus: status })
     expect(page.data.item.reminderAtNote).toBe(note)
@@ -117,12 +129,13 @@ describe('物品详情 · 提醒时间', () => {
     // 到期 2020-01-01、提前 3 天 → 2019-12-29 09:30，早就过去了。
     const page = await loadWith({ expiryDate: '2020-01-01', reminderStatus: null })
     expect(page.data.item.reminderAtText).toBe('2019年12月29日 09:30')
-    expect(page.data.item.reminderAtNote).toBe('已错过，不补发')
+    expect(page.data.item.reminderAtNote).toBe('提醒时间已过，不再发送')
+    expect(page.data.item.canEnableReminder).toBe(false)
   })
 
   it('非在库物品直接标为已停止推送', async () => {
     const page = await loadWith({ inventoryStatus: 'used_up', reminderStatus: null })
-    expect(page.data.item.reminderAtNote).toBe('已停止')
+    expect(page.data.item.reminderAtNote).toBe('微信服务通知已停止')
   })
 
   it('到期日期非法时不编造时间', async () => {
@@ -131,15 +144,36 @@ describe('物品详情 · 提醒时间', () => {
     expect(page.data.item.reminderAtNote).toBe('')
   })
 
-  it('不再保留任何开关、按钮或提醒弹窗', () => {
+  it('没有旧提醒开关、取消入口或提醒弹窗', () => {
     expect(detailPage.data.reminderSheetVisible).toBeUndefined()
     for (const method of [
-      'openReminder',
-      'closeReminder',
-      'requestReminder',
-      'cancelReminder',
+      'openReminder', 'closeReminder', 'requestReminder', 'cancelReminder',
     ]) {
       expect(detailPage[method]).toBeUndefined()
     }
+  })
+
+  it('用户点击后申请一次性订阅并补建微信通知任务', async () => {
+    const page = await loadWith({ reminderStatus: null })
+    getItemMock.mockResolvedValue(itemWith({ reminderStatus: 'scheduled' }))
+
+    await page.enableReminder()
+
+    expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+    expect(armReminderMock).toHaveBeenCalledWith('item-1')
+    expect(getItemMock).toHaveBeenCalledTimes(2)
+    expect(page.data.item.reminderAtNote).toBe('届时发送微信服务通知')
+    expect(page.data.item.canEnableReminder).toBe(false)
+    expect(globalThis.wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '微信提醒已开启' }))
+  })
+
+  it('用户未同意订阅时不创建任务，并恢复按钮状态', async () => {
+    requestReminderAuthorizationMock.mockResolvedValueOnce(false)
+    const page = await loadWith({ reminderStatus: null })
+
+    await page.enableReminder()
+
+    expect(armReminderMock).not.toHaveBeenCalled()
+    expect(page.data.actionLoading).toBe(false)
   })
 })

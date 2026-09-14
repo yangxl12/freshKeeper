@@ -32,6 +32,7 @@ const LEGACY_STORAGE_LABELS: Record<string, string> = {
 }
 
 type FormTextField = 'name' | 'quantity' | 'unit' | 'storageLocation' | 'shelfLifeValue' | 'reminderLeadDays'
+type ReminderSetupState = 'unchanged' | 'ready' | 'not-enabled' | 'failed' | 'missed'
 
 /** 宿主注入的预填值：完整录入字段。 */
 type FormPrefill = Partial<InventorySaveInput>
@@ -418,9 +419,10 @@ Component({
         this.setData({ saving: false })
         // 到期提醒默认全部走订阅消息，这里不再问用户要不要开。
         // 编辑已预约/已发送的物品不再重复申请授权，避免每次改个数量都弹一次。
+        let reminderSetupState: ReminderSetupState = 'unchanged'
         if (restoring || this.needsReminderArm()) {
           // 授权弹窗必须排在 triggerEvent 之前——宿主收到 saved 会跳转或重置表单，之后弹会被打断。
-          await this.armReminderAfterSave(savedItemId, finalExpiryDate)
+          reminderSetupState = await this.armReminderAfterSave(savedItemId, finalExpiryDate)
         }
         this.triggerEvent('saved', {
           restoring,
@@ -429,6 +431,7 @@ Component({
           quickSaveKey: this.data.quickSaveKey,
           name: input.name,
           expiryDate: finalExpiryDate,
+          reminderSetupState,
         })
       } catch (error) {
         this.setData({ saving: false, errorMessage: getErrorMessage(error) })
@@ -452,22 +455,23 @@ Component({
      *
      * 只按「提醒日 < 今天」做拦截（当天 09:30 是否已过交给云端判定，它会返回 missed 且不落任务）：
      * 前端拿着真实时钟做判断会让行为随运行时刻漂移，日期口径才和表单里「今天」一致。
-     * 整段失败都静默处理——物品已经入库，提醒是附加动作，失败不该盖过保存成功的结果。
+     * 物品保存与提醒仍然解耦，但把结果交给宿主统一提示，不能再把失败静默吞掉。
      */
-    async armReminderAfterSave(savedItemId: string, expiryDate: string) {
-      if (!savedItemId) return
+    async armReminderAfterSave(savedItemId: string, expiryDate: string): Promise<ReminderSetupState> {
+      if (!savedItemId) return 'failed'
       const reminder = resolveReminderTime({
         expiryDate,
         reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
       })
-      if (!reminder || reminder.date < this.data.today) return
+      if (!reminder || reminder.date < this.data.today) return 'missed'
       try {
         const accepted = await requestReminderAuthorization()
         // 用户拒绝授权时 reminder-service 已经给过提示，这里不再叠一层。
-        if (!accepted) return
-        await armReminder(savedItemId)
+        if (!accepted) return 'not-enabled'
+        const result = await armReminder(savedItemId)
+        return result.status === 'missed' ? 'missed' : 'ready'
       } catch (_error) {
-        // 附加动作，失败不改动表单状态。
+        return 'failed'
       }
     },
 

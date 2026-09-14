@@ -63,10 +63,17 @@
           <text class="info-row__value">{{item.inventoryStatusLabel}}</text>
         </view>
         <view class="info-row">
-          <text class="info-row__label">提醒时间</text>
+          <text class="info-row__label">微信提醒时间</text>
           <view class="info-row__tail">
             <text class="info-row__value">{{item.reminderAtText || '—'}}</text>
             <text wx:if="{{item.reminderAtNote}}" class="info-row__note">{{item.reminderAtNote}}</text>
+            <button
+              wx:if="{{item.canEnableReminder}}"
+              class="info-row__action"
+              disabled="{{actionLoading}}"
+              bindtap="enableReminder"
+              hover-class="info-row__action--pressed"
+            >开启本次微信提醒</button>
           </view>
         </view>
       </view>
