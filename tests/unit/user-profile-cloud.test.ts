@@ -44,6 +44,7 @@ function createFakeDb(options: {
   items?: Doc[]
   reminders?: Doc[]
   settings?: Doc[]
+  feedback?: Doc[]
 } = {}) {
   const store: Record<string, Doc[]> = {
     users: [...(options.users ?? [])],
@@ -51,6 +52,7 @@ function createFakeDb(options: {
     reminder_jobs: [...(options.reminders ?? [])],
     user_settings: [...(options.settings ?? [])],
     ai_usage_daily: [],
+    user_feedback: [...(options.feedback ?? [])],
   }
   const calls: string[] = []
 
@@ -247,6 +249,10 @@ describe('buildExportPayload', () => {
     status: 'scheduled', failureCode: null,
   }]
   const user = { _id: OWNER, ownerId: OWNER, nickname: '龙哥', createdAt: new Date('2026-09-01T10:00:00+08:00') }
+  const feedback = [{
+    _id: 'f1', ownerId: OWNER, content: '希望增加扫码录入', status: 'pending',
+    createdAt: new Date('2026-09-11T02:00:00Z'),
+  }]
 
   it('快照结构稳定，且不含任何标识字段', () => {
     const payload = buildExportPayload({
@@ -254,9 +260,10 @@ describe('buildExportPayload', () => {
       settings: { _id: OWNER, ownerId: OWNER, defaultReminderLeadDays: 3 },
       user,
       reminders,
+      feedback,
       exportedAt: '2026-09-11',
     })
-    expect(payload.schemaVersion).toBe(2)
+    expect(payload.schemaVersion).toBe(3)
     expect(payload.exportedAt).toBe('2026-09-11')
 
     const serialized = JSON.stringify(payload)
@@ -267,17 +274,23 @@ describe('buildExportPayload', () => {
     expect(payload.items[0]).not.toHaveProperty('ownerId')
     expect(payload.settings).toEqual({ defaultReminderLeadDays: 3 })
     expect(payload.profile).toEqual({ nickname: '龙哥', createdAt: '2026-09-01', lastSeenAt: null })
+    expect(payload.feedback).toEqual([{
+      content: '希望增加扫码录入',
+      status: 'pending',
+      createdAt: '2026-09-11T02:00:00.000Z',
+    }])
   })
 
   it('缺数据时给空壳而不是报错', () => {
     const payload = buildExportPayload({})
     expect(payload).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: '',
       profile: { nickname: null, createdAt: null, lastSeenAt: null },
       settings: { defaultReminderLeadDays: null },
       items: [],
       reminders: [],
+      feedback: [],
     })
   })
 
@@ -306,6 +319,7 @@ describe('exportData', () => {
       items: options.items ?? [{ _id: 'i1', ownerId: OWNER, name: '牛奶' }],
       reminders: [{ _id: 'r1', ownerId: OWNER, templateId: 'TPL', status: 'scheduled' }],
       settings: [{ _id: OWNER, ownerId: OWNER, defaultReminderLeadDays: 1 }],
+      feedback: [{ _id: 'f1', ownerId: OWNER, content: '希望增加扫码录入', status: 'pending' }],
     })
     const uploads: Array<{ cloudPath: string; content: string }> = []
     const uploadFile =
@@ -333,6 +347,7 @@ describe('exportData', () => {
 
     const payload = JSON.parse(uploads[0].content)
     expect(payload.items).toHaveLength(1)
+    expect(payload.feedback).toEqual([{ content: '希望增加扫码录入', status: 'pending' }])
     expect(payload.profile.nickname).toBe('龙哥')
     expect(fake.store.users[0]).toMatchObject({
       exportPendingFileId: result.fileID,

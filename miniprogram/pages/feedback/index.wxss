@@ -1,0 +1,72 @@
+.feedback-page {
+  padding-top: 24rpx;
+}
+
+.feedback-card {
+  padding: 36rpx 32rpx;
+  border: 2rpx solid #e3eae6;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 36rpx rgba(23, 59, 49, 0.05);
+}
+
+.feedback-card__title,
+.feedback-card__description,
+.feedback-card__privacy {
+  display: block;
+}
+
+.feedback-card__title {
+  color: #173b31;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.feedback-card__description {
+  margin-top: 10rpx;
+  color: #65736d;
+  font-size: 26rpx;
+  line-height: 1.7;
+}
+
+.feedback-field {
+  position: relative;
+  margin-top: 30rpx;
+}
+
+.feedback-field__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 360rpx;
+  padding: 24rpx 24rpx 64rpx;
+  border: 2rpx solid #dbe5e0;
+  border-radius: 18rpx;
+  background: #fbfcfb;
+  color: #173b31;
+  font-size: 28rpx;
+  line-height: 1.65;
+}
+
+.feedback-field__input:focus {
+  border-color: #61927f;
+  outline: 4rpx solid rgba(36, 91, 73, 0.12);
+}
+
+.feedback-field__count {
+  position: absolute;
+  right: 22rpx;
+  bottom: 18rpx;
+  color: #8b9892;
+  font-size: 23rpx;
+}
+
+.feedback-card__privacy {
+  margin-top: 18rpx;
+  color: #8b9892;
+  font-size: 23rpx;
+}
+
+.feedback-submit {
+  width: 100%;
+  margin-top: 32rpx;
+}

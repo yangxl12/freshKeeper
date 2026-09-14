@@ -9,6 +9,7 @@ import {
   getUserProfile,
   prepareExport,
   sharePreparedExport,
+  submitFeedback,
   touchUser,
   touchUserOnceToday,
   updateProfile,
@@ -239,6 +240,23 @@ describe('updateProfile / createAvatarUpload / exportData 契约', () => {
 
     await expect(exportData()).resolves.toMatchObject({ fileName: 'a.txt' })
     expect(requestData).toEqual({ action: 'exportData' })
+  })
+
+  it('submitFeedback 只提交反馈正文，不携带身份字段', async () => {
+    let requestData: Record<string, unknown> | undefined
+    stubMediaWx({ callFunction: (request) => {
+      requestData = request.data
+      replyCloud({ feedbackId: 'feedback-1' })(request)
+    } })
+
+    await expect(submitFeedback({ content: '希望增加扫码录入' })).resolves.toEqual({
+      feedbackId: 'feedback-1',
+    })
+    expect(requestData).toEqual({
+      action: 'submitFeedback',
+      data: { content: '希望增加扫码录入' },
+    })
+    expect(JSON.stringify(requestData)).not.toContain('ownerId')
   })
 })
 

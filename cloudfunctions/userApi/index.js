@@ -5,6 +5,7 @@ const cloud = require('wx-server-sdk')
 const { AppError, assert, normalizeError } = require('./error')
 const { assertNoClientIdentity } = require('./validation')
 const { createAccountService } = require('./account')
+const { createFeedbackService } = require('./feedback')
 const { createSettingsService } = require('./settings')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
@@ -17,6 +18,7 @@ const service = createAccountService({
 })
 
 const settingsService = createSettingsService({ db })
+const feedbackService = createFeedbackService({ db })
 
 const handlers = {
   touch: (ownerId) => service.touch(ownerId),
@@ -29,6 +31,7 @@ const handlers = {
   // 设置原属独立的 settingsApi 云函数，合并进来少一次冷启动。
   getSettings: (ownerId) => settingsService.getSettings(ownerId),
   updateSettings: (ownerId, event) => settingsService.updateSettings(ownerId, event.data),
+  submitFeedback: (ownerId, event) => feedbackService.submitFeedback(ownerId, event.data),
 }
 
 exports.main = async (event = {}) => {

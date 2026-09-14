@@ -126,6 +126,14 @@ export interface ExportDataResult {
   fileName: string
 }
 
+export interface FeedbackSubmitInput {
+  content: string
+}
+
+export interface FeedbackSubmitResult {
+  feedbackId: string
+}
+
 export interface UserTouchResult {
   created: boolean
   lastSeenAt: string
@@ -137,6 +145,7 @@ export interface DeleteAccountResult {
     reminders: number
     settings: number
     aiUsage: number
+    feedback: number
     files: number
   }
 }

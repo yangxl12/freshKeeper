@@ -17,6 +17,7 @@ const ITEMS = 'inventory_items'
 const REMINDERS = 'reminder_jobs'
 const SETTINGS = 'user_settings'
 const AI_USAGE = 'ai_usage_daily'
+const FEEDBACK = 'user_feedback'
 
 const SCHEMA_VERSION = 1
 /** 平台限制：单次 deleteFile 最多 50 个 fileID。 */
@@ -211,11 +212,13 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     const items = await readAll(ITEMS, { ownerId })
     const reminders = await readAll(REMINDERS, { ownerId })
     const settingsPage = await db.collection(SETTINGS).where({ ownerId }).limit(1).get()
+    const feedback = await readAll(FEEDBACK, { ownerId })
     const payload = buildExportPayload({
       items,
       settings: settingsPage.data[0] || null,
       user,
       reminders,
+      feedback,
       exportedAt: shanghaiDateKey(now),
     })
 
@@ -351,9 +354,10 @@ function createAccountService({ db, deleteFile, uploadFile }) {
     const reminders = await removeAll(REMINDERS, { ownerId })
     const settings = await removeAll(SETTINGS, { ownerId })
     const aiUsage = await removeOptionalCollection(AI_USAGE, { ownerId })
+    const feedback = await removeOptionalCollection(FEEDBACK, { ownerId })
     // _id 就是 openid，按主键删；删掉后重新进入会重新 touch 出一条空档案。
     await removeAll(USERS, { _id: ownerId })
-    return { deleted: { items, reminders, settings, aiUsage, files } }
+    return { deleted: { items, reminders, settings, aiUsage, feedback, files } }
   }
 
   return { confirmExport, createAvatarUpload, deleteAccount, exportData, getProfile, touch, updateProfile }

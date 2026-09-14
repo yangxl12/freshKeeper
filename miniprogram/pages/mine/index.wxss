@@ -166,6 +166,28 @@
   content: "?";
 }
 
+.entry__icon--feedback::before {
+  top: 14rpx;
+  left: 13rpx;
+  box-sizing: border-box;
+  width: 26rpx;
+  height: 20rpx;
+  border: 3rpx solid #1f5d49;
+  border-radius: 7rpx;
+}
+
+.entry__icon--feedback::after {
+  top: 31rpx;
+  left: 18rpx;
+  box-sizing: border-box;
+  width: 9rpx;
+  height: 9rpx;
+  border-bottom: 3rpx solid #1f5d49;
+  border-left: 3rpx solid #1f5d49;
+  background: #eef4f1;
+  transform: skewY(-35deg);
+}
+
 .entry__icon--about::before {
   top: 12rpx;
   left: 22rpx;

@@ -1,0 +1,32 @@
+<view class="feedback-page page-shell">
+  <view class="feedback-card">
+    <text class="feedback-card__title">你的建议对我们很重要</text>
+    <text class="feedback-card__description">可以告诉我们哪里不好用，或者你希望增加什么功能。</text>
+
+    <view class="feedback-field">
+      <textarea
+        class="feedback-field__input"
+        value="{{content}}"
+        maxlength="{{maxLength}}"
+        placeholder="请输入你的反馈或建议"
+        placeholder-class="field-placeholder"
+        disabled="{{submitting}}"
+        bindinput="handleInput"
+        bindconfirm="noop"
+        cursor-spacing="24"
+        show-confirm-bar="false"
+      />
+      <text class="feedback-field__count">{{characterCount}} / {{maxLength}}</text>
+    </view>
+
+    <text class="feedback-card__privacy">请不要填写手机号、住址等敏感信息。</text>
+    <view wx:if="{{submitError}}" class="feedback-error">{{submitError}}</view>
+
+    <button
+      class="primary-button feedback-submit"
+      disabled="{{!canSubmit || submitting}}"
+      bindtap="submit"
+      hover-class="pressable--pressed"
+    >{{submitting ? '提交中…' : '提交反馈'}}</button>
+  </view>
+</view>

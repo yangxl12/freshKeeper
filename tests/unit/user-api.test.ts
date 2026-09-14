@@ -52,6 +52,7 @@ function createFakeDb(options: {
   items?: Doc[]
   reminders?: Doc[]
   settings?: Doc[]
+  feedback?: Doc[]
   removeCap?: number
   missingCollections?: string[]
 } = {}) {
@@ -61,6 +62,7 @@ function createFakeDb(options: {
     reminder_jobs: [...(options.reminders ?? [])],
     user_settings: [...(options.settings ?? [])],
     ai_usage_daily: [],
+    user_feedback: [...(options.feedback ?? [])],
   }
   const calls: string[] = []
 
@@ -364,6 +366,7 @@ describe('userApi deleteAccount', () => {
       items,
       reminders: [{ _id: 'r1', ownerId: OWNER }],
       settings: [{ _id: OWNER, ownerId: OWNER, defaultReminderLeadDays: 1 }],
+      feedback: [{ _id: 'f1', ownerId: OWNER, content: '希望增加扫码录入' }],
       removeCap,
     })
     const files = createFakeDeleteFile(fake.calls)
@@ -381,7 +384,7 @@ describe('userApi deleteAccount', () => {
     const { fake, files, service } = build(3)
     const result = await service.deleteAccount(OWNER, { confirm: 'DELETE' })
 
-    expect(result.deleted).toEqual({ items: 3, reminders: 1, settings: 1, aiUsage: 0, files: 3 })
+    expect(result.deleted).toEqual({ items: 3, reminders: 1, settings: 1, aiUsage: 0, feedback: 1, files: 3 })
     // 顺序是硬要求：删了库就再也读不到 coverFileId 了。
     expect(files.batches).toHaveLength(1)
     expect(fake.calls.lastIndexOf('deleteFile')).toBeGreaterThanOrEqual(0)
@@ -391,6 +394,7 @@ describe('userApi deleteAccount', () => {
     expect(fake.store.inventory_items).toHaveLength(0)
     expect(fake.store.reminder_jobs).toHaveLength(0)
     expect(fake.store.user_settings).toHaveLength(0)
+    expect(fake.store.user_feedback).toHaveLength(0)
     // users 也要删干净：注销后重新进入是全新账号。
     expect(fake.store.users).toHaveLength(0)
   })
@@ -420,7 +424,7 @@ describe('userApi deleteAccount', () => {
     const service = account.createAccountService({ db: fake.db, deleteFile: files.deleteFile })
 
     await expect(service.deleteAccount(OWNER, { confirm: 'DELETE' })).resolves.toEqual({
-      deleted: { items: 0, reminders: 0, settings: 0, aiUsage: 0, files: 0 },
+      deleted: { items: 0, reminders: 0, settings: 0, aiUsage: 0, feedback: 0, files: 0 },
     })
     expect(fake.store.users).toHaveLength(0)
   })
@@ -436,7 +440,7 @@ describe('userApi deleteAccount', () => {
     const service = account.createAccountService({ db: fake.db, deleteFile: files.deleteFile })
 
     const result = await service.deleteAccount(OWNER, { confirm: 'DELETE' })
-    expect(result.deleted).toEqual({ items: 0, reminders: 0, settings: 0, aiUsage: 0, files: 0 })
+    expect(result.deleted).toEqual({ items: 0, reminders: 0, settings: 0, aiUsage: 0, feedback: 0, files: 0 })
     expect(fake.store.inventory_items).toHaveLength(1)
     expect(fake.store.users).toHaveLength(1)
   })
@@ -445,7 +449,7 @@ describe('userApi deleteAccount', () => {
     const { service } = build(2)
     await service.deleteAccount(OWNER, { confirm: 'DELETE' })
     await expect(service.deleteAccount(OWNER, { confirm: 'DELETE' })).resolves.toEqual({
-      deleted: { items: 0, reminders: 0, settings: 0, aiUsage: 0, files: 0 },
+      deleted: { items: 0, reminders: 0, settings: 0, aiUsage: 0, feedback: 0, files: 0 },
     })
   })
 

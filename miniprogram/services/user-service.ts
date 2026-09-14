@@ -3,6 +3,8 @@ import type {
   AvatarUploadTicket,
   DeleteAccountResult,
   ExportDataResult,
+  FeedbackSubmitInput,
+  FeedbackSubmitResult,
   UserProfile,
   UserProfileUpdateInput,
   UserTouchResult,
@@ -43,6 +45,10 @@ export function createAvatarUpload(ext: string): Promise<AvatarUploadTicket> {
 
 export function exportData(): Promise<ExportDataResult> {
   return callCloud('userApi', { action: 'exportData' })
+}
+
+export function submitFeedback(input: FeedbackSubmitInput): Promise<FeedbackSubmitResult> {
+  return callCloud('userApi', { action: 'submitFeedback', data: input })
 }
 
 /** 转发成功后回报云端（清待交付文件 + 记额度）。失败静默：文件已经在用户手里了。 */

@@ -6,6 +6,7 @@
     "pages/item-form/index",
     "pages/item-detail/index",
     "pages/batch-operation/index",
+    "pages/feedback/index",
     "pages/mine/index"
   ],
   "window": {

@@ -309,6 +309,10 @@ Page({
     if (key === 'trash') void this.loadTrash(true)
   },
 
+  openFeedback() {
+    wx.navigateTo({ url: '/pages/feedback/index' })
+  },
+
   closeModal() {
     if (this.data.settingsSaving || this.data.deletingAccount || this.data.exporting) return
     this.setData({
@@ -503,7 +507,7 @@ Page({
 
     const first = await wx.showModal({
       title: '注销账号？',
-      content: '将永久删除：全部物品、回收站、提醒任务、提醒设置和云端封面图。',
+      content: '将永久删除：全部物品、回收站、提醒任务、提醒设置、提交的反馈和云端图片。',
       confirmText: '继续',
       confirmColor: '#A33F32',
     })

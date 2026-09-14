@@ -2,7 +2,7 @@
 
 const { shanghaiDateKey } = require('./date')
 
-const EXPORT_SCHEMA_VERSION = 2
+const EXPORT_SCHEMA_VERSION = 3
 
 /** 内部字段：主键、归属、模板 ID 都不属于用户的个人信息，导出时必须剔掉。 */
 const STRIPPED_KEYS = ['_id', 'ownerId', '_openid', 'templateId']
@@ -33,7 +33,14 @@ function reminderEntry(doc) {
  * 导出快照的装配，纯函数（不碰 db / 云存储），便于单测。
  * 只出「属于用户的数据」：标识字段一律不带，见 STRIPPED_KEYS。
  */
-function buildExportPayload({ items = [], settings = null, user = null, reminders = [], exportedAt = '' } = {}) {
+function buildExportPayload({
+  items = [],
+  settings = null,
+  user = null,
+  reminders = [],
+  feedback = [],
+  exportedAt = '',
+} = {}) {
   return {
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt,
@@ -47,6 +54,7 @@ function buildExportPayload({ items = [], settings = null, user = null, reminder
     },
     items: (items || []).map(strip),
     reminders: (reminders || []).map(reminderEntry),
+    feedback: (feedback || []).map(strip),
   }
 }
 
