@@ -1,0 +1,89 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "envId": "cloud1-d0gkh66ce94b1be08",
+  "functionRoot": "./cloudfunctions",
+  "functions": [
+    {
+      "name": "userApi",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 60,
+      "memorySize": 256,
+      "installDependency": true,
+      "envVariables": {}
+    },
+    {
+      "name": "inventoryApi",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 60,
+      "memorySize": 256,
+      "installDependency": true,
+      "envVariables": {
+        "COVER_IMAGE_ENABLED": "false",
+        "COVER_IMAGE_DAILY_LIMIT": "5",
+        "COVER_IMAGE_GLOBAL_DAILY_LIMIT": "100"
+      }
+    },
+    {
+      "name": "quickEntryApi",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 60,
+      "memorySize": 256,
+      "installDependency": true,
+      "envVariables": {
+        "QUICK_ENTRY_TIMEOUT_MS": "8000",
+        "QUICK_ENTRY_AI_ENABLED": "true",
+        "QUICK_ENTRY_AI_PROVIDER": "hunyuan-v3",
+        "QUICK_ENTRY_AI_MODEL": "hy3",
+        "QUICK_ENTRY_AI_TIMEOUT_MS": "6000",
+        "QUICK_ENTRY_AI_DAILY_LIMIT": "50",
+        "QUICK_ENTRY_AI_GLOBAL_DAILY_LIMIT": "500"
+      }
+    },
+    {
+      "name": "reminderApi",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 10,
+      "memorySize": 256,
+      "installDependency": true,
+      "envVariables": {}
+    },
+    {
+      "name": "cleanupTrash",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 60,
+      "memorySize": 256,
+      "installDependency": true,
+      "envVariables": {},
+      "triggers": [
+        {
+          "name": "daily-trash-cleanup",
+          "type": "timer",
+          "config": "0 30 3 * * * *"
+        }
+      ]
+    },
+    {
+      "name": "dispatchReminders",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 60,
+      "memorySize": 256,
+      "installDependency": true,
+      "envVariables": {
+        "MINIPROGRAM_STATE": "developer"
+      },
+      "triggers": [
+        {
+          "name": "daily-reminder-dispatch",
+          "type": "timer",
+          "config": "0 30 9 * * * *"
+        }
+      ]
+    }
+  ]
+}
