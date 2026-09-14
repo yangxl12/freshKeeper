@@ -95,9 +95,18 @@ for (const field of ["name: 'thing7'", "expiryDate: 'time2'", "remainingDays: 'n
 }
 
 const dispatchConfig = JSON.parse(readFileSync(join(cloudRoot, 'dispatchReminders', 'config.json'), 'utf8'))
+const inventoryConfig = JSON.parse(readFileSync(join(cloudRoot, 'inventoryApi', 'config.json'), 'utf8'))
 const reminderConfig = JSON.parse(readFileSync(join(cloudRoot, 'reminderApi', 'config.json'), 'utf8'))
 const cleanupConfig = JSON.parse(readFileSync(join(cloudRoot, 'cleanupTrash', 'config.json'), 'utf8'))
+const cloudbaseConfig = JSON.parse(readFileSync(join(root, 'cloudbaserc.json'), 'utf8'))
+const inventoryCloudbaseConfig = cloudbaseConfig.functions?.find((item) => item.name === 'inventoryApi')
 if (dispatchConfig.timeout !== 60) errors.push('dispatchReminders 超时必须为 60 秒')
+if (inventoryConfig.envVariables?.COVER_IMAGE_ENABLED !== 'true') {
+  errors.push('inventoryApi AI 封面必须显式开启')
+}
+if (inventoryCloudbaseConfig?.envVariables?.COVER_IMAGE_ENABLED !== inventoryConfig.envVariables?.COVER_IMAGE_ENABLED) {
+  errors.push('cloudbaserc.json 与 inventoryApi/config.json 的 AI 封面开关不一致')
+}
 if (reminderConfig.timeout !== 10) errors.push('reminderApi 超时必须为 10 秒')
 if (cleanupConfig.timeout !== 60) errors.push('cleanupTrash 超时必须为 60 秒')
 if (dispatchConfig.envVariables?.MINIPROGRAM_STATE !== 'formal') errors.push('正式发布跳转状态必须为 formal')

@@ -211,6 +211,8 @@ describe('image-cover service', () => {
     // 'hunyuan-image' 作为 model 已于 2026-07-15 下线；必须是带版本号的具体模型。
     expect(captured.model).toBe(imageCover.IMAGE_MODEL)
     expect(captured.model).not.toBe('hunyuan-image')
+    // 512² 是该模型线上实测可用的最小档：列表封面不得回退到 1024²。
+    expect(imageCover.IMAGE_SIZE).toBe('512x512')
     expect(captured.size).toBe(imageCover.IMAGE_SIZE)
     expect(captured.revise).toEqual({ value: false })
     expect(captured.enable_thinking).toEqual({ value: false })
