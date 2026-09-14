@@ -48,15 +48,56 @@
 .hero--urgent,
 .hero--warning { border-color: #ecdcbe; }
 
-.hero__topline {
+/* 顶部信息卡：封面 + 分类/名称/状态 两栏 */
+.hero__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 22rpx;
+}
+
+.hero__cover {
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 0 176rpx;
+  width: 176rpx;
+  height: 176rpx;
+  overflow: hidden;
+  border: 2rpx solid #e8efeb;
+  border-radius: 22rpx;
+  background: #f4f8f5;
+}
+
+/* 解码完成才淡入。刻意不用 opacity:0 做初始态：万一某机型不触发 bindload，
+   图片也只是少了入场动画，而不是永远看不见。 */
+.hero__cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hero__cover-img--loaded { animation: cover-fade-in 260ms ease-out; }
+
+@keyframes cover-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.hero__head-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12rpx;
+  min-width: 0;
 }
 
 .hero__kind {
+  max-width: 100%;
+  overflow: hidden;
   color: #6b7a73;
   font-size: 23rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hero__pill {
@@ -74,11 +115,12 @@
 
 .hero__name {
   display: block;
-  margin-top: 16rpx;
+  max-width: 100%;
   color: #173b31;
-  font-size: 42rpx;
+  font-size: 38rpx;
   font-weight: 700;
   line-height: 1.25;
+  word-break: break-word;
 }
 
 .hero__stats {
@@ -235,6 +277,12 @@
 .action-bar__text--danger { color: #b84a3e; }
 
 @media (max-width: 340px) {
+  .hero__cover { flex-basis: 148rpx; width: 148rpx; height: 148rpx; }
+  .hero__name { font-size: 34rpx; }
   .hero__stat-value { font-size: 26rpx; }
   .action-bar__text { font-size: 24rpx; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__cover-img--loaded { animation: none; }
 }

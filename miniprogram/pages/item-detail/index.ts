@@ -3,11 +3,16 @@ import {
   completeItem,
   deleteItem,
   getItem,
+  onItemCoverReady,
   permanentlyDeleteItem,
 } from '../../services/inventory-service'
+import { coverThumbUrl } from '../../domain/inventory'
 import { resolveReminderTime } from '../../domain/reminder-time'
 import type { InventoryItem } from '../../types/inventory'
 import { track } from '../../utils/analytics'
+
+// 无封面（或封面加载失败）时的兜底图，与首页卡片同源。
+const COVER_PLACEHOLDER = '/assets/inventory-placeholder.svg'
 
 /**
  * 把物品折算成「微信提醒时间 + 一句状态」。
@@ -44,6 +49,8 @@ function decorateItem(item: InventoryItem) {
     shelfLifeText,
     reminderAtText: reminder?.text || '',
     reminderAtNote,
+    // 与首页卡片复用同一个派生函数：将来恢复缩略图参数时两处一起变，不会一个有大图一个没有。
+    coverUrl: coverThumbUrl(item.coverFileId),
   }
 }
 
@@ -54,7 +61,16 @@ Page({
     actionLoading: false,
     errorMessage: '',
     item: null as ReturnType<typeof decorateItem> | null,
+    coverPlaceholder: COVER_PLACEHOLDER,
+    // 封面加载失败 → 回退占位图，同一张封面不反复重试。
+    coverFailed: false,
+    // 图片解码完成才淡入，避免从占位图切到真图时"跳"一下。
+    coverLoaded: false,
   },
+
+  // 封面就绪广播的退订句柄。挂在页面实例上而不是模块级：详情页可能被 navigateTo 叠多层，
+  // 每个实例各自持有自己的订阅，不会互相覆盖掉对方的退订。
+  coverUnsubscribe: null as (() => void) | null,
 
   onLoad(options: Record<string, string | undefined>) {
     const itemId = options.id || ''
@@ -63,19 +79,64 @@ Page({
   },
 
   onShow() {
+    this.subscribeCoverUpdates()
     if (this.data.itemId) this.loadItem()
     else this.setData({ loading: false, errorMessage: '缺少物品编号，无法查看详情' })
+  },
+
+  onHide() {
+    this.unsubscribeCoverUpdates()
+  },
+
+  onUnload() {
+    this.unsubscribeCoverUpdates()
+  },
+
+  // 封面是保存后后台生成的：用户进详情页时图可能还没就绪，等生成完直接补到当前页面上。
+  // 与首页 subscribeCoverUpdates 同一套机制，区别是这里只认自己这一件物品。
+  subscribeCoverUpdates() {
+    if (this.coverUnsubscribe) return
+    this.coverUnsubscribe = onItemCoverReady(({ itemId, coverFileId }) => {
+      const item = this.data.item
+      if (!item || item._id !== itemId) return
+      this.setData({
+        item: { ...item, coverFileId, coverUrl: coverThumbUrl(coverFileId) },
+        coverFailed: false,
+        coverLoaded: false,
+      })
+    })
+  },
+
+  unsubscribeCoverUpdates() {
+    if (!this.coverUnsubscribe) return
+    this.coverUnsubscribe()
+    this.coverUnsubscribe = null
   },
 
   async loadItem() {
     this.setData({ loading: !this.data.item, errorMessage: '' })
     try {
       const item = await getItem(this.data.itemId)
-      this.setData({ item: decorateItem(item), loading: false })
+      this.setData({
+        item: decorateItem(item),
+        loading: false,
+        coverFailed: false,
+        coverLoaded: false,
+      })
       wx.setNavigationBarTitle({ title: item.name })
     } catch (error) {
       this.setData({ loading: false, errorMessage: getErrorMessage(error) })
     }
+  },
+
+  handleCoverLoad() {
+    if (this.data.coverLoaded) return
+    this.setData({ coverLoaded: true })
+  },
+
+  handleCoverError() {
+    if (this.data.coverFailed) return
+    this.setData({ coverFailed: true })
   },
 
   editItem() {

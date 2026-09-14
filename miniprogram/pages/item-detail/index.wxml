@@ -16,11 +16,23 @@
     </view>
 
     <view class="hero hero--{{item.expiryTone}}">
-      <view class="hero__topline">
-        <text class="hero__kind">{{item.categoryLabel}} · {{item.storageLabel}}</text>
-        <text class="hero__pill">{{item.expiryStatusText}}</text>
+      <view class="hero__head">
+        <view class="hero__cover">
+          <image
+            class="hero__cover-img {{coverLoaded ? 'hero__cover-img--loaded' : ''}}"
+            src="{{coverFailed || !item.coverUrl ? coverPlaceholder : item.coverUrl}}"
+            mode="aspectFit"
+            binderror="handleCoverError"
+            bindload="handleCoverLoad"
+            aria-hidden="true"
+          />
+        </view>
+        <view class="hero__head-main">
+          <text class="hero__kind">{{item.categoryLabel}} · {{item.storageLabel}}</text>
+          <text class="hero__name">{{item.name}}</text>
+          <text class="hero__pill">{{item.expiryStatusText}}</text>
+        </view>
       </view>
-      <text class="hero__name">{{item.name}}</text>
       <view class="hero__stats">
         <view class="hero__stat">
           <text class="hero__stat-label">到期日期</text>

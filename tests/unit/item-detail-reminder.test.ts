@@ -7,12 +7,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * 时间由「到期日期 - 提前天数（当天 09:30）」算出来，正常待发送状态不展示技术任务文案。
  */
 
-const { getItemMock } = vi.hoisted(() => ({ getItemMock: vi.fn() }))
+const { getItemMock, coverReadyMock } = vi.hoisted(() => ({
+  getItemMock: vi.fn(),
+  // 返回退订函数，和真实实现一致。
+  coverReadyMock: vi.fn((): (() => void) => () => {}),
+}))
 
 vi.mock('../../miniprogram/services/inventory-service', () => ({
   completeItem: vi.fn(),
   deleteItem: vi.fn(),
   getItem: getItemMock,
+  onItemCoverReady: coverReadyMock,
   permanentlyDeleteItem: vi.fn(),
 }))
 vi.mock('../../miniprogram/utils/analytics', () => ({ track: vi.fn() }))
@@ -143,4 +148,64 @@ describe('物品详情 · 提醒时间', () => {
     }
   })
 
+})
+
+describe('物品详情 · 封面', () => {
+  it('直接复用列表那张封面（原图 fileID，不加展示层参数）', async () => {
+    const cover = 'cloud://env.bucket/covers/item-1.png'
+    const page = await loadWith({ coverFileId: cover })
+    expect(page.data.item.coverUrl).toBe(cover)
+  })
+
+  it('没有封面时交给占位图兜底', async () => {
+    const page = await loadWith({})
+    expect(page.data.item.coverUrl).toBe('')
+    expect(page.data.coverPlaceholder).toBe('/assets/inventory-placeholder.svg')
+  })
+
+  it('生图完成时把封面补到已经打开的详情页，不必退出重进', async () => {
+    const cover = 'cloud://env.bucket/covers/item-1.png'
+    const page = await loadWith({})
+    page.subscribeCoverUpdates()
+
+    const listener = coverReadyMock.mock.calls[0][0]
+    listener({ itemId: 'item-1', coverFileId: cover })
+
+    expect(page.data.item.coverUrl).toBe(cover)
+    expect(page.data.coverFailed).toBe(false)
+  })
+
+  it('只认自己这一件物品的封面广播', async () => {
+    const page = await loadWith({})
+    page.subscribeCoverUpdates()
+
+    const listener = coverReadyMock.mock.calls[0][0]
+    listener({ itemId: 'item-other', coverFileId: 'cloud://env.bucket/covers/other.png' })
+
+    expect(page.data.item.coverUrl).toBe('')
+  })
+
+  it('加载失败回退占位图且不反复重试；成功解码后淡入', async () => {
+    const page = await loadWith({ coverFileId: 'cloud://env.bucket/covers/gone.png' })
+
+    page.handleCoverError()
+    expect(page.data.coverFailed).toBe(true)
+    page.handleCoverError()
+    expect(page.data.coverFailed).toBe(true)
+
+    page.handleCoverLoad()
+    expect(page.data.coverLoaded).toBe(true)
+  })
+
+  it('重新加载物品时重置封面状态，避免沿用上一件的失败态', async () => {
+    const page = await loadWith({ coverFileId: 'cloud://env.bucket/covers/gone.png' })
+    page.handleCoverError()
+    page.handleCoverLoad()
+    getItemMock.mockResolvedValue(itemWith({ coverFileId: 'cloud://env.bucket/covers/new.png' }))
+    await page.loadItem()
+
+    expect(page.data.coverFailed).toBe(false)
+    expect(page.data.coverLoaded).toBe(false)
+    expect(page.data.item.coverUrl).toBe('cloud://env.bucket/covers/new.png')
+  })
 })
