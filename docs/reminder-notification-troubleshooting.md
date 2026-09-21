@@ -2,6 +2,11 @@
 
 环境：`cloud1-d0gkh66ce94b1be08`｜记录时间：2026-09-21
 
+> **2026-09-21 变更**：提醒时刻由北京时间 09:30 改为 **14:00**（当天下午即可验证链路）。
+> 涉及 `domain/reminder-time.ts`、`reminderApi/index.js`、`dispatchReminders/config.json`、
+> `cloudbaserc.json`、`scripts/validate-project.mjs` 与相关测试。
+> ⚠️ 云端定时触发器**不会**随代码更新，必须去控制台手动改 —— 见第三节第 2 项。
+
 ## 一、已定位并已修的根因：订阅授权不在 tap 同步栈里发起
 
 微信对 `wx.requestSubscribeMessage` 有硬性要求：**必须由用户 tap 事件同步触发**，
@@ -49,7 +54,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 | # | 位置 | 要确认的事 | 不对会怎样 |
 | --- | --- | --- | --- |
 | 1 | 云函数 → `dispatchReminders` → 配置 | 环境变量 `MINIPROGRAM_STATE` 指向当前在测的版本：开发版 `developer`／体验版 `trial`／正式版 `formal` | **不影响能否收到**，只决定点击通知跳进哪个版本；`developer` 只在本地开着开发者工具时可用，`formal` 在正式版未发布或未更新时跳不过去 |
-| 2 | 云函数 → `dispatchReminders` → 触发器 | `daily-reminder-dispatch` 存在且已启用（每天 09:30） | 没有任何任务被派发，`reminder_jobs` 一直停在 `scheduled` |
+| 2 | 云函数 → `dispatchReminders` → 触发器 | `daily-reminder-dispatch` 存在且已启用，时刻与代码内一致（现为每天 **14:00**）。⚠️ 触发器**只在函数首次创建时**写入云端，之后改 `config.json` / `cloudbaserc.json` 重新部署都**不会**同步 —— 改时刻必须在这里手改 | 没有任何任务被派发，`reminder_jobs` 一直停在 `scheduled` |
 | 3 | 云函数 → `dispatchReminders` → API 权限 | 已勾选 `subscribeMessage.send` | 调用开放接口直接报无权限 |
 | 4 | 公众平台 → 功能 → 订阅消息 → 我的模板 | 模板 ID `jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8`，字段依次 `thing7 / time2 / number5 / number4 / thing3` | 发送报 `47003`（参数不合法）或 `40037`（模板 ID 无效） |
 
@@ -57,9 +62,25 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 写的是 `formal`，两处不一致；而 `envVariables` / `triggers` / `permissions` **只在函数首次创建时**
 写入云端，之后改配置或重新部署都不会同步。**以控制台实际值为准。**
 
-## 四、马上测一条（不用等到 09:30）
+## 四、马上测一条（不用等定时器）
 
-派发侧只认「提醒日 == 今天」，而前端在 09:30 之后不再落任务，所以要手工造一条自洽数据：
+**派发侧只比对日期**（`job.remindDate === 今天`），**不看时钟** —— 所以不必等定时器，
+在控制台手动运行 `dispatchReminders` 就能立刻派发。
+
+**落任务那一步才看时钟**：`reminderApi.arm` 在「提醒日 == 今天」时会把当前时刻与
+`REMIND_HOUR / REMIND_MINUTE`（现为 **14:00**）比较，已过就返回 `missed`、不落任何任务。
+所以要么在 14:00 之前保存，要么直接手工造数据。
+
+### 路径 A：走真实链路（能一次验完整条链，推荐）
+
+1. 真机新增一件物品，到期日填「今天 + 提前天数」（默认提前 1 天 → 填 `2026-09-22`，
+   这样提醒日正好落在今天）
+2. 保存时弹出的订阅面板点**允许**
+3. 数据库 → `reminder_jobs`：应出现 `_id` = 该物品 `_id`、`status: 'scheduled'`、
+   `remindDate: '2026-09-21'` 的记录
+4. 云函数 → `dispatchReminders` → 云端测试 → 运行（无需参数）→ 应返回 `sent: 1`
+
+### 路径 B：手工造数据（额度已有、只想验派发侧）
 
 1. 数据库 → `inventory_items`：挑一件物品，记下 `_id`，把 `expiryDate` 改成
    「今天 + `reminderLeadDays`」（如今天 2026-09-21、提前 1 天 → 改成 `2026-09-22`）
@@ -67,10 +88,12 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
    `doc(itemId).set()`，所以 `_id` 就是 itemId），把 `remindDate` 改成 `2026-09-21`、
    `status` 改成 `scheduled`；没有记录就照这个结构新增一条
 3. 云函数 → `dispatchReminders` → 云端测试 → 运行（无需参数）
-4. 看返回值 `sent` / `failed` / `unknown`，再看 `reminder_jobs` 里的 `failureCode`
 
-**前提**：这条记录对应的 openid 得先有订阅额度 —— 先在真机上完成一次
-「录入物品 → 弹出订阅面板 → 点允许」，否则必然 `43101`。
+两条路径都看返回值 `sent` / `failed` / `unknown`，再看 `reminder_jobs` 里的 `failureCode`。
+
+**前提**：这条记录对应的 openid 得先有订阅额度，否则必然 `43101`。
+路径 A 天然包含授权这一步；走路径 B 也必须先在真机上完成过一次
+「录入物品 → 弹出订阅面板 → 点允许」。
 
 ### `failureCode` 对照
 
@@ -88,7 +111,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 1. 先按「三」把云端四项核对掉；
 2. 真机走一次完整保存，`reminder_jobs` 应出现 `status: 'scheduled'` 且 `remindDate` 正确；
 3. 按「四」手工触发一次，确认能收到服务通知；
-4. 再等一个自然 09:30 的定时触发，确认触发器真的在工作。
+4. 再等一个自然 14:00 的定时触发，确认触发器真的在工作（前提是已在控制台把触发器改成 14:00）。
 
 ## 六、体验版 / 开发版能不能收到通知？
 

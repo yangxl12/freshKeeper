@@ -10,7 +10,7 @@
     {
       "name": "daily-reminder-dispatch",
       "type": "timer",
-      "config": "0 30 9 * * * *"
+      "config": "0 0 14 * * * *"
     }
   ]
 }

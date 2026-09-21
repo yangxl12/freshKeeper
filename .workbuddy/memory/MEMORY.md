@@ -94,8 +94,16 @@
   **别改成分页 skip 累积**（比 count 更贵）。
 - **最近档案**：`recent.js:readRecentProfilesOnce`，按 `updatedAt DESC` 取 100 条内存去重。
   查询**必须**带 `inventoryStatus: command.in(PROFILE_STATUSES)`（否则回收站物品会进快录建议）；命中老索引，无需新建。
-- **提醒**：手机端全去开关化。时间 = 到期日 − 提前天数，**当天 09:30** 推；纯函数 `domain/reminder-time.ts`；
+- **提醒**：手机端全去开关化。时间 = 到期日 − 提前天数，**当天 14:00** 推（2026-09-21 由 09:30 改）；
+  纯函数 `domain/reminder-time.ts`，常量 `REMINDER_HOUR/REMINDER_MINUTE`；
   授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前；模板字段映射**三处必改**。
+  **改提醒时刻（如 09:30→14:00）要同时改 5 处**：① `domain/reminder-time.ts`
+  （前端展示 + `isReminderMissed`）；② `reminderApi/index.js` 的 `REMIND_HOUR/REMIND_MINUTE`
+  （arm 的 missed 判定 —— **只有它决定「今天还能不能落任务」**，派发侧只比对日期不看时钟）；
+  ③ `dispatchReminders/config.json` + `cloudbaserc.json` 的 cron（7 段：秒 分 时 日 月 周 年）；
+  ④ `scripts/validate-project.mjs` 硬断言 cron 字符串（不改就 check 红）；⑤ 4 个测试文件里的
+  边界时刻（`new Date(2026, 8, 30, 9, 29)` 这种写死的要对齐新边界）。
+  ⚠️ 云端定时触发器**只在函数首次创建时**写入，改配置重新部署**不会**同步 → 只能控制台手改。
   坑：`Number(null)===0`。未来时刻测试用例用 **2099 年**。派发已并发化（`JOB_CONCURRENCY=8`），
   claim 用条件更新保证幂等。
   ⚠️ **`wx.requestSubscribeMessage` 必须在 tap 同步栈里发起**（保存前、第一个 `await` 之前）。

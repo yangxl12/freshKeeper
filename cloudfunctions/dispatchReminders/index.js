@@ -162,7 +162,7 @@ async function processJob(job, today, config) {
   let claimed = false
   let stage = 'validate'
   try {
-    // 提醒只认当天 09:30；错过后不补发。
+    // 提醒只认当天 14:00；错过后不补发。
     if (job.remindDate !== today) {
       await cancelJob(job, 'REMINDER_MISSED', '提醒时间已过，不再补发')
       return outcome(job, stage, 'cancelled')

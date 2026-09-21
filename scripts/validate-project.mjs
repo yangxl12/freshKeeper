@@ -110,7 +110,7 @@ if (inventoryCloudbaseConfig?.envVariables?.COVER_IMAGE_ENABLED !== inventoryCon
 if (reminderConfig.timeout !== 10) errors.push('reminderApi 超时必须为 10 秒')
 if (cleanupConfig.timeout !== 60) errors.push('cleanupTrash 超时必须为 60 秒')
 if (dispatchConfig.envVariables?.MINIPROGRAM_STATE !== 'formal') errors.push('正式发布跳转状态必须为 formal')
-if (dispatchConfig.triggers?.[0]?.config !== '0 30 9 * * * *') errors.push('提醒触发器必须为北京时间 09:30')
+if (dispatchConfig.triggers?.[0]?.config !== '0 0 14 * * * *') errors.push('提醒触发器必须为北京时间 14:00')
 if (cleanupConfig.triggers?.[0]?.config !== '0 30 3 * * * *') errors.push('回收站清理触发器必须为北京时间 03:30')
 
 const productionFiles = files.filter((file) =>
