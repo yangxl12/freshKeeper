@@ -6,21 +6,21 @@ import {
 } from '../../miniprogram/domain/reminder-time'
 
 /**
- * 提醒时间 = 到期日期 - 提前天数，当天 14:00。
+ * 提醒时间 = 到期日期 - 提前天数，当天 16:00。
  * 这是「物品详情 / 录入表单」与云端 dispatchReminders 共用的同一套口径，
  * 改这里等于同时改三处展示，必须锁死。
  */
 describe('提醒时间换算', () => {
-  it('到期日往前推提前天数，落在当天 14:00', () => {
+  it('到期日往前推提前天数，落在当天 16:00', () => {
     expect(resolveReminderTime({ expiryDate: '2026-09-10', reminderLeadDays: 1 })).toMatchObject({
       date: '2026-09-09',
-      text: '2026年9月9日 14:00',
+      text: '2026年9月9日 16:00',
     })
   })
 
-  it('提前 0 天即到期当天 14:00', () => {
+  it('提前 0 天即到期当天 16:00', () => {
     expect(resolveReminderTime({ expiryDate: '2026-09-10', reminderLeadDays: 0 })?.text).toBe(
-      '2026年9月10日 14:00',
+      '2026年9月10日 16:00',
     )
   })
 
@@ -42,9 +42,9 @@ describe('提醒时间换算', () => {
   })
 
   it('提前天数写到最后一天也不算错过', () => {
-    const now = new Date(2026, 8, 30, 13, 59, 59)
+    const now = new Date(2026, 8, 30, 15, 59, 59)
     expect(isReminderMissed('2026-09-30', now)).toBe(false)
-    expect(isReminderMissed('2026-09-30', new Date(2026, 8, 30, 14, 0, 0))).toBe(true)
+    expect(isReminderMissed('2026-09-30', new Date(2026, 8, 30, 16, 0, 0))).toBe(true)
     expect(isReminderMissed('2026-09-30', new Date(2026, 8, 30, 20, 0, 0))).toBe(true)
     expect(isReminderMissed('2026-09-29', now)).toBe(true)
     expect(isReminderMissed('2026-10-01', now)).toBe(false)
@@ -55,7 +55,7 @@ describe('提醒时间换算', () => {
   })
 
   it('格式化对非法输入返回空串', () => {
-    expect(formatReminderText('2026-09-09')).toBe('2026年9月9日 14:00')
+    expect(formatReminderText('2026-09-09')).toBe('2026年9月9日 16:00')
     expect(formatReminderText('bad')).toBe('')
   })
 })

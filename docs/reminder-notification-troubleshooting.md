@@ -2,7 +2,7 @@
 
 环境：`cloud1-d0gkh66ce94b1be08`｜记录时间：2026-09-21
 
-> **2026-09-21 变更**：提醒时刻由北京时间 09:30 改为 **14:00**（当天下午即可验证链路）。
+> **2026-09-21 变更**：提醒时刻由北京时间 09:30 → 14:00 → **16:00**（当天下午即可验证链路）。
 > 涉及 `domain/reminder-time.ts`、`reminderApi/index.js`、`dispatchReminders/config.json`、
 > `cloudbaserc.json`、`scripts/validate-project.mjs` 与相关测试。
 > ⚠️ 云端定时触发器**不会**随代码更新，必须去控制台手动改 —— 见第三节第 2 项。
@@ -54,7 +54,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 | # | 位置 | 要确认的事 | 不对会怎样 |
 | --- | --- | --- | --- |
 | 1 | 云函数 → `dispatchReminders` → 配置 | 环境变量 `MINIPROGRAM_STATE` 指向当前在测的版本：开发版 `developer`／体验版 `trial`／正式版 `formal` | **不影响能否收到**，只决定点击通知跳进哪个版本；`developer` 只在本地开着开发者工具时可用，`formal` 在正式版未发布或未更新时跳不过去 |
-| 2 | 云函数 → `dispatchReminders` → 触发器 | `daily-reminder-dispatch` 存在且已启用，时刻与代码内一致（现为每天 **14:00**）。⚠️ 触发器**只在函数首次创建时**写入云端，之后改 `config.json` / `cloudbaserc.json` 重新部署都**不会**同步 —— 改时刻必须在这里手改 | 没有任何任务被派发，`reminder_jobs` 一直停在 `scheduled` |
+| 2 | 云函数 → `dispatchReminders` → 触发器 | `daily-reminder-dispatch` 存在且已启用，时刻与代码内一致（现为每天 **16:00**）。⚠️ 触发器**只在函数首次创建时**写入云端，之后改 `config.json` / `cloudbaserc.json` 重新部署都**不会**同步 —— 改时刻必须在这里手改 | 没有任何任务被派发，`reminder_jobs` 一直停在 `scheduled` |
 | 3 | 云函数 → `dispatchReminders` → API 权限 | 已勾选 `subscribeMessage.send` | 调用开放接口直接报无权限 |
 | 4 | 公众平台 → 功能 → 订阅消息 → 我的模板 | 模板 ID `jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8`，字段依次 `thing7 / time2 / number5 / number4 / thing3` | 发送报 `47003`（参数不合法）或 `40037`（模板 ID 无效） |
 
@@ -68,8 +68,8 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 在控制台手动运行 `dispatchReminders` 就能立刻派发。
 
 **落任务那一步才看时钟**：`reminderApi.arm` 在「提醒日 == 今天」时会把当前时刻与
-`REMIND_HOUR / REMIND_MINUTE`（现为 **14:00**）比较，已过就返回 `missed`、不落任何任务。
-所以要么在 14:00 之前保存，要么直接手工造数据。
+`REMIND_HOUR / REMIND_MINUTE`（现为 **16:00**）比较，已过就返回 `missed`、不落任何任务。
+所以要么在 16:00 之前保存，要么直接手工造数据。
 
 ### 路径 A：走真实链路（能一次验完整条链，推荐）
 
@@ -111,7 +111,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 1. 先按「三」把云端四项核对掉；
 2. 真机走一次完整保存，`reminder_jobs` 应出现 `status: 'scheduled'` 且 `remindDate` 正确；
 3. 按「四」手工触发一次，确认能收到服务通知；
-4. 再等一个自然 14:00 的定时触发，确认触发器真的在工作（前提是已在控制台把触发器改成 14:00）。
+4. 再等一个自然 16:00 的定时触发，确认触发器真的在工作（前提是已在控制台把触发器改成 16:00）。
 
 ## 六、体验版 / 开发版能不能收到通知？
 

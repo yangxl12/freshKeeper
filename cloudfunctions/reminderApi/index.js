@@ -17,8 +17,8 @@ const REMINDERS = 'reminder_jobs'
  */
 const REMINDER_TEMPLATE_ID = 'jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8'
 
-/** 提醒统一在提前 N 天的 14:00（Asia/Shanghai）推送，与 dispatchReminders 的定时触发器一致。 */
-const REMIND_HOUR = 14
+/** 提醒统一在提前 N 天的 16:00（Asia/Shanghai）推送，与 dispatchReminders 的定时触发器一致。 */
+const REMIND_HOUR = 16
 const REMIND_MINUTE = 0
 
 const MILLIS_PER_DAY = 86_400_000

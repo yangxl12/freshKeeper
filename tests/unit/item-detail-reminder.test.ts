@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * 锁死物品详情页的「提醒时间」展示。
  *
  * 提醒已经全部改走订阅消息，详情页不再有旧提醒开关或取消按钮：
- * 时间由「到期日期 - 提前天数（当天 14:00）」算出来，正常待发送状态不展示技术任务文案。
+ * 时间由「到期日期 - 提前天数（当天 16:00）」算出来，正常待发送状态不展示技术任务文案。
  */
 
 const { getItemMock, coverReadyMock } = vi.hoisted(() => ({
@@ -57,7 +57,7 @@ function instance() {
   return page
 }
 
-/** 到期 2099-09-30、提前 3 天 → 提醒时间 2099-09-27 14:00。 */
+/** 到期 2099-09-30、提前 3 天 → 提醒时间 2099-09-27 16:00。 */
 function itemWith(overrides: Record<string, unknown> = {}) {
   return {
     _id: 'item-1',
@@ -95,21 +95,21 @@ async function loadWith(overrides: Record<string, unknown> = {}) {
 describe('物品详情 · 提醒时间', () => {
   it('默认启用的待发送提醒只展示时间，不暴露内部任务状态', async () => {
     const page = await loadWith({ reminderStatus: null })
-    expect(page.data.item.reminderAtText).toBe('2099年9月27日 14:00')
+    expect(page.data.item.reminderAtText).toBe('2099年9月27日 16:00')
     expect(page.data.item.reminderAtNote).toBe('')
 
     const scheduledPage = await loadWith({ reminderStatus: 'scheduled' })
     expect(scheduledPage.data.item.reminderAtNote).toBe('')
   })
 
-  it('提前 0 天时提醒时间就是到期日当天 14:00', async () => {
+  it('提前 0 天时提醒时间就是到期日当天 16:00', async () => {
     const page = await loadWith({ reminderLeadDays: 0, reminderStatus: null })
-    expect(page.data.item.reminderAtText).toBe('2099年9月30日 14:00')
+    expect(page.data.item.reminderAtText).toBe('2099年9月30日 16:00')
   })
 
   it('已经推送过的只标注状态，不再给任何操作暗示', async () => {
     const page = await loadWith({ reminderStatus: 'sent' })
-    expect(page.data.item.reminderAtText).toBe('2099年9月27日 14:00')
+    expect(page.data.item.reminderAtText).toBe('2099年9月27日 16:00')
     expect(page.data.item.reminderAtNote).toBe('微信服务通知已发送')
   })
 
@@ -122,9 +122,9 @@ describe('物品详情 · 提醒时间', () => {
   })
 
   it('提醒时刻已过的标记为已错过', async () => {
-    // 到期 2020-01-01、提前 3 天 → 2019-12-29 14:00，早就过去了。
+    // 到期 2020-01-01、提前 3 天 → 2019-12-29 16:00，早就过去了。
     const page = await loadWith({ expiryDate: '2020-01-01', reminderStatus: null })
-    expect(page.data.item.reminderAtText).toBe('2019年12月29日 14:00')
+    expect(page.data.item.reminderAtText).toBe('2019年12月29日 16:00')
     expect(page.data.item.reminderAtNote).toBe('提醒时间已过，不再发送')
   })
 

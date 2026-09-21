@@ -165,12 +165,12 @@ describe('item-form-sheet 到期提醒', () => {
     sheet.data.expiryDate = '2099-09-10'
     sheet.data.reminderLeadDays = '1'
     sheet.refreshDerived()
-    expect(sheet.data.reminderAtText).toBe('2099年9月9日 14:00')
+    expect(sheet.data.reminderAtText).toBe('2099年9月9日 16:00')
     expect(sheet.data.reminderMissed).toBe(false)
 
     sheet.data.reminderLeadDays = '0'
     sheet.refreshDerived()
-    expect(sheet.data.reminderAtText).toBe('2099年9月10日 14:00')
+    expect(sheet.data.reminderAtText).toBe('2099年9月10日 16:00')
   })
 
   it('提醒时刻已过时表单里如实标注', () => {
@@ -178,7 +178,7 @@ describe('item-form-sheet 到期提醒', () => {
     sheet.data.expiryDate = '2020-01-05'
     sheet.data.reminderLeadDays = '1'
     sheet.refreshDerived()
-    expect(sheet.data.reminderAtText).toBe('2020年1月4日 14:00')
+    expect(sheet.data.reminderAtText).toBe('2020年1月4日 16:00')
     expect(sheet.data.reminderMissed).toBe(true)
   })
 
@@ -197,7 +197,7 @@ describe('item-form-sheet 到期提醒', () => {
     sheet.data.reminderLeadDays = '2'
     sheet.refreshDerived()
     expect(sheet.data.expiryPreview).toBe('2099-09-08')
-    expect(sheet.data.reminderAtText).toBe('2099年9月6日 14:00')
+    expect(sheet.data.reminderAtText).toBe('2099年9月6日 16:00')
   })
 
   it('新增保存成功后先申请授权再挂提醒，最后才通知宿主', async () => {

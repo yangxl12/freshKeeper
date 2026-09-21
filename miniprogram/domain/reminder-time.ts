@@ -1,12 +1,12 @@
 import { addDays, parseDateKey } from '../utils/date-key'
 
 /**
- * 到期提醒统一在北京时间 14:00 推送。
+ * 到期提醒统一在北京时间 16:00 推送。
  *
  * 这里的时间必须与云函数 `dispatchReminders/config.json` 的定时触发器保持一致，
- * 否则前端写着「9 月 9 日 14:00」、云端却在别的时刻发，用户对不上账。
+ * 否则前端写着「9 月 9 日 16:00」、云端却在别的时刻发，用户对不上账。
  */
-export const REMINDER_HOUR = 14
+export const REMINDER_HOUR = 16
 export const REMINDER_MINUTE = 0
 export const REMINDER_LEAD_DAYS_MIN = 0
 export const REMINDER_LEAD_DAYS_MAX = 30
@@ -14,13 +14,13 @@ export const REMINDER_LEAD_DAYS_MAX = 30
 export interface ReminderTime {
   /** 提醒发生的日期：到期日往前推 reminderLeadDays 天。 */
   date: string
-  /** 可直接展示的串，如「2026年9月9日 14:00」。 */
+  /** 可直接展示的串，如「2026年9月9日 16:00」。 */
   text: string
   /**
    * 提醒时刻是否已经过去。**只用于展示**（表单/详情打出「已错过」）。
    *
    * 预约时的拦截一律按 `date < 今天` 的日期口径走，不看时钟：前端拿真实时钟判断会让
-   * 行为随运行时刻漂移，而「当天 14:00 是否已过」云端 arm 会再判一次并返回 `missed`。
+   * 行为随运行时刻漂移，而「当天 16:00 是否已过」云端 arm 会再判一次并返回 `missed`。
    */
   missed: boolean
 }

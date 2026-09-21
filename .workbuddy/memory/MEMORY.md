@@ -94,7 +94,8 @@
   **别改成分页 skip 累积**（比 count 更贵）。
 - **最近档案**：`recent.js:readRecentProfilesOnce`，按 `updatedAt DESC` 取 100 条内存去重。
   查询**必须**带 `inventoryStatus: command.in(PROFILE_STATUSES)`（否则回收站物品会进快录建议）；命中老索引，无需新建。
-- **提醒**：手机端全去开关化。时间 = 到期日 − 提前天数，**当天 14:00** 推（2026-09-21 由 09:30 改）；
+- **提醒**：手机端全去开关化。时间 = 到期日 − 提前天数，**当天 16:00** 推
+  （2026-09-21 由 09:30 → 14:00 → 16:00，为当天下午验证链路）；
   纯函数 `domain/reminder-time.ts`，常量 `REMINDER_HOUR/REMINDER_MINUTE`；
   授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前；模板字段映射**三处必改**。
   **改提醒时刻（如 09:30→14:00）要同时改 5 处**：① `domain/reminder-time.ts`
