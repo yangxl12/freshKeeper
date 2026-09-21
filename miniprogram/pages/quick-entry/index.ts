@@ -661,6 +661,14 @@ Page({
     const savingDrafts = this.data.drafts.map((draft, index) => targets.some((target) => target.index === index) ? { ...draft, status: 'saving' as const } : draft)
     this.setData({ saving: true, saveSummary: '' })
     this.commitDrafts(savingDrafts)
+    // 微信硬性要求 wx.requestSubscribeMessage 必须由 tap 事件「同步」触发，落在任何 await
+    // 之后都会被拒（requestSubscribeMessage:fail can only be invoked by user TAP gesture）。
+    // 原来在保存完成后再逐条申请，等于每次都被拒、订阅额度恒为 0，服务通知永远发不出去。
+    // 这里趁还在 tap 同步栈里把请求发出去，一次性订阅一次点击只换一条额度，所以按「有没有
+    // 条目需要提醒」决定要不要申请，结果交给 armSavedReminders() 消费。
+    const reminderAuthorization = this.hasReminderTarget(targets)
+      ? requestReminderAuthorization()
+      : null
     const results = await Promise.allSettled(targets.map(({ draft }) => {
       const result = draftToInventoryInput(draft)
       const input = draft.submittedInput || result.input
@@ -691,7 +699,9 @@ Page({
     if (savedItemIds.length) void this.requestCovers(savedItemIds)
     // 提醒授权必须在保存期间完成：这里还压着 saving 状态，用户不会重复点「加入库存」，
     // 而下面的 exitToHome 也要等授权弹窗收完才跳转。
-    const remindersReady = reminderTargets.length ? await this.armSavedReminders(reminderTargets) : true
+    const remindersReady = reminderTargets.length
+      ? await this.armSavedReminders(reminderTargets, reminderAuthorization)
+      : true
     this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
     track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draft_count: targets.length, duration_ms: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
     if (!updated.some((draft) => draft.status !== 'saved')) {
@@ -708,12 +718,34 @@ Page({
   },
 
   /**
-   * 保存成功后逐条预约到期提醒。
-   * 微信一次性订阅「一次授权换一条发送额度」，所以只能一件一件申请，攒不成一次批量开通。
-   * 用户拒绝（或授权调用失败）就停下、不再连弹；单条挂失败也只跳过这一条——
-   * 物品已经入库，提醒始终是附加动作，不影响保存结果。
+   * 同步判定本批草稿里有没有「需要申请提醒授权」的条目。
+   *
+   * 唯一用途是抢 tap 同步栈：`wx.requestSubscribeMessage` 只能在用户点击的同步调用栈里
+   * 发起，所以「要不要申请」必须先用同步数据算完。判据与 `armSavedReminders()` 内的跳过
+   * 条件严格一致，任何一处改了都要同步改另一处。
    */
-  async armSavedReminders(targets: Array<{ itemId: string; draft: QuickEntryDraft }>): Promise<boolean> {
+  hasReminderTarget(targets: Array<{ draft: QuickEntryDraft }>): boolean {
+    return targets.some(({ draft }) => {
+      const reminder = resolveReminderTime({
+        expiryDate: getExpirySummary(draft),
+        reminderLeadDays: draft.fields.reminderLeadDays ?? 1,
+      })
+      return reminder ? reminder.date >= this.data.today : false
+    })
+  },
+
+  /**
+   * 保存成功后逐条预约到期提醒。
+   *
+   * 授权只在持久化前的 tap 同步栈里申请一次（见 persistDrafts）：微信一次性订阅是
+   * 「一次点击换一条发送额度」，而 requestSubscribeMessage 只能在 tap 同步栈里发起，
+   * 一次点击攒不出 N 条额度。这里把同一个授权结果依次消费、逐条落 reminder_jobs；
+   * 用户拒绝就整批停下，单条挂失败只跳过这一条——物品已经入库，提醒是附加动作。
+   */
+  async armSavedReminders(
+    targets: Array<{ itemId: string; draft: QuickEntryDraft }>,
+    authorization: Promise<boolean> | null,
+  ): Promise<boolean> {
     let allReady = true
     for (const { itemId, draft } of targets) {
       if (!itemId) continue
@@ -725,7 +757,9 @@ Page({
       if (!reminder || reminder.date < this.data.today) continue
       let accepted = false
       try {
-        accepted = await requestReminderAuthorization()
+        // 授权请求已在 persistDrafts() 的 tap 同步栈里发起，这里只收结果；
+        // 同一个 Promise 多次 await 拿到的是同一个结果，符合「一次点击一次授权」。
+        accepted = authorization ? await authorization : false
       } catch (_error) {
         accepted = false
       }

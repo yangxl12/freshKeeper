@@ -460,11 +460,12 @@ describe('quick entry page compatibility', () => {
   })
 
   /**
-   * 微信一次性订阅「一次授权换一条额度」，所以批量保存只能一件一件申请。
-   * 这几条守住：谁该申请、谁该跳过、拒绝之后不再连弹。
+   * 微信一次性订阅「一次授权换一条额度」，而且 `wx.requestSubscribeMessage` 必须由 tap
+   * 事件同步触发，批量保存又只发生在一次点击里——所以一次点击只能换来一次授权结果，
+   * 两条草稿共用它。这几条守住：谁该申请、谁该跳过、拒绝之后不再连弹。
    */
   describe('quick entry 保存后预约到期提醒', () => {
-    it('对每条保存成功的草稿依次申请授权并挂提醒', async () => {
+    it('授权在保存前的同步栈里申请一次，两条草稿共用并各自挂提醒', async () => {
       const page = pageInstance()
       page.setData({ today: '2026-09-08' })
       page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
@@ -472,7 +473,7 @@ describe('quick entry page compatibility', () => {
 
       await page.saveDrafts()
 
-      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(2)
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
       expect(armReminderMock.mock.calls.map((call) => call[0])).toEqual(['milk', 'yogurt'])
     })
 

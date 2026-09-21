@@ -380,6 +380,20 @@ Component({
         return
       }
 
+      // 微信硬性要求 wx.requestSubscribeMessage 必须由用户 tap 事件「同步」触发：只要落在
+      // 任何一个 await 之后，就会被拒（requestSubscribeMessage:fail can only be invoked by
+      // user TAP gesture）。原来是保存成功后再申请，等于每次都被拒、订阅额度恒为 0，
+      // 云端 subscribeMessage.send 必然失败，服务通知永远不来。
+      // 这里趁还在 tap 的同步调用栈里先把请求发出去，Promise 交给 armReminderAfterSave() 收结果。
+      let reminderAuthorization: Promise<boolean> | null = null
+      if (this.requiresReminderSetup()) {
+        try {
+          reminderAuthorization = requestReminderAuthorization()
+        } catch (_error) {
+          reminderAuthorization = null
+        }
+      }
+
       const itemId = this.data.itemId
       const restoring = this.data.restore
       const input: InventorySaveInput = {
@@ -422,7 +436,11 @@ Component({
         let reminderSetupState: ReminderSetupState = 'unchanged'
         if (restoring || this.needsReminderArm()) {
           // 授权弹窗必须排在 triggerEvent 之前——宿主收到 saved 会跳转或重置表单，之后弹会被打断。
-          reminderSetupState = await this.armReminderAfterSave(savedItemId, finalExpiryDate)
+          reminderSetupState = await this.armReminderAfterSave(
+            savedItemId,
+            finalExpiryDate,
+            reminderAuthorization,
+          )
         }
         this.triggerEvent('saved', {
           restoring,
@@ -451,21 +469,45 @@ Component({
     },
 
     /**
+     * 同步判定本次保存要不要「申请订阅授权 + 预约提醒」。
+     *
+     * 存在的唯一理由是抢 tap 同步栈：`wx.requestSubscribeMessage` 只能在用户点击的同步
+     * 调用栈里发起，而「要不要申请」又得先算出来，所以这件事必须用同步数据在 save() 开头
+     * 做完。判据与 `armReminderAfterSave()` 严格对齐（同一套 needsReminderArm + 提前天数
+     * 归一化 + 提醒日不小于今天），两边任何一处改了都要同步改另一处。
+     */
+    requiresReminderSetup(): boolean {
+      if (!this.data.restore && !this.needsReminderArm()) return false
+      const reminder = resolveReminderTime({
+        expiryDate: this.currentExpiryDate(),
+        reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
+      })
+      return reminder ? reminder.date >= this.data.today : false
+    },
+
+    /**
      * 保存成功后预约这一次到期提醒。
      *
      * 只按「提醒日 < 今天」做拦截（当天 09:30 是否已过交给云端判定，它会返回 missed 且不落任务）：
      * 前端拿着真实时钟做判断会让行为随运行时刻漂移，日期口径才和表单里「今天」一致。
      * 物品保存与提醒仍然解耦，但把结果交给宿主统一提示，不能再把失败静默吞掉。
      */
-    async armReminderAfterSave(savedItemId: string, expiryDate: string): Promise<ReminderSetupState> {
+    async armReminderAfterSave(
+      savedItemId: string,
+      expiryDate: string,
+      authorization: Promise<boolean> | null,
+    ): Promise<ReminderSetupState> {
       if (!savedItemId) return 'failed'
       const reminder = resolveReminderTime({
         expiryDate,
         reminderLeadDays: toNumberOrNull(this.data.reminderLeadDays),
       })
       if (!reminder || reminder.date < this.data.today) return 'missed'
+      // 授权请求已在 save() 的 tap 同步栈里发起，这里只收结果；为 null 说明
+      // requiresReminderSetup() 判定不需要申请，两者判据一致，不要拿 null 去 await。
+      if (!authorization) return 'not-enabled'
       try {
-        const accepted = await requestReminderAuthorization()
+        const accepted = await authorization
         // 用户拒绝授权时 reminder-service 已经给过提示，这里不再叠一层。
         if (!accepted) return 'not-enabled'
         const result = await armReminder(savedItemId)
