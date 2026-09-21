@@ -48,7 +48,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 
 | # | 位置 | 要确认的事 | 不对会怎样 |
 | --- | --- | --- | --- |
-| 1 | 云函数 → `dispatchReminders` → 配置 | 环境变量 `MINIPROGRAM_STATE` 与**实际运行的版本**一致：开发版 `developer`／体验版 `trial`／正式版 `formal` | 状态与版本不匹配时，消息**不展示**，但接口返回成功 |
+| 1 | 云函数 → `dispatchReminders` → 配置 | 环境变量 `MINIPROGRAM_STATE` 指向当前在测的版本：开发版 `developer`／体验版 `trial`／正式版 `formal` | **不影响能否收到**，只决定点击通知跳进哪个版本；`developer` 只在本地开着开发者工具时可用，`formal` 在正式版未发布或未更新时跳不过去 |
 | 2 | 云函数 → `dispatchReminders` → 触发器 | `daily-reminder-dispatch` 存在且已启用（每天 09:30） | 没有任何任务被派发，`reminder_jobs` 一直停在 `scheduled` |
 | 3 | 云函数 → `dispatchReminders` → API 权限 | 已勾选 `subscribeMessage.send` | 调用开放接口直接报无权限 |
 | 4 | 公众平台 → 功能 → 订阅消息 → 我的模板 | 模板 ID `jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8`，字段依次 `thing7 / time2 / number5 / number4 / thing3` | 发送报 `47003`（参数不合法）或 `40037`（模板 ID 无效） |
@@ -89,3 +89,32 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 2. 真机走一次完整保存，`reminder_jobs` 应出现 `status: 'scheduled'` 且 `remindDate` 正确；
 3. 按「四」手工触发一次，确认能收到服务通知；
 4. 再等一个自然 09:30 的定时触发，确认触发器真的在工作。
+
+## 六、体验版 / 开发版能不能收到通知？
+
+**能。** 服务通知下发到用户微信的「服务通知」会话，与小程序跑在哪个版本无关。
+`miniprogramState` 只决定**点击通知后跳进哪个版本**，不是能否下发的开关。微信开放社区口径：
+
+> 推送没有体验版这个说法吧，都是推送到用户微信上的
+> 开发版也是可以触发的，订阅成功后服务端调用接口下发消息
+
+与版本真正相关的只有两项：
+
+| 项 | 影响 |
+| --- | --- |
+| `miniprogramState` | 点击通知的**跳转落点**（`developer` / `trial` / `formal`，默认 `formal`） |
+| 体验成员名单 | 只有名单内的微信号能打开体验版，因此也只有他们能授权、能收到 |
+
+其余前提与版本无关：模板已审核通过（**不需要**小程序上线 / 认证 / 备案）、
+该用户已授权且有剩余额度、云函数有 `subscribeMessage.send` 开放接口权限。
+
+**必须真机。** 开发者工具模拟器不会把服务通知推到真机微信，订阅面板的表现也与真机不一致。
+
+| 测试路径 | 授权 / 收通知 | 点击跳转 | 适用 |
+| --- | --- | --- | --- |
+| 开发者工具「预览」扫码 | 可以 | 二维码 25 分钟失效后跳不进 | 最快验证「能不能收到」 |
+| 上传 → 设为体验版 → 扫码 | 可以 | 可以（配 `miniprogramState=trial`） | 完整闭环验收 |
+| 模拟器 | 不行 | 不行 | 只能看 UI |
+
+> ⚠️ 把控制台 `MINIPROGRAM_STATE` 改成 `trial` / `developer` 会让本地 `npm run check` 失败 ——
+> `scripts/validate-project.mjs:112` 硬断言它必须是 `formal`。测试期可临时放宽该断言，或忽略这条失败。

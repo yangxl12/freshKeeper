@@ -102,6 +102,12 @@
   落到任何 `await` 之后必被拒（`fail can only be invoked by user TAP gesture`）→ 订阅额度恒 0
   → `subscribeMessage.send` 必然失败 → 服务通知永不送达。2026-09-21 事故，`990467d` 修。
   一次性订阅 = **一次点击一条额度**，批量录入 N 条只有 1 条能收到（其余 `43101`）。
+  **版本与送达无关**：体验版/开发版都能收到服务通知（消息发到用户微信「服务通知」，不是发到某个版本）；
+  `MINIPROGRAM_STATE` 只决定**点击通知跳进哪个版本**（developer/trial/formal），不是能否下发的开关。
+  测试**必须真机**（模拟器收不到）；体验版还要求操作者在体验成员名单里。模板只要审核通过，
+  不需要小程序上线/认证/备案。
+  ⚠️ `scripts/validate-project.mjs:112` 硬断言 `MINIPROGRAM_STATE` 必须是 `formal`，
+  改 `trial`/`developer` 会让 `npm run check` 红。
   排查手册 `docs/reminder-notification-troubleshooting.md`。
 - **写操作**：`transition`/`moveToTrash`/`removePermanently`/`restore` 在 `inventoryApi/writes.js`（注入式），
   范式是「读一次 + `where({_id,ownerId,inventoryStatus,version})` 条件更新」，**已去事务**。
