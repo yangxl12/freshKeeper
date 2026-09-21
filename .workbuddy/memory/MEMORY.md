@@ -8,7 +8,9 @@
 - bash 沙箱是坏的（`ls`/`dirname` 报 command not found，exit 127）→ 文件操作一律用 PowerShell 工具。
 - PowerShell 跑 npm 会吞 stdout：`npm run check *>&1 | Out-File -Encoding utf8 .cN.txt` 再 Read。
   **每轮换文件名**（同名 Read 会读到上一轮的旧内容）。中文输出乱码，断言靠 ASCII 关键字定位。
-- 临时文件 `.cA*.txt` / `.commitmsg.txt` 已在 `.gitignore`；但先 `git add -A` 再写 commitmsg 仍会带上，注意顺序。
+- 临时文件 `.cA*.txt` / `.commitmsg.txt` 已在 `.gitignore`；命名**必须**是 `.c` + **大写字母**开头
+  （`.c20.txt` 这种纯数字形式不匹配 `.c[A-Z]*.txt`，会出现在 `git status` 里）；
+  且先 `git add -A` 再写 commitmsg 仍会带上，注意顺序。
 - 删未跟踪文件 `git clean -fx -- <路径>`（Remove-Item 静默失效）；删已跟踪目录必须 `git rm -r -f`。
 - `.git/index.lock` 残留 → 所有 git 命令报 `File exists`，确认无其他 git 进程后删锁文件。
 - 同文件别并行 Edit（互相覆盖）；Write 前先 Read。
@@ -22,6 +24,9 @@
 ## 云函数
 - `config.json` 的 timeout/envVariables/triggers **只在首次创建**时写云端，deploy 只更新代码
   → 建完必须去控制台改（新环境默认 **3s**；`quickEntryApi` / `userApi` 要 **60s**）。
+- ⚠️ **2026-09-21 起本机 `cli.bat` 被沙箱拦死**：它内部调 `reg.exe`，而 reg.exe 进了程序黑名单，
+  提示「不可批准也不可绕过」→ `cloud functions list/download/deploy` 全部跑不了。
+  云函数只能靠开发者工具界面手工上传，云端状态（触发器/环境变量/API 权限）只能看控制台。
 - CLI：`D:\微信web开发者工具\cli.bat cloud functions deploy --env cloud1-d0gkh66ce94b1be08
   --names <fn> --project D:/my-project/freshKeeper`，**必须加 `--remote-npm-install`**。
   不加会把本地残缺的 `node_modules`（2982 文件 / 3.2 MB，缺 `@cloudbase/node-sdk`）整包传上云端，
@@ -93,6 +98,11 @@
   授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前；模板字段映射**三处必改**。
   坑：`Number(null)===0`。未来时刻测试用例用 **2099 年**。派发已并发化（`JOB_CONCURRENCY=8`），
   claim 用条件更新保证幂等。
+  ⚠️ **`wx.requestSubscribeMessage` 必须在 tap 同步栈里发起**（保存前、第一个 `await` 之前）。
+  落到任何 `await` 之后必被拒（`fail can only be invoked by user TAP gesture`）→ 订阅额度恒 0
+  → `subscribeMessage.send` 必然失败 → 服务通知永不送达。2026-09-21 事故，`990467d` 修。
+  一次性订阅 = **一次点击一条额度**，批量录入 N 条只有 1 条能收到（其余 `43101`）。
+  排查手册 `docs/reminder-notification-troubleshooting.md`。
 - **写操作**：`transition`/`moveToTrash`/`removePermanently`/`restore` 在 `inventoryApi/writes.js`（注入式），
   范式是「读一次 + `where({_id,ownerId,inventoryStatus,version})` 条件更新」，**已去事务**。
   ⚠️ `save`/`saveIdempotent` **仍用事务**（保护提醒改期 + 幂等键），别顺手也去掉。`processBatch` 并发 5。
