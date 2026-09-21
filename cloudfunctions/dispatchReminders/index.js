@@ -22,6 +22,17 @@ const MAX_BATCHES = 20
 const JOB_CONCURRENCY = 8
 const STALE_SENDING_MS = 15 * 60 * 1000
 const MILLIS_PER_DAY = 86_400_000
+
+/**
+ * 提醒统一在提醒日 16:00（Asia/Shanghai）推送，必须与 reminderApi 的 REMIND_HOUR/REMIND_MINUTE
+ * 完全一致。改这里要同步 reminderApi/index.js、domain/reminder-time.ts 与相关测试。
+ *
+ * 注意：定时触发器配的是「每小时整点」，到没到点由本文件的 reachedRemindTime() 判断，
+ * 所以改提醒时刻只需改代码并重新部署，**不用再去控制台改触发器**（触发器只在函数首次
+ * 创建时写入云端，之后改 config.json 重新部署都不会同步）。
+ */
+const REMIND_HOUR = 16
+const REMIND_MINUTE = 0
 class AppError extends Error {
   constructor(code, message) {
     super(message)
@@ -80,9 +91,29 @@ function todayKey() {
   return `${values.year}-${values.month}-${values.day}`
 }
 
-function loadConfig() {
+/** hourCycle 用 h23，避免部分 Node 版本在午夜把 00 点格式化成 24。 */
+function shanghaiHourMinute() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return { hour: Number(values.hour), minute: Number(values.minute) }
+}
+
+/** 当前时刻是否已过当天提醒时刻。未到点时当天任务保持 scheduled，不提前推、也不取消。 */
+function reachedRemindTime() {
+  const { hour, minute } = shanghaiHourMinute()
+  return hour > REMIND_HOUR || (hour === REMIND_HOUR && minute >= REMIND_MINUTE)
+}
+
+function loadConfig(override) {
   const config = {
-    miniprogramState: process.env.MINIPROGRAM_STATE || 'formal',
+    // 环境变量只在函数首次创建时写入云端，之后改配置重新部署都不会同步；
+    // 手工派发时可以用 options.miniprogramState 临时覆盖，避免为了测试去改云端环境变量。
+    miniprogramState: override || process.env.MINIPROGRAM_STATE || 'formal',
   }
   assert(
     ['developer', 'trial', 'formal'].includes(config.miniprogramState),
@@ -162,8 +193,10 @@ async function processJob(job, today, config) {
   let claimed = false
   let stage = 'validate'
   try {
-    // 提醒只认当天 14:00；错过后不补发。
-    if (job.remindDate !== today) {
+    // 未来任务理论上不会被查询捞到，并发下万一捞到就原样放着，不动状态。
+    if (job.remindDate > today) return outcome(job, stage, 'pending')
+    // 提醒只认当天；错过后不补发。
+    if (job.remindDate < today) {
       await cancelJob(job, 'REMINDER_MISSED', '提醒时间已过，不再补发')
       return outcome(job, stage, 'cancelled')
     }
@@ -272,21 +305,86 @@ async function reconcileStaleSending() {
   return reconciled
 }
 
-exports.main = async () => {
+/**
+ * 只读诊断：把 reminder_jobs 的全貌摊开，用来回答「到底有没有任务、任务卡在什么状态」。
+ * 不修改任何数据，可随时手工调用。
+ */
+async function diagnose(today) {
+  const snapshot = await db.collection(REMINDERS).limit(1000).get()
+  const jobs = snapshot.data || []
+  const byStatus = {}
+  const byRemindDate = {}
+  for (const job of jobs) {
+    byStatus[job.status] = (byStatus[job.status] || 0) + 1
+    byRemindDate[job.remindDate] = (byRemindDate[job.remindDate] || 0) + 1
+  }
+  const dueToday = jobs.filter((job) => job.status === 'scheduled' && job.remindDate === today)
+  return {
+    today,
+    reachedRemindTime: reachedRemindTime(),
+    total: jobs.length,
+    byStatus,
+    byRemindDate,
+    dueTodayCount: dueToday.length,
+    dueToday: dueToday.slice(0, 20).map((job) => ({
+      itemId: job.itemId,
+      owner: String(job.ownerId || '').slice(-6),
+      remindDate: job.remindDate,
+      templateId: job.templateId,
+      acceptedAt: job.acceptedAt || null,
+    })),
+    recent: jobs
+      .slice(-20)
+      .reverse()
+      .map((job) => ({
+        itemId: job.itemId,
+        owner: String(job.ownerId || '').slice(-6),
+        remindDate: job.remindDate,
+        status: job.status,
+        failureCode: job.failureCode || null,
+        sentAt: job.sentAt || null,
+      })),
+  }
+}
+
+exports.main = async (event = {}) => {
   const requestId = crypto.randomUUID()
   const startedAt = Date.now()
+  const options = event && typeof event === 'object' && !Array.isArray(event) ? event : {}
+  const manual = options.manual === true
+  const force = options.force === true
   try {
     const context = cloud.getWXContext()
-    assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发')
-    const config = loadConfig()
+    // 定时触发时不会带 OPENID；手工触发（控制台云端测试）必须显式传 manual:true。
+    // 少了这道闸，任何用户都能从小程序端触发一次全量派发。
+    if (!manual) {
+      assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发')
+    }
+    const config = loadConfig(
+      typeof options.miniprogramState === 'string' ? options.miniprogramState : undefined,
+    )
     const today = todayKey()
-    const summary = { due: 0, claimed: 0, sent: 0, failed: 0, unknown: 0, cancelled: 0, skipped: 0, staleSending: 0 }
+
+    if (options.action === 'diag') {
+      const diag = await diagnose(today)
+      console.info(
+        JSON.stringify({ requestId, action: 'diag', resultCode: 'OK', durationMs: Date.now() - startedAt, ...diag, dueToday: undefined }),
+      )
+      return { ok: true, data: diag, requestId }
+    }
+
+    // force 用于验收/补发，忽略时钟判断立刻派发当天任务。
+    const reached = force || reachedRemindTime()
+    // 未到提醒时刻时只清理过期任务（remindDate < 今天），当天任务保持 scheduled 不提前推。
+    const dateFilter = reached ? command.lte(today) : command.lt(today)
+    const summary = { due: 0, claimed: 0, sent: 0, failed: 0, unknown: 0, cancelled: 0, skipped: 0, pending: 0, staleSending: 0 }
+    const details = []
     summary.staleSending = await reconcileStaleSending()
 
     for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
       const result = await db
         .collection(REMINDERS)
-        .where({ status: 'scheduled', remindDate: command.lte(today) })
+        .where({ status: 'scheduled', remindDate: dateFilter })
         .orderBy('remindDate', 'asc')
         .limit(BATCH_SIZE)
         .get()
@@ -296,11 +394,21 @@ exports.main = async () => {
       for (let index = 0; index < result.data.length; index += JOB_CONCURRENCY) {
         const slice = result.data.slice(index, index + JOB_CONCURRENCY)
         const outcomes = await Promise.all(slice.map((job) => processJob(job, today, config)))
-        for (const jobOutcome of outcomes) {
+        outcomes.forEach((jobOutcome, offset) => {
+          const job = slice[offset]
           summary.due += 1
           if (jobOutcome.claimed) summary.claimed += 1
-          summary[jobOutcome.result] += 1
-        }
+          summary[jobOutcome.result] = (summary[jobOutcome.result] || 0) + 1
+          if (manual) {
+            details.push({
+              itemId: job.itemId,
+              owner: String(job.ownerId || '').slice(-6),
+              remindDate: job.remindDate,
+              stage: jobOutcome.stage,
+              result: jobOutcome.result,
+            })
+          }
+        })
       }
       if (result.data.length < BATCH_SIZE) break
     }
@@ -310,13 +418,21 @@ exports.main = async () => {
     try {
       const remainingResult = await db
         .collection(REMINDERS)
-        .where({ status: 'scheduled', remindDate: command.lte(today) })
+        .where({ status: 'scheduled', remindDate: dateFilter })
         .count()
       remaining = remainingResult.total || 0
     } catch (_error) {
       remaining = -1
     }
 
+    const payload = {
+      ...summary,
+      remaining,
+      today,
+      reached,
+      mode: manual ? 'manual' : 'timer',
+      details: manual ? details : undefined,
+    }
     console.info(
       JSON.stringify({
         requestId,
@@ -325,9 +441,12 @@ exports.main = async () => {
         durationMs: Date.now() - startedAt,
         ...summary,
         remaining,
+        today,
+        reached,
+        mode: payload.mode,
       }),
     )
-    return { ok: true, data: { ...summary, remaining }, requestId }
+    return { ok: true, data: payload, requestId }
   } catch (error) {
     const safeError =
       error instanceof AppError

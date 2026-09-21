@@ -2,10 +2,37 @@
 
 环境：`cloud1-d0gkh66ce94b1be08`｜记录时间：2026-09-21
 
-> **2026-09-21 变更**：提醒时刻由北京时间 09:30 → 14:00 → **16:00**（当天下午即可验证链路）。
-> 涉及 `domain/reminder-time.ts`、`reminderApi/index.js`、`dispatchReminders/config.json`、
-> `cloudbaserc.json`、`scripts/validate-project.mjs` 与相关测试。
-> ⚠️ 云端定时触发器**不会**随代码更新，必须去控制台手动改 —— 见第三节第 2 项。
+> **提醒时刻**：北京时间 **16:00**（`REMIND_HOUR=16` / `REMIND_MINUTE=0`）。
+>
+> **触发器不再绑死时刻**：`daily-reminder-dispatch` 配的是**每小时整点** `0 0 * * * * *`，
+> 「到没到 16:00」由 `dispatchReminders` 里的 `reachedRemindTime()` 判断。
+> 所以以后改提醒时刻只需改三处代码（见下）并重新部署，**不用再动控制台触发器**。
+>
+> 改提醒时刻要同步的地方（`npm run check` 会硬校验，不一致直接红）：
+> ① `miniprogram/domain/reminder-time.ts` 的 `REMINDER_HOUR/REMINDER_MINUTE`
+> ② `cloudfunctions/reminderApi/index.js` 的 `REMIND_HOUR/REMIND_MINUTE`
+> ③ `cloudfunctions/dispatchReminders/index.js` 的 `REMIND_HOUR/REMIND_MINUTE`
+
+## 〇、2026-09-21「说好 16:00 提醒，一条都没来」事故复盘
+
+一次改动没完整落地造成的，**不是订阅消息本身的问题**：
+
+| # | 现象 | 根因 |
+| --- | --- | --- |
+| 1 | 16:00 完全没有派发动作 | 云端触发器仍是 `0 30 9 * * * *`（09:30）。本地把 `config.json` 改成 16:00 后**没有重新部署**，云端配置一直停在旧值 |
+| 2 | 就算 09:30 那次跑了也发不出来 | 云端 `reminderApi/index.js` 仍是 `REMIND_HOUR=9 / REMIND_MINUTE=30` 的旧版本 —— 同样改了本地没部署 |
+| 3 | 排查时看不出问题 | 前端 `reminder-time.ts` 已经写着 16:00，UI 显示「今天 16:00 提醒」，但云端是 09:30，两边各说各话 |
+
+**教训（已固化成校验）**：
+
+- 改完云函数必须**真的部署**。`cloud functions download` 拉云端代码跟本地 diff 是最可靠的核对方式。
+- `envVariables` / `triggers` 是否随部署同步，不同 CLI 行为不一致，**以控制台实际值为准**，别信本地文件。
+- `npm run check` 现在会硬校验：提醒时刻三处必须一致、`cloudbaserc.json` 与 `config.json` 的触发器和跳转状态必须一致。
+
+**顺带做的加固**：
+
+- 派发新增 `manual` 手工入口和 `action: 'diag'` 只读诊断，不再需要等定时器才能验证（见第四节）。
+- 派发按时钟判断是否到点，触发器改成每小时 —— 触发器配一次就永久有效，以后改时刻只改代码。
 
 ## 一、已定位并已修的根因：订阅授权不在 tap 同步栈里发起
 
@@ -54,22 +81,30 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 | # | 位置 | 要确认的事 | 不对会怎样 |
 | --- | --- | --- | --- |
 | 1 | 云函数 → `dispatchReminders` → 配置 | 环境变量 `MINIPROGRAM_STATE` 指向当前在测的版本：开发版 `developer`／体验版 `trial`／正式版 `formal` | **不影响能否收到**，只决定点击通知跳进哪个版本；`developer` 只在本地开着开发者工具时可用，`formal` 在正式版未发布或未更新时跳不过去 |
-| 2 | 云函数 → `dispatchReminders` → 触发器 | `daily-reminder-dispatch` 存在且已启用，时刻与代码内一致（现为每天 **16:00**）。⚠️ 触发器**只在函数首次创建时**写入云端，之后改 `config.json` / `cloudbaserc.json` 重新部署都**不会**同步 —— 改时刻必须在这里手改 | 没有任何任务被派发，`reminder_jobs` 一直停在 `scheduled` |
+| 2 | 云函数 → `dispatchReminders` → 触发器 | `daily-reminder-dispatch` 存在且已启用，cron 为 **每小时整点** `0 0 * * * * *`。到没到提醒时刻由代码判断，所以这个值配好就**再也不用改**。⚠️ 不同 CLI 对「部署是否同步触发器」行为不一致，`config.json` 改了务必在这里复核一次 | 没有任何任务被派发，`reminder_jobs` 一直停在 `scheduled` |
 | 3 | 云函数 → `dispatchReminders` → API 权限 | 已勾选 `subscribeMessage.send` | 调用开放接口直接报无权限 |
 | 4 | 公众平台 → 功能 → 订阅消息 → 我的模板 | 模板 ID `jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8`，字段依次 `thing7 / time2 / number5 / number4 / thing3` | 发送报 `47003`（参数不合法）或 `40037`（模板 ID 无效） |
 
-注意 `cloudbaserc.json` 写的是 `developer`、`cloudfunctions/dispatchReminders/config.json`
-写的是 `formal`，两处不一致；而 `envVariables` / `triggers` / `permissions` **只在函数首次创建时**
-写入云端，之后改配置或重新部署都不会同步。**以控制台实际值为准。**
+`envVariables` / `triggers` / `permissions` 是否随部署同步，不同 CLI 行为不一致，
+**以控制台实际值为准**。`cloudbaserc.json` 与 `config.json` 的触发器和 `MINIPROGRAM_STATE`
+必须一致（已由 `npm run check` 硬校验），否则又会出现「以为改了其实没改」。
 
 ## 四、马上测一条（不用等定时器）
 
-**派发侧只比对日期**（`job.remindDate === 今天`），**不看时钟** —— 所以不必等定时器，
-在控制台手动运行 `dispatchReminders` 就能立刻派发。
+派发函数有三个手工入口，都在**云函数 → `dispatchReminders` → 云端测试**里填参数运行：
+
+| 参数 | 作用 |
+| --- | --- |
+| `{"manual": true, "action": "diag"}` | **只读诊断**，不碰任何数据。返回 `reminder_jobs` 全貌：总数、各状态计数、各提醒日计数、今天待发任务列表、最近 20 条记录（含 `failureCode`） |
+| `{"manual": true, "force": true}` | **立刻派发**，忽略时钟，把今天及以前所有 `scheduled` 任务发一遍，返回 `sent` / `failed` / `unknown` 与每条明细 |
+| `{"manual": true}` | 按真实时钟判断（未到 16:00 则当天任务保持 `scheduled` 不动，只清理过期任务） |
+
+> `manual: true` 是必须的：不带它时函数会校验「调用方没有 OPENID」，只允许定时触发器调用，
+> 控制台直接点运行会被 `FORBIDDEN` 挡回来。**先跑 `diag` 看有没有待发任务，再跑 `force` 发。**
 
 **落任务那一步才看时钟**：`reminderApi.arm` 在「提醒日 == 今天」时会把当前时刻与
 `REMIND_HOUR / REMIND_MINUTE`（现为 **16:00**）比较，已过就返回 `missed`、不落任何任务。
-所以要么在 16:00 之前保存，要么直接手工造数据。
+所以**过了 16:00 再保存物品，当天这条就预约不上了** —— 要么在 16:00 之前保存，要么手工造数据。
 
 ### 路径 A：走真实链路（能一次验完整条链，推荐）
 
@@ -78,7 +113,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 2. 保存时弹出的订阅面板点**允许**
 3. 数据库 → `reminder_jobs`：应出现 `_id` = 该物品 `_id`、`status: 'scheduled'`、
    `remindDate: '2026-09-21'` 的记录
-4. 云函数 → `dispatchReminders` → 云端测试 → 运行（无需参数）→ 应返回 `sent: 1`
+4. 云函数 → `dispatchReminders` → 云端测试 → 参数填 `{"manual": true, "force": true}` → 运行 → 应返回 `sent: 1`
 
 ### 路径 B：手工造数据（额度已有、只想验派发侧）
 
@@ -87,7 +122,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 2. 数据库 → `reminder_jobs`：找到 `_id` 等于该 `itemId` 的记录（`reminderApi` 用
    `doc(itemId).set()`，所以 `_id` 就是 itemId），把 `remindDate` 改成 `2026-09-21`、
    `status` 改成 `scheduled`；没有记录就照这个结构新增一条
-3. 云函数 → `dispatchReminders` → 云端测试 → 运行（无需参数）
+3. 云函数 → `dispatchReminders` → 云端测试 → 参数填 `{"manual": true, "force": true}` → 运行
 
 两条路径都看返回值 `sent` / `failed` / `unknown`，再看 `reminder_jobs` 里的 `failureCode`。
 
@@ -110,8 +145,10 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 
 1. 先按「三」把云端四项核对掉；
 2. 真机走一次完整保存，`reminder_jobs` 应出现 `status: 'scheduled'` 且 `remindDate` 正确；
-3. 按「四」手工触发一次，确认能收到服务通知；
-4. 再等一个自然 16:00 的定时触发，确认触发器真的在工作（前提是已在控制台把触发器改成 16:00）。
+3. 按「四」跑一次 `diag`，确认待发任务真的存在（这一步能挡掉一半的无效排查）；
+4. 按「四」跑一次 `force`，确认能收到服务通知；
+5. 最后等一个自然整点（每小时都会跑），确认触发器真的在工作 —— 16:00 之后再看
+   `reminder_jobs`，当天任务应已变成 `sent`。
 
 ## 六、体验版 / 开发版能不能收到通知？
 

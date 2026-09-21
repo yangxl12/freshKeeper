@@ -75,13 +75,13 @@
       "memorySize": 256,
       "installDependency": true,
       "envVariables": {
-        "MINIPROGRAM_STATE": "developer"
+        "MINIPROGRAM_STATE": "formal"
       },
       "triggers": [
         {
           "name": "daily-reminder-dispatch",
           "type": "timer",
-          "config": "0 0 16 * * * *"
+          "config": "0 0 * * * * *"
         }
       ]
     }

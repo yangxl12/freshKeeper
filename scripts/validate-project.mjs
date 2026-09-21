@@ -110,8 +110,31 @@ if (inventoryCloudbaseConfig?.envVariables?.COVER_IMAGE_ENABLED !== inventoryCon
 if (reminderConfig.timeout !== 10) errors.push('reminderApi 超时必须为 10 秒')
 if (cleanupConfig.timeout !== 60) errors.push('cleanupTrash 超时必须为 60 秒')
 if (dispatchConfig.envVariables?.MINIPROGRAM_STATE !== 'formal') errors.push('正式发布跳转状态必须为 formal')
-if (dispatchConfig.triggers?.[0]?.config !== '0 0 16 * * * *') errors.push('提醒触发器必须为北京时间 16:00')
+if (dispatchConfig.triggers?.[0]?.config !== '0 0 * * * * *') errors.push('提醒触发器必须为每小时整点（到点判断在代码内）')
 if (cleanupConfig.triggers?.[0]?.config !== '0 30 3 * * * *') errors.push('回收站清理触发器必须为北京时间 03:30')
+
+// 提醒时刻三处必须同值：客户端展示、reminderApi 的 missed 判定、dispatchReminders 的到点判定。
+// 漂移过一次（前端/派发改到 16:00，云端 reminderApi 仍停在 09:30，当天提醒全部静默丢失）。
+const dispatchSource = readFileSync(join(cloudRoot, 'dispatchReminders', 'index.js'), 'utf8')
+const reminderTimeSource = readFileSync(join(root, 'miniprogram', 'domain', 'reminder-time.ts'), 'utf8')
+const readRemindTime = (source, hourKey, minuteKey) =>
+  `${new RegExp(`${hourKey}\\s*=\\s*(\\d+)`).exec(source)?.[1]}:${new RegExp(`${minuteKey}\\s*=\\s*(\\d+)`).exec(source)?.[1]}`
+const clientRemindTime = readRemindTime(reminderTimeSource, 'REMINDER_HOUR', 'REMINDER_MINUTE')
+const armRemindTime = readRemindTime(reminderSource, 'REMIND_HOUR', 'REMIND_MINUTE')
+const dispatchRemindTime = readRemindTime(dispatchSource, 'REMIND_HOUR', 'REMIND_MINUTE')
+if (clientRemindTime !== armRemindTime || armRemindTime !== dispatchRemindTime) {
+  errors.push(`提醒时刻三处不一致：客户端 ${clientRemindTime} / reminderApi ${armRemindTime} / dispatchReminders ${dispatchRemindTime}`)
+}
+
+// 云函数的 envVariables / triggers 只在首次创建时写入云端，之后改配置重新部署都不会同步，
+// 所以两份配置必须一致，否则「以为改了」其实没改。
+const dispatchCloudbaseConfig = cloudbaseConfig.functions?.find((item) => item.name === 'dispatchReminders')
+if (dispatchCloudbaseConfig?.triggers?.[0]?.config !== dispatchConfig.triggers?.[0]?.config) {
+  errors.push('cloudbaserc.json 与 dispatchReminders/config.json 的触发器不一致')
+}
+if (dispatchCloudbaseConfig?.envVariables?.MINIPROGRAM_STATE !== dispatchConfig.envVariables?.MINIPROGRAM_STATE) {
+  errors.push('cloudbaserc.json 与 dispatchReminders/config.json 的跳转状态不一致')
+}
 
 const productionFiles = files.filter((file) =>
   (file.startsWith(join(root, 'miniprogram')) || file.startsWith(cloudRoot))

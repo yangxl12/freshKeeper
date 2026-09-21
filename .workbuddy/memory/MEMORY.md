@@ -24,9 +24,16 @@
 ## 云函数
 - `config.json` 的 timeout/envVariables/triggers **只在首次创建**时写云端，deploy 只更新代码
   → 建完必须去控制台改（新环境默认 **3s**；`quickEntryApi` / `userApi` 要 **60s**）。
-- ⚠️ **2026-09-21 起本机 `cli.bat` 被沙箱拦死**：它内部调 `reg.exe`，而 reg.exe 进了程序黑名单，
-  提示「不可批准也不可绕过」→ `cloud functions list/download/deploy` 全部跑不了。
-  云函数只能靠开发者工具界面手工上传，云端状态（触发器/环境变量/API 权限）只能看控制台。
+- ✅ `cli.bat` **能用**（2026-09-21 实测推翻了「被沙箱拦死」的旧结论）：
+  `cloud functions list/info/download/deploy/inc-deploy`、`auto`（自动化端口）全部跑通。
+  ⚠️ **坑在回显**：CLI 把进度打到 **stderr**，PowerShell 工具会包成 `NativeCommandError` 红字，
+  看着像失败，其实 `EXIT=0`。→ 必须 `*>&1 | Out-File` 再 Read，**以 `EXIT=$LASTEXITCODE` 为判据**。
+  ⚠️ `info` 的参数是 **`--names`**（复数，空格分隔多个），传 `--name` 会报 missing argument。
+- 查云端真实状态的正确姿势：`cloud functions download --path <临时目录>` 拉下来跟本地 diff
+  （**hash 前先归一化 CRLF/LF**，否则每行都不同）。这是唯一能证明「云端到底跑的哪版代码」的办法。
+- ⚠️ **`config.json` 的 `envVariables`/`triggers`/`permissions` 是否随 deploy 同步，别想当然**：
+  2026-09-21 就栽在这 —— 本地把提醒改到 16:00 却没部署，云端 `reminderApi` 停在 09:30、
+  触发器停在 `0 30 9`，当天提醒全丢。deploy 完必须 download 回来复核，或以控制台为准。
 - CLI：`D:\微信web开发者工具\cli.bat cloud functions deploy --env cloud1-d0gkh66ce94b1be08
   --names <fn> --project D:/my-project/freshKeeper`，**必须加 `--remote-npm-install`**。
   不加会把本地残缺的 `node_modules`（2982 文件 / 3.2 MB，缺 `@cloudbase/node-sdk`）整包传上云端，
@@ -98,13 +105,22 @@
   （2026-09-21 由 09:30 → 14:00 → 16:00，为当天下午验证链路）；
   纯函数 `domain/reminder-time.ts`，常量 `REMINDER_HOUR/REMINDER_MINUTE`；
   授权只在保存物品时申请，排在 `triggerEvent('saved')` 之前；模板字段映射**三处必改**。
-  **改提醒时刻（如 09:30→14:00）要同时改 5 处**：① `domain/reminder-time.ts`
-  （前端展示 + `isReminderMissed`）；② `reminderApi/index.js` 的 `REMIND_HOUR/REMIND_MINUTE`
-  （arm 的 missed 判定 —— **只有它决定「今天还能不能落任务」**，派发侧只比对日期不看时钟）；
-  ③ `dispatchReminders/config.json` + `cloudbaserc.json` 的 cron（7 段：秒 分 时 日 月 周 年）；
-  ④ `scripts/validate-project.mjs` 硬断言 cron 字符串（不改就 check 红）；⑤ 4 个测试文件里的
-  边界时刻（`new Date(2026, 8, 30, 9, 29)` 这种写死的要对齐新边界）。
-  ⚠️ 云端定时触发器**只在函数首次创建时**写入，改配置重新部署**不会**同步 → 只能控制台手改。
+  **改提醒时刻只需改 3 处代码并重新部署，不用碰控制台触发器**（三处由 `npm run check` 硬校验，
+  不一致直接红）：① `domain/reminder-time.ts` 的 `REMINDER_HOUR/REMINDER_MINUTE`（前端展示 +
+  `isReminderMissed`）；② `reminderApi/index.js` 的 `REMIND_HOUR/REMIND_MINUTE`
+  （arm 的 missed 判定 —— **只有它决定「今天还能不能落任务」**）；
+  ③ `dispatchReminders/index.js` 的 `REMIND_HOUR/REMIND_MINUTE`（`reachedRemindTime()` 到点判定）。
+  ⚠️ **只改这三处 + 3 个测试文件里写死的边界时刻**（如 `new Date(2026, 8, 30, 9, 29)` 要跟着挪）。
+  `scripts/validate-project.mjs` 现在还硬校验 `cloudbaserc.json` 与 `config.json` 的触发器、
+  `MINIPROGRAM_STATE` 必须一致。
+- **触发器是每小时整点 `0 0 * * * * *`**，到没到点由 `reachedRemindTime()` 判断；未到点时当天
+  任务保持 `scheduled` 不动，只清理过期任务（否则会把当天任务提前推掉）。以后**再也不用为改
+  提醒时刻进控制台**。
+- **手工验证不必等定时器**（控制台云端测试填参数运行）：
+  `{"manual":true,"action":"diag"}` = 只读诊断（`reminder_jobs` 各状态/各提醒日计数、今天待发
+  列表、最近 20 条含 failureCode）；`{"manual":true,"force":true}` = 忽略时钟立刻派发。
+  ⚠️ 不带 `manual:true` 会被 `assert(!context.OPENID)` 挡成 `FORBIDDEN`（刻意的安全闸）。
+  另可传 `miniprogramState` 临时覆盖，省得为测试改云端环境变量。
   坑：`Number(null)===0`。未来时刻测试用例用 **2099 年**。派发已并发化（`JOB_CONCURRENCY=8`），
   claim 用条件更新保证幂等。
   ⚠️ **`wx.requestSubscribeMessage` 必须在 tap 同步栈里发起**（保存前、第一个 `await` 之前）。

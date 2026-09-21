@@ -98,6 +98,10 @@ function createCloud(options: {
   }
 }
 
+/**
+ * 加载被测模块。用例统一传 `{ manual: true, force: true }`：
+ * 派发是否捞当天任务取决于「运行时刻有没有过 16:00」，不固定就会随跑测试的时间漂移。
+ */
 function loadDispatch(fakeCloud: unknown) {
   const Module = require('node:module') as { _load: (...args: any[]) => any }
   const originalLoad = Module._load
@@ -133,7 +137,7 @@ describe('dispatch reminder failure states', () => {
   it('marks a database read failure before claim as failed', async () => {
     const fixture = scheduledJob()
     const fake = createCloud({ items: [fixture.item], reminders: [fixture.job], failInventoryRead: true })
-    const result = await loadDispatch(fake.cloud).main()
+    const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
 
     expect(result.data).toMatchObject({ due: 1, claimed: 0, failed: 1 })
     expect(fake.reminders[0]).toMatchObject({ status: 'failed', failureCode: 'DISPATCH_STAGE_FAILED' })
@@ -143,7 +147,7 @@ describe('dispatch reminder failure states', () => {
   it('marks a claim failure as failed without sending', async () => {
     const fixture = scheduledJob()
     const fake = createCloud({ items: [fixture.item], reminders: [fixture.job], failClaim: true })
-    const result = await loadDispatch(fake.cloud).main()
+    const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
 
     expect(result.data).toMatchObject({ due: 1, claimed: 0, failed: 1 })
     expect(fake.reminders[0].status).toBe('failed')
@@ -156,7 +160,7 @@ describe('dispatch reminder failure states', () => {
     const rejected = createCloud({
       items: [rejectedFixture.item], reminders: [rejectedFixture.job], sendError: rejectedError,
     })
-    const rejectedResult = await loadDispatch(rejected.cloud).main()
+    const rejectedResult = await loadDispatch(rejected.cloud).main({ manual: true, force: true })
     expect(rejectedResult.data).toMatchObject({ claimed: 1, failed: 1, unknown: 0 })
     expect(rejected.reminders[0]).toMatchObject({ status: 'failed', failureCode: '43101' })
 
@@ -164,7 +168,7 @@ describe('dispatch reminder failure states', () => {
     const timeout = createCloud({
       items: [timeoutFixture.item], reminders: [timeoutFixture.job], sendError: new Error('network timeout'),
     })
-    const timeoutResult = await loadDispatch(timeout.cloud).main()
+    const timeoutResult = await loadDispatch(timeout.cloud).main({ manual: true, force: true })
     expect(timeoutResult.data).toMatchObject({ claimed: 1, failed: 0, unknown: 1 })
     expect(timeout.reminders[0]).toMatchObject({ status: 'unknown', failureCode: 'RESULT_UNKNOWN' })
   })
@@ -172,7 +176,7 @@ describe('dispatch reminder failure states', () => {
   it('marks a successful send with failed finalization as unknown and never retries it', async () => {
     const fixture = scheduledJob()
     const fake = createCloud({ items: [fixture.item], reminders: [fixture.job], failFinalize: true })
-    const result = await loadDispatch(fake.cloud).main()
+    const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
 
     expect(fake.send).toHaveBeenCalledTimes(1)
     expect(result.data).toMatchObject({ claimed: 1, unknown: 1, sent: 0 })
@@ -186,10 +190,36 @@ describe('dispatch reminder failure states', () => {
       updatedAt: new Date(Date.now() - 16 * 60 * 1000),
     }
     const fake = createCloud({ reminders: [stale] })
-    const result = await loadDispatch(fake.cloud).main()
+    const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
 
     expect(result.data).toMatchObject({ due: 0, staleSending: 1 })
     expect(fake.reminders[0]).toMatchObject({ status: 'unknown', failureCode: 'STALE_SENDING' })
+    expect(fake.send).not.toHaveBeenCalled()
+  })
+
+  it('leaves today jobs untouched when the reminder time has not arrived', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-21T08:30:00+08:00'))
+    try {
+      const fixture = scheduledJob()
+      const fake = createCloud({ items: [fixture.item], reminders: [fixture.job] })
+      const result = await loadDispatch(fake.cloud).main({ manual: true })
+
+      expect(result.data).toMatchObject({ due: 0, reached: false })
+      expect(fake.reminders[0].status).toBe('scheduled')
+      expect(fake.send).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('diagnoses reminder jobs without sending anything', async () => {
+    const fixture = scheduledJob()
+    const fake = createCloud({ items: [fixture.item], reminders: [fixture.job] })
+    const result = await loadDispatch(fake.cloud).main({ manual: true, action: 'diag' })
+
+    expect(result.data).toMatchObject({ total: 1, dueTodayCount: 1 })
+    expect(fake.reminders[0].status).toBe('scheduled')
     expect(fake.send).not.toHaveBeenCalled()
   })
 })

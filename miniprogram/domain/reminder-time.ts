@@ -3,8 +3,12 @@ import { addDays, parseDateKey } from '../utils/date-key'
 /**
  * 到期提醒统一在北京时间 16:00 推送。
  *
- * 这里的时间必须与云函数 `dispatchReminders/config.json` 的定时触发器保持一致，
+ * 这里的时间必须与云函数 `reminderApi` 的 REMIND_HOUR/REMIND_MINUTE 和
+ * `dispatchReminders` 的 REMIND_HOUR/REMIND_MINUTE 保持一致（三处由 npm run check 硬校验），
  * 否则前端写着「9 月 9 日 16:00」、云端却在别的时刻发，用户对不上账。
+ *
+ * 派发的定时触发器是「每小时整点」，到没到点由 dispatchReminders 自己判断，
+ * 所以改提醒时刻只需改这三处代码并重新部署，不用再去控制台改触发器。
  */
 export const REMINDER_HOUR = 16
 export const REMINDER_MINUTE = 0

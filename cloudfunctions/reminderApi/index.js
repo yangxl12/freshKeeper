@@ -94,8 +94,9 @@ function todayKey() {
   return `${values.year}-${values.month}-${values.day}`
 }
 
+/** hourCycle 用 h23：部分 Node 版本在午夜会把 00 点格式化成 24，判成「提醒时刻已过」。 */
 function shanghaiHourMinute() {
-  const values = shanghaiParts({ hour: '2-digit', minute: '2-digit', hour12: false })
+  const values = shanghaiParts({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   return { hour: Number(values.hour), minute: Number(values.minute) }
 }
 
