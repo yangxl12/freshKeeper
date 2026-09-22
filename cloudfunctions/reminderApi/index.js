@@ -110,7 +110,7 @@ function reminderDateOf(item) {
 }
 
 /**
- * 提醒时刻（提醒日 14:00）是否已经过去。
+ * 提醒时刻（提醒日 16:00）是否已经过去。
  * 派发侧只认当天，所以错过的提醒不会补发，这里也就没必要落任何任务。
  */
 function isReminderMissed(remindDate) {
