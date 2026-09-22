@@ -189,6 +189,12 @@ function isUncertainError(error) {
   return /timeout|timed out|network|econnreset|socket hang up/.test(text)
 }
 
+function openApiFailureReason(error, uncertain) {
+  const detail = error?.errMsg || error?.message || ''
+  const fallback = uncertain ? '发送结果不确定，不自动重试' : '微信平台明确返回发送失败'
+  return truncate(detail ? `${fallback}：${detail}` : fallback, 240)
+}
+
 async function processJob(job, today, config, options = {}) {
   let claimed = false
   let stage = 'validate'
@@ -256,7 +262,7 @@ async function processJob(job, today, config, options = {}) {
       const status = uncertain ? 'unknown' : 'failed'
       await updateJob(job, status, {
         failureCode: truncate(error?.errCode || (uncertain ? 'RESULT_UNKNOWN' : 'OPENAPI_REJECTED'), 40),
-        failureReason: uncertain ? '发送结果不确定，不自动重试' : '微信平台明确返回发送失败',
+        failureReason: openApiFailureReason(error, uncertain),
       })
       return outcome(job, stage, status, true)
     }
@@ -343,6 +349,7 @@ async function diagnose(today) {
         remindDate: job.remindDate,
         status: job.status,
         failureCode: job.failureCode || null,
+        failureReason: job.failureReason || null,
         sentAt: job.sentAt || null,
       })),
   }

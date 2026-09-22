@@ -163,7 +163,11 @@ describe('dispatch reminder failure states', () => {
     })
     const rejectedResult = await loadDispatch(rejected.cloud).main({ manual: true, force: true })
     expect(rejectedResult.data).toMatchObject({ claimed: 1, failed: 1, unknown: 0 })
-    expect(rejected.reminders[0]).toMatchObject({ status: 'failed', failureCode: '43101' })
+    expect(rejected.reminders[0]).toMatchObject({
+      status: 'failed',
+      failureCode: '43101',
+      failureReason: '微信平台明确返回发送失败：platform rejected',
+    })
 
     const timeoutFixture = scheduledJob()
     const timeout = createCloud({
@@ -171,7 +175,11 @@ describe('dispatch reminder failure states', () => {
     })
     const timeoutResult = await loadDispatch(timeout.cloud).main({ manual: true, force: true })
     expect(timeoutResult.data).toMatchObject({ claimed: 1, failed: 0, unknown: 1 })
-    expect(timeout.reminders[0]).toMatchObject({ status: 'unknown', failureCode: 'RESULT_UNKNOWN' })
+    expect(timeout.reminders[0]).toMatchObject({
+      status: 'unknown',
+      failureCode: 'RESULT_UNKNOWN',
+      failureReason: '发送结果不确定，不自动重试：network timeout',
+    })
   })
 
   it('marks a successful send with failed finalization as unknown and never retries it', async () => {
