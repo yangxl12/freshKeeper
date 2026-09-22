@@ -244,7 +244,7 @@ describe('dispatch reminder failure states', () => {
     expect(fake.send).not.toHaveBeenCalled()
   })
 
-  it('sends one named future job early for a cloud-only acceptance test', async () => {
+  it('sends one owned future job early from the mini program for end-to-end verification', async () => {
     const today = shanghaiToday()
     const futureRemindDate = new Date(`${today}T00:00:00+08:00`)
     futureRemindDate.setDate(futureRemindDate.getDate() + 1)
@@ -260,13 +260,27 @@ describe('dispatch reminder failure states', () => {
       _id: 'future-item', itemId: 'future-item', ownerId: 'openid-1', status: 'scheduled',
       remindDate: dateKey(futureRemindDate), templateId: 'template-1', updatedAt: new Date(),
     }
-    const fake = createCloud({ items: [item], reminders: [job] })
+    const fake = createCloud({ items: [item], reminders: [job], openid: 'openid-1' })
     const result = await loadDispatch(fake.cloud).main({
-      manual: true, action: 'send-test', itemId: 'future-item', miniprogramState: 'developer',
+      action: 'verify-self', itemId: 'future-item', miniprogramState: 'developer',
     })
 
-    expect(result.data).toMatchObject({ itemId: 'future-item', result: 'sent', mode: 'manual-test' })
+    expect(result.data).toMatchObject({ itemId: 'future-item', result: 'sent', mode: 'self-verification' })
     expect(fake.reminders[0].status).toBe('sent')
     expect(fake.send).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let a mini program user verify another owner reminder', async () => {
+    const fixture = scheduledJob()
+    const fake = createCloud({
+      items: [fixture.item], reminders: [fixture.job], openid: 'openid-2',
+    })
+    const result = await loadDispatch(fake.cloud).main({
+      action: 'verify-self', itemId: 'item-1',
+    })
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'REMINDER_NOT_SCHEDULED' } })
+    expect(fake.reminders[0].status).toBe('scheduled')
+    expect(fake.send).not.toHaveBeenCalled()
   })
 })

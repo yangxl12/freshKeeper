@@ -106,17 +106,24 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 
 ## 四、马上测一条（不用等定时器）
 
-派发函数有三个手工入口，都在**云函数 → `dispatchReminders` → 云端测试**里填参数运行：
+云控制台只适合做只读诊断。微信云调用票据来自小程序调用或开发者工具创建的定时触发器；
+直接在云控制台点「测试」去发送，会报 `INVALID_WX_ACCESS_TOKEN`，不能拿它判断正式链路是否可用。
 
 | 参数 | 作用 |
 | --- | --- |
 | `{"manual": true, "action": "diag"}` | **只读诊断**，不碰任何数据。返回 `reminder_jobs` 全貌：总数、各状态计数、各提醒日计数、今天待发任务列表、最近 20 条记录（含 `failureCode`） |
-| `{"manual": true, "force": true}` | **立刻派发**，忽略时钟，把今天及以前所有 `scheduled` 任务发一遍，返回 `sent` / `failed` / `unknown` 与每条明细 |
-| `{"manual": true, "action": "send-test", "itemId": "任务ID", "miniprogramState": "developer"}` | **指定任务即时验收**。即使提醒日在未来也立刻发送这一条，适合当天已过 16:00 后做端到端验证；成功后任务会变为 `sent`，不会在原提醒日重复发送 |
-| `{"manual": true}` | 按真实时钟判断（未到 16:00 则当天任务保持 `scheduled` 不动，只清理过期任务） |
 
-> `manual: true` 是必须的，而且手工入口会硬校验调用上下文**没有 OPENID**，只允许控制台云端测试；
-> 小程序用户即使伪造 `manual:true` 也会被 `FORBIDDEN` 拒绝。**先跑 `diag` 看有没有待发任务，再按日期选择 `force` 或指定 `send-test`。**
+即时端到端验收必须从小程序逻辑层调用，只允许发送当前用户自己的单条待发任务：
+
+```js
+wx.cloud.callFunction({
+  name: 'dispatchReminders',
+  data: { action: 'verify-self', itemId: '任务ID', miniprogramState: 'developer' },
+})
+```
+
+服务端会用调用上下文里的 `OPENID` 校验任务归属，不能代发别人的任务。成功后该任务变为 `sent`，
+不会在原提醒日重复发送。全量派发仍只允许定时触发；小程序用户伪造 `manual:true` 会被拒绝。
 
 **落任务那一步才看时钟**：`reminderApi.arm` 在「提醒日 == 今天」时会把当前时刻与
 `REMIND_HOUR / REMIND_MINUTE`（现为 **16:00**）比较，已过就返回 `missed`、不落任何任务。
@@ -129,7 +136,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 2. 保存时弹出的订阅面板点**允许**
 3. 数据库 → `reminder_jobs`：应出现 `_id` = 该物品 `_id`、`status: 'scheduled'`、
    `remindDate: '2026-09-21'` 的记录
-4. 云函数 → `dispatchReminders` → 云端测试 → 参数填 `{"manual": true, "force": true}` → 运行 → 应返回 `sent: 1`
+4. 在小程序逻辑层调用上面的 `verify-self`，应返回 `result: 'sent'`
 
 ### 路径 B：手工造数据（额度已有、只想验派发侧）
 
@@ -138,7 +145,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 2. 数据库 → `reminder_jobs`：找到 `_id` 等于该 `itemId` 的记录（`reminderApi` 用
    `doc(itemId).set()`，所以 `_id` 就是 itemId），把 `remindDate` 改成 `2026-09-21`、
    `status` 改成 `scheduled`；没有记录就照这个结构新增一条
-3. 云函数 → `dispatchReminders` → 云端测试 → 参数填 `{"manual": true, "force": true}` → 运行
+3. 在小程序逻辑层调用上面的 `verify-self`
 
 两条路径都看返回值 `sent` / `failed` / `unknown`，再看 `reminder_jobs` 里的 `failureCode`。
 
@@ -155,6 +162,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 | `47003` | 模板参数不合法（字段序号或类型与公众平台模板不符） |
 | `40037` | `template_id` 不正确 |
 | `41030` | `page` 路径不存在 |
+| `-501001` + `INVALID_WX_ACCESS_TOKEN` | 从云控制台等非小程序来源手工触发了微信云调用；改用小程序端 `verify-self` 或开发者工具创建的定时触发器 |
 | 无权限类错误 | 云函数缺少 `subscribeMessage.send` 开放接口权限 |
 
 ## 五、验收顺序
@@ -162,7 +170,7 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 1. 先按「三」把云端四项核对掉；
 2. 真机走一次完整保存，`reminder_jobs` 应出现 `status: 'scheduled'` 且 `remindDate` 正确；
 3. 按「四」跑一次 `diag`，确认待发任务真的存在（这一步能挡掉一半的无效排查）；
-4. 按「四」跑一次 `force`，确认能收到服务通知；
+4. 按「四」从小程序逻辑层跑一次 `verify-self`，确认能收到服务通知；
 5. 最后等一个自然整点（每小时都会跑），确认触发器真的在工作 —— 16:00 之后再看
    `reminder_jobs`，当天任务应已变成 `sent`。
 

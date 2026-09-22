@@ -200,7 +200,7 @@ async function processJob(job, today, config, options = {}) {
   let stage = 'validate'
   try {
     // 未来任务理论上不会被查询捞到，并发下万一捞到就原样放着，不动状态。
-    // 唯一例外是云端测试的指定任务即时验收：它只允许无 OPENID 的云端调用，且一次只发一条。
+    // 唯一例外是用户自助验收自己的指定任务：它仍由小程序端触发，保留微信云调用票据，且一次只发一条。
     if (job.remindDate > today && !options.allowFuture) return outcome(job, stage, 'pending')
     // 提醒只认当天；错过后不补发。
     if (job.remindDate < today) {
@@ -363,21 +363,17 @@ exports.main = async (event = {}) => {
   const force = options.force === true
   try {
     const context = cloud.getWXContext()
-    // 定时触发与控制台云端测试都不带 OPENID；小程序端调用一定带 OPENID。
-    // manual 只是区分运行模式，不能拿它当身份凭据，否则任意用户都能伪造 manual:true
-    // 读取全局诊断数据或触发全量派发。
-    assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发或云端测试')
     const config = loadConfig(
       typeof options.miniprogramState === 'string' ? options.miniprogramState : undefined,
     )
     const today = todayKey()
 
-    if (options.action === 'send-test') {
-      assert(manual, 'FORBIDDEN', '即时验收只允许云端手工触发')
+    if (options.action === 'verify-self') {
+      assert(context.OPENID, 'FORBIDDEN', '即时验收只允许从小程序端发起')
       const itemId = typeof options.itemId === 'string' ? options.itemId.trim() : ''
       assert(itemId && itemId.length <= 128, 'INVALID_ITEM_ID', '请提供有效的提醒任务 itemId')
       const target = await db.collection(REMINDERS)
-        .where({ _id: itemId, status: 'scheduled' })
+        .where({ _id: itemId, ownerId: context.OPENID, status: 'scheduled' })
         .limit(1)
         .get()
       const job = target.data[0]
@@ -388,12 +384,12 @@ exports.main = async (event = {}) => {
         remindDate: job.remindDate,
         stage: jobOutcome.stage,
         result: jobOutcome.result,
-        mode: 'manual-test',
+        mode: 'self-verification',
       }
       console.info(
         JSON.stringify({
           requestId,
-          action: 'send-test',
+          action: 'verify-self',
           resultCode: 'OK',
           durationMs: Date.now() - startedAt,
           remindDate: job.remindDate,
@@ -403,6 +399,11 @@ exports.main = async (event = {}) => {
       )
       return { ok: true, data: payload, requestId }
     }
+
+    // 定时触发与控制台诊断都不带 OPENID；小程序端调用一定带 OPENID。
+    // manual 只是区分运行模式，不能拿它当身份凭据，否则任意用户都能伪造 manual:true
+    // 读取全局诊断数据或触发全量派发。
+    assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发或云端测试')
 
     if (options.action === 'diag') {
       const diag = await diagnose(today)
