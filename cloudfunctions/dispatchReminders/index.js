@@ -189,12 +189,13 @@ function isUncertainError(error) {
   return /timeout|timed out|network|econnreset|socket hang up/.test(text)
 }
 
-async function processJob(job, today, config) {
+async function processJob(job, today, config, options = {}) {
   let claimed = false
   let stage = 'validate'
   try {
     // 未来任务理论上不会被查询捞到，并发下万一捞到就原样放着，不动状态。
-    if (job.remindDate > today) return outcome(job, stage, 'pending')
+    // 唯一例外是云端测试的指定任务即时验收：它只允许无 OPENID 的云端调用，且一次只发一条。
+    if (job.remindDate > today && !options.allowFuture) return outcome(job, stage, 'pending')
     // 提醒只认当天；错过后不补发。
     if (job.remindDate < today) {
       await cancelJob(job, 'REMINDER_MISSED', '提醒时间已过，不再补发')
@@ -355,15 +356,46 @@ exports.main = async (event = {}) => {
   const force = options.force === true
   try {
     const context = cloud.getWXContext()
-    // 定时触发时不会带 OPENID；手工触发（控制台云端测试）必须显式传 manual:true。
-    // 少了这道闸，任何用户都能从小程序端触发一次全量派发。
-    if (!manual) {
-      assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发')
-    }
+    // 定时触发与控制台云端测试都不带 OPENID；小程序端调用一定带 OPENID。
+    // manual 只是区分运行模式，不能拿它当身份凭据，否则任意用户都能伪造 manual:true
+    // 读取全局诊断数据或触发全量派发。
+    assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发或云端测试')
     const config = loadConfig(
       typeof options.miniprogramState === 'string' ? options.miniprogramState : undefined,
     )
     const today = todayKey()
+
+    if (options.action === 'send-test') {
+      assert(manual, 'FORBIDDEN', '即时验收只允许云端手工触发')
+      const itemId = typeof options.itemId === 'string' ? options.itemId.trim() : ''
+      assert(itemId && itemId.length <= 128, 'INVALID_ITEM_ID', '请提供有效的提醒任务 itemId')
+      const target = await db.collection(REMINDERS)
+        .where({ _id: itemId, status: 'scheduled' })
+        .limit(1)
+        .get()
+      const job = target.data[0]
+      assert(job, 'REMINDER_NOT_SCHEDULED', '没有找到可发送的提醒任务')
+      const jobOutcome = await processJob(job, today, config, { allowFuture: true })
+      const payload = {
+        itemId,
+        remindDate: job.remindDate,
+        stage: jobOutcome.stage,
+        result: jobOutcome.result,
+        mode: 'manual-test',
+      }
+      console.info(
+        JSON.stringify({
+          requestId,
+          action: 'send-test',
+          resultCode: 'OK',
+          durationMs: Date.now() - startedAt,
+          remindDate: job.remindDate,
+          stage: jobOutcome.stage,
+          result: jobOutcome.result,
+        }),
+      )
+      return { ok: true, data: payload, requestId }
+    }
 
     if (options.action === 'diag') {
       const diag = await diagnose(today)

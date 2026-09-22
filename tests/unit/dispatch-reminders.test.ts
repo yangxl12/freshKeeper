@@ -17,6 +17,7 @@ function createCloud(options: {
   failClaim?: boolean
   failFinalize?: boolean
   sendError?: Error & { errCode?: number }
+  openid?: string
 } = {}) {
   const store: Record<string, Doc[]> = {
     inventory_items: (options.items ?? []).map((doc) => ({ ...doc })),
@@ -90,7 +91,7 @@ function createCloud(options: {
       DYNAMIC_CURRENT_ENV: 'dynamic',
       init: vi.fn(),
       database: () => db,
-      getWXContext: () => ({}),
+      getWXContext: () => (options.openid ? { OPENID: options.openid } : {}),
       openapi: { subscribeMessage: { send } },
     },
     reminders: store.reminder_jobs,
@@ -112,7 +113,7 @@ function loadDispatch(fakeCloud: unknown) {
     return originalLoad.call(this, request, ...args)
   }
   try {
-    return require(modulePath) as { main(): Promise<{ ok: boolean; data: Record<string, number> }> }
+    return require(modulePath) as { main(event?: Doc): Promise<{ ok: boolean; data: Record<string, any>; error?: Doc }> }
   } finally {
     Module._load = originalLoad
   }
@@ -221,5 +222,43 @@ describe('dispatch reminder failure states', () => {
     expect(result.data).toMatchObject({ total: 1, dueTodayCount: 1 })
     expect(fake.reminders[0].status).toBe('scheduled')
     expect(fake.send).not.toHaveBeenCalled()
+  })
+
+  it('rejects forged manual calls from a mini program user', async () => {
+    const fixture = scheduledJob()
+    const fake = createCloud({
+      items: [fixture.item], reminders: [fixture.job], openid: 'attacker-openid',
+    })
+    const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } })
+    expect(fake.reminders[0].status).toBe('scheduled')
+    expect(fake.send).not.toHaveBeenCalled()
+  })
+
+  it('sends one named future job early for a cloud-only acceptance test', async () => {
+    const today = shanghaiToday()
+    const futureRemindDate = new Date(`${today}T00:00:00+08:00`)
+    futureRemindDate.setDate(futureRemindDate.getDate() + 1)
+    const expiryDate = new Date(`${today}T00:00:00+08:00`)
+    expiryDate.setDate(expiryDate.getDate() + 2)
+    const dateKey = (value: Date) => value.toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+    const item = {
+      _id: 'future-item', ownerId: 'openid-1', inventoryStatus: 'active',
+      name: '验收物品', quantity: 1, category: 'food', storageLocation: 'cabinet',
+      expiryDate: dateKey(expiryDate), reminderLeadDays: 1,
+    }
+    const job = {
+      _id: 'future-item', itemId: 'future-item', ownerId: 'openid-1', status: 'scheduled',
+      remindDate: dateKey(futureRemindDate), templateId: 'template-1', updatedAt: new Date(),
+    }
+    const fake = createCloud({ items: [item], reminders: [job] })
+    const result = await loadDispatch(fake.cloud).main({
+      manual: true, action: 'send-test', itemId: 'future-item', miniprogramState: 'developer',
+    })
+
+    expect(result.data).toMatchObject({ itemId: 'future-item', result: 'sent', mode: 'manual-test' })
+    expect(fake.reminders[0].status).toBe('sent')
+    expect(fake.send).toHaveBeenCalledTimes(1)
   })
 })

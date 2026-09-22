@@ -97,10 +97,11 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 | --- | --- |
 | `{"manual": true, "action": "diag"}` | **只读诊断**，不碰任何数据。返回 `reminder_jobs` 全貌：总数、各状态计数、各提醒日计数、今天待发任务列表、最近 20 条记录（含 `failureCode`） |
 | `{"manual": true, "force": true}` | **立刻派发**，忽略时钟，把今天及以前所有 `scheduled` 任务发一遍，返回 `sent` / `failed` / `unknown` 与每条明细 |
+| `{"manual": true, "action": "send-test", "itemId": "任务ID", "miniprogramState": "developer"}` | **指定任务即时验收**。即使提醒日在未来也立刻发送这一条，适合当天已过 16:00 后做端到端验证；成功后任务会变为 `sent`，不会在原提醒日重复发送 |
 | `{"manual": true}` | 按真实时钟判断（未到 16:00 则当天任务保持 `scheduled` 不动，只清理过期任务） |
 
-> `manual: true` 是必须的：不带它时函数会校验「调用方没有 OPENID」，只允许定时触发器调用，
-> 控制台直接点运行会被 `FORBIDDEN` 挡回来。**先跑 `diag` 看有没有待发任务，再跑 `force` 发。**
+> `manual: true` 是必须的，而且手工入口会硬校验调用上下文**没有 OPENID**，只允许控制台云端测试；
+> 小程序用户即使伪造 `manual:true` 也会被 `FORBIDDEN` 拒绝。**先跑 `diag` 看有没有待发任务，再按日期选择 `force` 或指定 `send-test`。**
 
 **落任务那一步才看时钟**：`reminderApi.arm` 在「提醒日 == 今天」时会把当前时刻与
 `REMIND_HOUR / REMIND_MINUTE`（现为 **16:00**）比较，已过就返回 `missed`、不落任何任务。
