@@ -2,7 +2,7 @@
   "name": "fresh-keeper",
   "version": "0.1.0",
   "private": true,
-  "description": "保质期助手微信小程序",
+  "description": "鲜度坐标微信小程序",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",

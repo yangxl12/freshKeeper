@@ -1,5 +1,5 @@
 {
-  "description": "保质期助手 MVP",
+  "description": "鲜度坐标 MVP",
   "packOptions": {
     "ignore": [],
     "include": []
@@ -32,7 +32,7 @@
   "compileType": "miniprogram",
   "libVersion": "3.8.10",
   "appid": "wxae5abe122a9e9bd5",
-  "projectname": "freshKeeper",
+  "projectname": "鲜度坐标",
   "miniprogramRoot": "miniprogram/",
   "cloudfunctionRoot": "cloudfunctions/",
   "simulatorPluginLibVersion": {},

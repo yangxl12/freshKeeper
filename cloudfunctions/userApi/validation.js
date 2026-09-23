@@ -73,7 +73,7 @@ function exportCloudPath(hash, now = new Date(), id = crypto.randomUUID()) {
   return `exports/${hash}/${exportStamp(now)}-${id}.txt`
 }
 
-/** 文件名要让用户看得懂、按时间可区分：保质记-数据导出-20260911-1314.txt */
+/** 文件名要让用户看得懂、按时间可区分：鲜度坐标-数据导出-20260911-1314.txt */
 function exportStamp(now = new Date()) {
   const parts = SHANGHAI_PARTS.formatToParts(now)
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
@@ -81,7 +81,7 @@ function exportStamp(now = new Date()) {
 }
 
 function exportFileName(now = new Date()) {
-  return `保质记-数据导出-${exportStamp(now)}.txt`
+  return `鲜度坐标-数据导出-${exportStamp(now)}.txt`
 }
 
 function validateProfileUpdate(input, ownerId) {

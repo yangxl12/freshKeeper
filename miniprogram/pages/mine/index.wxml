@@ -41,7 +41,7 @@
     <button class="entry" data-entry="about" bindtap="openEntry" hover-class="entry--pressed">
       <view class="entry__icon entry__icon--about" aria-hidden="true"></view>
       <text class="entry__label">关于</text>
-      <text class="entry__value">保质记</text>
+      <text class="entry__value">鲜度坐标</text>
       <view class="entry__chevron" aria-hidden="true"></view>
     </button>
     <button class="entry" data-entry="account" bindtap="openEntry" hover-class="entry--pressed">
@@ -266,9 +266,9 @@
     <view class="modal" catchtap="stopPropagation" role="dialog" aria-modal="true" aria-label="关于">
       <view class="about">
         <view class="about__logo" aria-hidden="true">
-          <text class="about__logo-text">记</text>
+          <text class="about__logo-text">鲜</text>
         </view>
-        <text class="modal__title">保质记</text>
+        <text class="modal__title">鲜度坐标</text>
         <text class="modal__subtitle">把每样东西的到期日都记下来</text>
       </view>
       <view class="help-list">

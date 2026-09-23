@@ -2,7 +2,7 @@
   <view class="hero" style="padding-top: {{headerTop}}px;">
     <view class="hero__leaf hero__leaf--one"></view>
     <view class="hero__leaf hero__leaf--two"></view>
-    <text class="hero__title" style="max-width: {{titleWidth}}px;">保质记</text>
+    <text class="hero__title" style="max-width: {{titleWidth}}px;">鲜度坐标</text>
   </view>
   <view wx:if="{{errorMessage}}" class="error-banner">
     <text class="error-banner__text">{{errorMessage}}</text>

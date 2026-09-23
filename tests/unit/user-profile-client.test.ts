@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { displayNickname, normalizeNickname } from '../../miniprogram/utils/nickname'
 import { shouldMigrateProfile } from '../../miniprogram/utils/profile-migration'
 
-const DEFAULT_NICKNAME = '保质记用户'
+const DEFAULT_NICKNAME = '鲜度坐标用户'
 
 describe('normalizeNickname（客户端）', () => {
   it('去空白并按码点截断', () => {

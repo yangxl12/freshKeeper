@@ -340,7 +340,7 @@ describe('exportData', () => {
     const { fake, uploads, service } = build()
     const result = await service.exportData(OWNER, new Date('2026-09-11T10:00:00+08:00'))
 
-    expect(result.fileName).toBe('保质记-数据导出-20260911-1000.txt')
+    expect(result.fileName).toBe('鲜度坐标-数据导出-20260911-1000.txt')
     expect(result.fileID).toContain(`exports/${validation.avatarOwnerHash(OWNER)}/`)
     expect(uploads).toHaveLength(1)
     expect(uploads[0].cloudPath.endsWith('.txt')).toBe(true)

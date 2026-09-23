@@ -12,7 +12,7 @@ App<IAppOption>({
     if (!wx.cloud) {
       wx.showModal({
         title: '基础库版本过低',
-        content: '请升级微信后重新打开保质期助手。',
+        content: '请升级微信后重新打开鲜度坐标。',
         showCancel: false,
       })
       return

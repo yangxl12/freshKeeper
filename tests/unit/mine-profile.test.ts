@@ -48,7 +48,7 @@ vi.mock('../../miniprogram/services/inventory-service', () => ({
 
 const PROFILE_STORAGE_KEY = 'mine_profile'
 const PROFILE_MIGRATED_KEY = 'profile_migrated'
-const DEFAULT_NICKNAME = '保质记用户'
+const DEFAULT_NICKNAME = '鲜度坐标用户'
 
 const originalPage = globalThis.Page
 const originalWx = globalThis.wx
@@ -288,6 +288,39 @@ describe('我的 → 存量迁移', () => {
     await flush()
 
     expect(updateProfileMock).not.toHaveBeenCalled()
+  })
+
+  it('旧品牌默认昵称升级为新名称，且不作为自定义昵称迁移', async () => {
+    storage[PROFILE_STORAGE_KEY] = { nickname: '保质记用户', avatar: '' }
+    getUserProfileMock.mockResolvedValue({
+      nickname: null,
+      avatarFileId: null,
+      createdAt: null,
+      lastSeenAt: null,
+    })
+
+    const page = instance()
+    await page.loadProfile(true)
+    await flush()
+
+    expect(page.data.profile.nickname).toBe(DEFAULT_NICKNAME)
+    expect(storage[PROFILE_STORAGE_KEY]).toEqual({ nickname: DEFAULT_NICKNAME, avatar: '' })
+    expect(updateProfileMock).not.toHaveBeenCalled()
+  })
+
+  it('云端遗留的旧品牌默认昵称也只展示新名称', async () => {
+    getUserProfileMock.mockResolvedValue({
+      nickname: '保质随手记用户',
+      avatarFileId: null,
+      createdAt: null,
+      lastSeenAt: null,
+    })
+
+    const page = instance()
+    await page.loadProfile(true)
+
+    expect(page.data.profile.nickname).toBe(DEFAULT_NICKNAME)
+    expect(storage[PROFILE_STORAGE_KEY]).toEqual({ nickname: DEFAULT_NICKNAME, avatar: '' })
   })
 
   it('本地头像失效时只迁昵称，并清掉死路径', async () => {

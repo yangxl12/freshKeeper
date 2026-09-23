@@ -31,13 +31,18 @@ function reminderDayIndexOf(value: number): number {
 const PROFILE_STORAGE_KEY = 'mine_profile'
 const PROFILE_MIGRATED_KEY = 'profile_migrated'
 
-const DEFAULT_NICKNAME = '保质记用户'
+const DEFAULT_NICKNAME = '鲜度坐标用户'
+const LEGACY_DEFAULT_NICKNAMES = new Set(['保质记用户', '保质随手记用户', '保质期助手用户'])
 /** 资料读取节流：60s 内重复 onShow 不再请求云端。 */
 const PROFILE_READ_TTL_MS = 60_000
 
 interface Profile {
   nickname: string
   avatar: string
+}
+
+function displayProfileNickname(nickname: string | null | undefined): string {
+  return !nickname || LEGACY_DEFAULT_NICKNAMES.has(nickname) ? DEFAULT_NICKNAME : nickname
 }
 
 type EntryKey = 'settings' | 'trash' | 'help' | 'about' | 'account'
@@ -51,7 +56,7 @@ function readProfile(): Profile {
   try {
     const stored = wx.getStorageSync(PROFILE_STORAGE_KEY) as Profile | ''
     if (stored && typeof stored === 'object') {
-      return { nickname: stored.nickname || DEFAULT_NICKNAME, avatar: stored.avatar || '' }
+      return { nickname: displayProfileNickname(stored.nickname), avatar: stored.avatar || '' }
     }
   } catch (error) {
     // 读取失败时回退到默认资料
@@ -69,7 +74,7 @@ function writeProfileCache(profile: Profile): void {
 }
 
 function profileFromRemote(remote: UserProfile): Profile {
-  return { nickname: remote.nickname || DEFAULT_NICKNAME, avatar: remote.avatarFileId || '' }
+  return { nickname: displayProfileNickname(remote.nickname), avatar: remote.avatarFileId || '' }
 }
 
 function isMigrated(): boolean {
