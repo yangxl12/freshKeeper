@@ -7,10 +7,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * 时间由「到期日期 - 提前天数（当天 16:00）」算出来，正常待发送状态不展示技术任务文案。
  */
 
-const { getItemMock, coverReadyMock } = vi.hoisted(() => ({
+const {
+  getItemMock,
+  coverReadyMock,
+  requestReminderAuthorizationMock,
+  armReminderMock,
+} = vi.hoisted(() => ({
   getItemMock: vi.fn(),
   // 返回退订函数，和真实实现一致。
   coverReadyMock: vi.fn((): (() => void) => () => {}),
+  requestReminderAuthorizationMock: vi.fn(),
+  armReminderMock: vi.fn(),
 }))
 
 vi.mock('../../miniprogram/services/inventory-service', () => ({
@@ -19,6 +26,10 @@ vi.mock('../../miniprogram/services/inventory-service', () => ({
   getItem: getItemMock,
   onItemCoverReady: coverReadyMock,
   permanentlyDeleteItem: vi.fn(),
+}))
+vi.mock('../../miniprogram/services/reminder-service', () => ({
+  requestReminderAuthorization: requestReminderAuthorizationMock,
+  armReminder: armReminderMock,
 }))
 vi.mock('../../miniprogram/utils/analytics', () => ({ track: vi.fn() }))
 
@@ -40,6 +51,8 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  requestReminderAuthorizationMock.mockResolvedValue(true)
+  armReminderMock.mockResolvedValue({ status: 'scheduled', remindDate: '2099-09-27' })
   globalThis.wx = {
     showToast: vi.fn(),
     setNavigationBarTitle: vi.fn(),
@@ -93,13 +106,15 @@ async function loadWith(overrides: Record<string, unknown> = {}) {
 }
 
 describe('物品详情 · 提醒时间', () => {
-  it('默认启用的待发送提醒只展示时间，不暴露内部任务状态', async () => {
+  it('没有提醒任务时明确提示并给出补开入口', async () => {
     const page = await loadWith({ reminderStatus: null })
     expect(page.data.item.reminderAtText).toBe('2099年9月27日 16:00')
-    expect(page.data.item.reminderAtNote).toBe('')
+    expect(page.data.item.reminderAtNote).toBe('微信提醒未开启')
+    expect(page.data.item.canEnableReminder).toBe(true)
 
     const scheduledPage = await loadWith({ reminderStatus: 'scheduled' })
     expect(scheduledPage.data.item.reminderAtNote).toBe('')
+    expect(scheduledPage.data.item.canEnableReminder).toBe(false)
   })
 
   it('提前 0 天时提醒时间就是到期日当天 16:00', async () => {
@@ -111,6 +126,7 @@ describe('物品详情 · 提醒时间', () => {
     const page = await loadWith({ reminderStatus: 'sent' })
     expect(page.data.item.reminderAtText).toBe('2099年9月27日 16:00')
     expect(page.data.item.reminderAtNote).toBe('微信服务通知已发送')
+    expect(page.data.item.canEnableReminder).toBe(false)
   })
 
   it.each([
@@ -126,6 +142,7 @@ describe('物品详情 · 提醒时间', () => {
     const page = await loadWith({ expiryDate: '2020-01-01', reminderStatus: null })
     expect(page.data.item.reminderAtText).toBe('2019年12月29日 16:00')
     expect(page.data.item.reminderAtNote).toBe('提醒时间已过，不再发送')
+    expect(page.data.item.canEnableReminder).toBe(false)
   })
 
   it('非在库物品直接标为已停止推送', async () => {
@@ -139,7 +156,34 @@ describe('物品详情 · 提醒时间', () => {
     expect(page.data.item.reminderAtNote).toBe('')
   })
 
-  it('没有旧提醒开关、补开/取消入口或提醒弹窗', () => {
+  it('补开提醒从 tap 同步栈申请授权，再创建任务', async () => {
+    let resolveAuthorization: ((value: boolean) => void) | undefined
+    requestReminderAuthorizationMock.mockReturnValueOnce(new Promise<boolean>((resolve) => {
+      resolveAuthorization = resolve
+    }))
+    const page = await loadWith({ reminderStatus: null })
+
+    const enabling = page.handleEnableReminder()
+    expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+    expect(armReminderMock).not.toHaveBeenCalled()
+
+    resolveAuthorization?.(true)
+    await enabling
+    expect(armReminderMock).toHaveBeenCalledWith('item-1')
+    expect(globalThis.wx.showToast).toHaveBeenCalledWith({ title: '提醒已开启', icon: 'success' })
+  })
+
+  it('用户拒绝授权时不创建任务', async () => {
+    requestReminderAuthorizationMock.mockResolvedValueOnce(false)
+    const page = await loadWith({ reminderStatus: null })
+
+    await page.handleEnableReminder()
+
+    expect(armReminderMock).not.toHaveBeenCalled()
+    expect(page.data.actionLoading).toBe(false)
+  })
+
+  it('保留旧提醒弹窗和取消入口的清理结果', () => {
     expect(detailPage.data.reminderSheetVisible).toBeUndefined()
     for (const method of [
       'openReminder', 'closeReminder', 'requestReminder', 'enableReminder', 'cancelReminder',

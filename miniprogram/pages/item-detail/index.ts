@@ -8,6 +8,7 @@ import {
 } from '../../services/inventory-service'
 import { coverThumbUrl } from '../../domain/inventory'
 import { resolveReminderTime } from '../../domain/reminder-time'
+import { armReminder, requestReminderAuthorization } from '../../services/reminder-service'
 import type { InventoryItem } from '../../types/inventory'
 import { track } from '../../utils/analytics'
 
@@ -52,6 +53,12 @@ function decorateItem(item: InventoryItem) {
     reminderLeadDays: item.reminderLeadDays,
   })
   const reminderStatus = item.reminderStatus || null
+  const canEnableReminder = Boolean(
+    reminder
+      && !reminder.missed
+      && item.inventoryStatus === 'active'
+      && (reminderStatus === null || reminderStatus === 'failed' || reminderStatus === 'cancelled'),
+  )
 
   let reminderAtNote = ''
   if (!reminder) reminderAtNote = ''
@@ -62,6 +69,7 @@ function decorateItem(item: InventoryItem) {
   else if (reminderStatus === 'unknown') reminderAtNote = '微信通知结果待确认，不会自动重发'
   else if (reminder.missed) reminderAtNote = '提醒时间已过，不再发送'
   else if (reminderStatus === 'cancelled') reminderAtNote = '微信服务通知已停止'
+  else if (reminderStatus === null) reminderAtNote = '微信提醒未开启'
   else reminderAtNote = ''
 
   return {
@@ -69,6 +77,7 @@ function decorateItem(item: InventoryItem) {
     shelfLifeText,
     reminderAtText: reminder?.text || '',
     reminderAtNote,
+    canEnableReminder,
     // 与首页卡片复用同一个派生函数：将来恢复缩略图参数时两处一起变，不会一个有大图一个没有。
     coverUrl: coverThumbUrl(item.coverFileId),
   }
@@ -190,6 +199,35 @@ Page({
 
   editItem() {
     wx.navigateTo({ url: `/pages/item-form/index?id=${this.data.itemId}` })
+  },
+
+  /**
+   * 修复旧正式版留下的“物品已保存、提醒任务没创建”。
+   * requestSubscribeMessage 必须在 tap 的同步调用栈里发起，所以授权 Promise 要在任何 await 之前创建。
+   */
+  async handleEnableReminder() {
+    const item = this.data.item
+    if (!item?.canEnableReminder || this.data.actionLoading) return
+
+    const authorization = requestReminderAuthorization()
+    this.setData({ actionLoading: true })
+    try {
+      const accepted = await authorization
+      if (!accepted) return
+
+      const result = await armReminder(item._id)
+      if (result.status === 'missed') {
+        wx.showToast({ title: '提醒时间已过', icon: 'none' })
+      } else {
+        track('reminder_repaired_from_detail')
+        wx.showToast({ title: '提醒已开启', icon: 'success' })
+      }
+      await this.loadItem()
+    } catch (error) {
+      this.handleActionError(error)
+    } finally {
+      this.setData({ actionLoading: false })
+    }
   },
 
   restoreItem() {

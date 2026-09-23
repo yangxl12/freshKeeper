@@ -97,6 +97,13 @@
           <view class="info-row__tail">
             <text class="info-row__value">{{item.reminderAtText || '—'}}</text>
             <text wx:if="{{item.reminderAtNote}}" class="info-row__note">{{item.reminderAtNote}}</text>
+            <button
+              wx:if="{{item.canEnableReminder}}"
+              class="reminder-repair"
+              disabled="{{actionLoading}}"
+              bindtap="handleEnableReminder"
+              hover-class="reminder-repair--pressed"
+            >开启提醒</button>
           </view>
         </view>
       </view>

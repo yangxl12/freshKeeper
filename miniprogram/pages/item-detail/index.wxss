@@ -254,6 +254,23 @@
   font-size: 21rpx;
 }
 
+.reminder-repair {
+  min-width: 132rpx;
+  height: 54rpx;
+  margin: 12rpx 0 0;
+  padding: 0 22rpx;
+  border: 2rpx solid #b9d2c8;
+  border-radius: 27rpx;
+  background: #edf6f2;
+  color: #245b49;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 50rpx;
+}
+
+.reminder-repair::after { border: 0; }
+.reminder-repair--pressed { background: #dcece5; }
+
 .note {
   margin-top: 24rpx;
   padding: 26rpx 28rpx;
