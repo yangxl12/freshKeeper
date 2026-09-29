@@ -64,6 +64,7 @@ Component({
 
   data: {
     originalExpiryDate: '',
+    originalReminderLeadDays: 1,
     originalCreatedAt: 0,
     version: 0,
     loading: false,
@@ -152,6 +153,7 @@ Component({
       this.setData({
         version: 0,
         originalExpiryDate: '',
+        originalReminderLeadDays: 1,
         originalCreatedAt: 0,
         saving: false,
         errorMessage: '',
@@ -185,6 +187,7 @@ Component({
         this.setData({
           version: item.version,
           originalExpiryDate: item.expiryDate,
+          originalReminderLeadDays: item.reminderLeadDays,
           originalCreatedAt: item.createdAt ? new Date(item.createdAt).getTime() : 0,
           mode: item.expiryInputMode,
           name: item.name,
@@ -465,7 +468,11 @@ Component({
      */
     needsReminderArm(): boolean {
       const status = this.data.reminderStatus
-      return !status || status === 'failed' || status === 'cancelled'
+      if (status === 'sending' || status === 'unknown') return false
+      const planChanged = Boolean(this.data.itemId)
+        && (this.currentExpiryDate() !== this.data.originalExpiryDate
+          || Number(this.data.reminderLeadDays) !== this.data.originalReminderLeadDays)
+      return planChanged || !status || status === 'failed' || status === 'cancelled'
     },
 
     /**

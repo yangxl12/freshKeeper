@@ -153,25 +153,56 @@ async function arm(ownerId, event) {
   if (isReminderMissed(remindDate)) return { status: 'missed', remindDate }
 
   const current = await findOwned(REMINDERS, ownerId, itemId)
-  if (current?.status === 'scheduled' || isTerminalReminderStatus(current?.status)) {
+  const planKey = `${item.expiryDate}:${normalizedLeadDays(item.reminderLeadDays)}`
+  const samePlan = current && (current.planKey
+    ? current.planKey === planKey
+    : current.remindDate === remindDate)
+  if (samePlan && (current.status === 'scheduled' || isTerminalReminderStatus(current.status))) {
     return { status: current.status, remindDate: current.remindDate || remindDate }
   }
+  assert(!current || samePlan || !['sending', 'unknown'].includes(current.status),
+    'PREVIOUS_RESULT_PENDING', '上一轮提醒结果尚未确认，请稍后再试')
+
+  const previousAttempt = current ? {
+    planKey: current.planKey || null,
+    remindDate: current.remindDate,
+    status: current.status,
+    acceptedAt: current.acceptedAt || null,
+    sendAttemptedAt: current.sendAttemptedAt || null,
+    sentAt: current.sentAt || null,
+    messageId: current.messageId || null,
+    failureCode: current.failureCode || null,
+    failureReason: current.failureReason || null,
+  } : null
 
   const data = {
     itemId,
     ownerId,
     templateId: REMINDER_TEMPLATE_ID,
     remindDate,
+    planKey,
+    itemVersion: item.version,
     status: 'scheduled',
     acceptedAt: db.serverDate(),
     sendAttemptedAt: null,
     sentAt: null,
     failureCode: null,
     failureReason: null,
+    failureStage: null,
+    retryCount: 0,
+    nextRetryAt: null,
+    messageId: null,
+    attemptHistory: previousAttempt
+      ? [...(current.attemptHistory || []), previousAttempt]
+      : [],
     updatedAt: db.serverDate(),
   }
   if (current) {
-    await db.collection(REMINDERS).where({ _id: itemId, ownerId }).update({ data })
+    const updated = await db.collection(REMINDERS)
+      .where({ _id: itemId, ownerId, status: current.status, updatedAt: current.updatedAt })
+      .update({ data })
+    assert((updated?.stats?.updated ?? updated?.updated ?? 0) === 1,
+      'CONFLICT', '提醒状态已变化，请刷新后再试')
   } else {
     await db.collection(REMINDERS).doc(itemId).set({ data })
   }

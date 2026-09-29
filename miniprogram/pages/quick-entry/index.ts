@@ -121,6 +121,8 @@ Page({
     selectableCount: 0,
     pendingCount: 0,
     saveSummary: '',
+    pendingReminders: [] as Array<{ itemId: string; name: string }>,
+    enablingReminderId: '',
     /** 达到草稿条数上限时「从最近录入添加」直接置灰，避免点了才被顶回来。 */
     draftLimitReached: false,
     maxDrafts: MAX_DRAFTS,
@@ -699,9 +701,11 @@ Page({
     if (savedItemIds.length) void this.requestCovers(savedItemIds)
     // 提醒授权必须在保存期间完成：这里还压着 saving 状态，用户不会重复点「加入库存」，
     // 而下面的 exitToHome 也要等授权弹窗收完才跳转。
-    const remindersReady = reminderTargets.length
+    const pendingReminders = reminderTargets.length
       ? await this.armSavedReminders(reminderTargets, reminderAuthorization)
-      : true
+      : []
+    this.setData({ pendingReminders: [...this.data.pendingReminders, ...pendingReminders] })
+    const remindersReady = this.data.pendingReminders.length === 0
     this.setData({ saving: false, saveSummary: failed ? `已成功 ${succeeded} 条，失败 ${failed} 条` : '' })
     track('quick_entry_save_result', { result: failed ? (succeeded ? 'partial' : 'failed') : 'success', draft_count: targets.length, duration_ms: Date.now() - this.openedAt, succeeded, failed, source: targets[0]?.draft.source || 'manual' })
     if (!updated.some((draft) => draft.status !== 'saved')) {
@@ -713,7 +717,7 @@ Page({
       })
       this.commitDrafts([])
       void this.refreshRecentProfiles()
-      this.exitToHome()
+      if (!this.data.pendingReminders.length) this.exitToHome()
     }
   },
 
@@ -735,18 +739,19 @@ Page({
   },
 
   /**
-   * 保存成功后逐条预约到期提醒。
+   * 一次点击产生的一次授权最多预约一件。其余已入库物品保留独立的开启入口。
    *
    * 授权只在持久化前的 tap 同步栈里申请一次（见 persistDrafts）：微信一次性订阅是
    * 「一次点击换一条发送额度」，而 requestSubscribeMessage 只能在 tap 同步栈里发起，
-   * 一次点击攒不出 N 条额度。这里把同一个授权结果依次消费、逐条落 reminder_jobs；
-   * 用户拒绝就整批停下，单条挂失败只跳过这一条——物品已经入库，提醒是附加动作。
+   * 一次点击攒不出 N 条额度，不能复用同一个 accept 创建多条任务。
    */
   async armSavedReminders(
     targets: Array<{ itemId: string; draft: QuickEntryDraft }>,
     authorization: Promise<boolean> | null,
-  ): Promise<boolean> {
-    let allReady = true
+  ): Promise<Array<{ itemId: string; name: string }>> {
+    const pending: Array<{ itemId: string; name: string }> = []
+    let authorizationUsed = false
+    const accepted = authorization ? await authorization.catch(() => false) : false
     for (const { itemId, draft } of targets) {
       if (!itemId) continue
       // 提醒日已经过去（含日期还没落定的草稿）不申请授权，与「完整录入」同一判据。
@@ -755,24 +760,48 @@ Page({
         reminderLeadDays: draft.fields.reminderLeadDays ?? 1,
       })
       if (!reminder || reminder.date < this.data.today) continue
-      let accepted = false
-      try {
-        // 授权请求已在 persistDrafts() 的 tap 同步栈里发起，这里只收结果；
-        // 同一个 Promise 多次 await 拿到的是同一个结果，符合「一次点击一次授权」。
-        accepted = authorization ? await authorization : false
-      } catch (_error) {
-        accepted = false
+      const entry = { itemId, name: draft.fields.name || '未命名物品' }
+      if (!accepted || authorizationUsed) {
+        pending.push(entry)
+        continue
       }
-      if (!accepted) return false
+      authorizationUsed = true
       try {
         const result = await armReminder(itemId)
-        if (result.status === 'missed') allReady = false
+        if (result.status === 'missed') pending.push(entry)
       } catch (_error) {
-        // 单条挂失败不阻断后面的条目。
-        allReady = false
+        pending.push(entry)
       }
     }
-    return allReady
+    return pending
+  },
+
+  async enablePendingReminder(event: WechatMiniprogram.BaseEvent) {
+    const itemId = String(event.currentTarget.dataset.itemId || '')
+    if (this.data.enablingReminderId || this.data.saving || !this.data.pendingReminders.some((item) => item.itemId === itemId)) return
+    // 必须在 tap 同步栈内发起申请。
+    const authorization = requestReminderAuthorization()
+    this.setData({ enablingReminderId: itemId })
+    try {
+      if (!await authorization) return
+      const result = await armReminder(itemId)
+      if (result.status === 'missed') {
+        this.setData({ pendingReminders: this.data.pendingReminders.filter((item) => item.itemId !== itemId) })
+        wx.showToast({ title: '提醒时间已过', icon: 'none' })
+        return
+      }
+      this.setData({ pendingReminders: this.data.pendingReminders.filter((item) => item.itemId !== itemId) })
+      wx.showToast({ title: '提醒已开启', icon: 'success' })
+    } catch (_error) {
+      wx.showToast({ title: '开启失败，请稍后重试', icon: 'none' })
+    } finally {
+      this.setData({ enablingReminderId: '' })
+    }
+  },
+
+  finishPendingReminders() {
+    this.setData({ pendingReminders: [] })
+    this.exitToHome()
   },
 })
 

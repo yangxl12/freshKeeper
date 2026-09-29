@@ -40,6 +40,16 @@
 
       <view wx:if="{{inputError}}" class="quick-entry__notice" role="alert">{{inputError}}</view>
 
+      <view wx:if="{{pendingReminders.length}}" class="reminder-pending">
+        <text class="reminder-pending__title">物品已入库，以下提醒待开启</text>
+        <text class="reminder-pending__hint">每件物品需要单独同意一次微信服务通知。稍后也可在物品详情开启。</text>
+        <view wx:for="{{pendingReminders}}" wx:key="itemId" wx:for-item="pending" class="reminder-pending__row">
+          <text class="reminder-pending__name">{{pending.name}}</text>
+          <button class="reminder-pending__button" data-item-id="{{pending.itemId}}" disabled="{{!!enablingReminderId}}" bindtap="enablePendingReminder">{{enablingReminderId === pending.itemId ? '开启中…' : '开启提醒'}}</button>
+        </view>
+        <button wx:if="{{!drafts.length}}" class="reminder-pending__finish" disabled="{{!!enablingReminderId}}" bindtap="finishPendingReminders">完成</button>
+      </view>
+
       <view wx:if="{{drafts.length}}" class="draft-area">
         <view class="draft-area__head">
           <text class="draft-area__title">识别结果</text>
@@ -95,7 +105,7 @@
         <view wx:if="{{saveSummary}}" class="quick-entry__notice">{{saveSummary}}</view>
       </view>
 
-      <view wx:if="{{!drafts.length && recognitionState === 'idle'}}" class="quick-entry__tip">
+      <view wx:if="{{!drafts.length && !pendingReminders.length && recognitionState === 'idle'}}" class="quick-entry__tip">
         <text class="quick-entry__tip-title">一句话快速录入</text>
         <text class="quick-entry__tip-text">输入物品和日期，例如「牛奶2盒，3天后到期，放冰箱」，识别后点右上角编辑就能修改。</text>
       </view>

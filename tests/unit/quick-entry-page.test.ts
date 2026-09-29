@@ -462,10 +462,10 @@ describe('quick entry page compatibility', () => {
   /**
    * 微信一次性订阅「一次授权换一条额度」，而且 `wx.requestSubscribeMessage` 必须由 tap
    * 事件同步触发，批量保存又只发生在一次点击里——所以一次点击只能换来一次授权结果，
-   * 两条草稿共用它。这几条守住：谁该申请、谁该跳过、拒绝之后不再连弹。
+   * 这个结果只能用于一条提醒；其余物品需要各自点击开启。
    */
   describe('quick entry 保存后预约到期提醒', () => {
-    it('授权在保存前的同步栈里申请一次，两条草稿共用并各自挂提醒', async () => {
+    it('批量保存只预约一条，其余物品逐件点击开启', async () => {
       const page = pageInstance()
       page.setData({ today: '2026-09-08' })
       page.commitDrafts([completeDraft('牛奶'), completeDraft('酸奶')])
@@ -474,7 +474,15 @@ describe('quick entry page compatibility', () => {
       await page.saveDrafts()
 
       expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+      expect(armReminderMock.mock.calls.map((call) => call[0])).toEqual(['milk'])
+      expect(page.data.pendingReminders).toEqual([{ itemId: 'yogurt', name: '酸奶' }])
+      expect(wx.navigateBack).not.toHaveBeenCalled()
+
+      const enabling = page.enablePendingReminder({ currentTarget: { dataset: { itemId: 'yogurt' } } })
+      expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(2)
+      await enabling
       expect(armReminderMock.mock.calls.map((call) => call[0])).toEqual(['milk', 'yogurt'])
+      expect(page.data.pendingReminders).toEqual([])
     })
 
     it('用户拒绝授权后停止，不再对后面几条连弹', async () => {
@@ -488,6 +496,7 @@ describe('quick entry page compatibility', () => {
 
       expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
       expect(armReminderMock).not.toHaveBeenCalled()
+      expect(page.data.pendingReminders).toHaveLength(2)
     })
 
     it('提醒日已经过去的草稿不申请授权，与完整录入保持一致', async () => {

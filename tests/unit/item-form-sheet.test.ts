@@ -221,11 +221,29 @@ describe('item-form-sheet 到期提醒', () => {
     sheet.data.itemId = 'existing-1'
     sheet.data.version = 3
     sheet.data.reminderStatus = 'scheduled'
+    sheet.data.originalExpiryDate = sheet.data.expiryDate
+    sheet.data.originalReminderLeadDays = Number(sheet.data.reminderLeadDays)
 
     await sheet.save()
 
     expect(requestReminderAuthorizationMock).not.toHaveBeenCalled()
     expect(armReminderMock).not.toHaveBeenCalled()
+  })
+
+  it('修改已预约物品的提醒计划时重新申请授权', async () => {
+    saveItemMock.mockResolvedValueOnce({ itemId: 'existing-1', version: 4, expiryDate: '2099-12-31' })
+    const sheet = sheetInstance('direct')
+    fillValidNewItem(sheet)
+    sheet.data.itemId = 'existing-1'
+    sheet.data.version = 3
+    sheet.data.reminderStatus = 'scheduled'
+    sheet.data.originalExpiryDate = sheet.data.expiryDate
+    sheet.data.originalReminderLeadDays = Number(sheet.data.reminderLeadDays) + 1
+
+    await sheet.save()
+
+    expect(requestReminderAuthorizationMock).toHaveBeenCalledTimes(1)
+    expect(armReminderMock).toHaveBeenCalledWith('existing-1')
   })
 
   it('编辑一件没有任务或上次失败的物品会补挂提醒', async () => {

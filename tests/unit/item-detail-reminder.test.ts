@@ -132,9 +132,17 @@ describe('物品详情 · 提醒时间', () => {
   it.each([
       ['sending', '微信服务通知发送中'],
       ['unknown', '微信通知结果待确认，不会自动重发'],
+      ['retryable', '提醒处理暂时受阻，系统将自动重试'],
   ])('推送中/结果未确定（%s）如实标注', async (status, note) => {
     const page = await loadWith({ reminderStatus: status })
     expect(page.data.item.reminderAtNote).toBe(note)
+  })
+
+  it('对订阅额度和云配置失败给出不同的安全提示', async () => {
+    const quota = await loadWith({ reminderStatus: 'failed', reminderFailureCategory: 'subscription' })
+    expect(quota.data.item.reminderAtNote).toBe('本次订阅额度不足，通知未送达')
+    const token = await loadWith({ reminderStatus: 'failed', reminderFailureCategory: 'configuration' })
+    expect(token.data.item.reminderAtNote).toBe('通知服务异常，提醒未送达，正在排查')
   })
 
   it('提醒时刻已过的标记为已错过', async () => {

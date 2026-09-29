@@ -64,8 +64,16 @@ function decorateItem(item: InventoryItem) {
   if (!reminder) reminderAtNote = ''
   else if (item.inventoryStatus !== 'active') reminderAtNote = '微信服务通知已停止'
   else if (reminderStatus === 'sent') reminderAtNote = '微信服务通知已发送'
+  else if (item.reminderPlanPending) reminderAtNote = '上一轮通知结果待确认，新提醒暂未开启'
   else if (reminderStatus === 'sending') reminderAtNote = '微信服务通知发送中'
-  else if (reminderStatus === 'failed') reminderAtNote = '微信服务通知发送失败'
+  else if (reminderStatus === 'retryable') reminderAtNote = '提醒处理暂时受阻，系统将自动重试'
+  else if (reminderStatus === 'failed') {
+    reminderAtNote = item.reminderFailureCategory === 'subscription'
+      ? '本次订阅额度不足，通知未送达'
+      : item.reminderFailureCategory === 'configuration'
+        ? '通知服务异常，提醒未送达，正在排查'
+        : '提醒未送达，请稍后重新开启'
+  }
   else if (reminderStatus === 'unknown') reminderAtNote = '微信通知结果待确认，不会自动重发'
   else if (reminder.missed) reminderAtNote = '提醒时间已过，不再发送'
   else if (reminderStatus === 'cancelled') reminderAtNote = '微信服务通知已停止'

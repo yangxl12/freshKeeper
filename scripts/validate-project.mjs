@@ -129,8 +129,8 @@ if (clientRemindTime !== armRemindTime || armRemindTime !== dispatchRemindTime) 
 // 云函数的 envVariables / triggers 只在首次创建时写入云端，之后改配置重新部署都不会同步，
 // 所以两份配置必须一致，否则「以为改了」其实没改。
 const dispatchCloudbaseConfig = cloudbaseConfig.functions?.find((item) => item.name === 'dispatchReminders')
-if (dispatchCloudbaseConfig?.triggers?.[0]?.config !== dispatchConfig.triggers?.[0]?.config) {
-  errors.push('cloudbaserc.json 与 dispatchReminders/config.json 的触发器不一致')
+if (dispatchCloudbaseConfig?.triggers?.length) {
+  errors.push('dispatchReminders 不得在 cloudbaserc.json 配置普通定时触发器；只使用微信开发者工具上传的触发器')
 }
 if (dispatchCloudbaseConfig?.envVariables?.MINIPROGRAM_STATE !== dispatchConfig.envVariables?.MINIPROGRAM_STATE) {
   errors.push('cloudbaserc.json 与 dispatchReminders/config.json 的跳转状态不一致')

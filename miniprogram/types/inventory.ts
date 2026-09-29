@@ -21,6 +21,7 @@ export type ReminderStatus =
   | 'sending'
   | 'sent'
   | 'failed'
+  | 'retryable'
   | 'unknown'
   | 'cancelled'
   | null
@@ -55,6 +56,9 @@ export interface InventoryItem {
   storageLabel: string
   inventoryStatusLabel: string
   reminderStatus?: ReminderStatus
+  reminderFailureCategory?: 'subscription' | 'configuration' | 'system' | null
+  reminderFailureAt?: string | Date | null
+  reminderPlanPending?: boolean
 }
 
 export interface InventoryOverview {

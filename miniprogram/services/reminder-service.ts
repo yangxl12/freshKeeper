@@ -14,7 +14,7 @@ export type ReminderAuthorizationState =
   | 'unrequested'
 
 export interface ReminderAuthorization {
-  /** 是否可用于发送提醒。 */
+  /** 微信设置允许申请订阅；不表示尚有一次性发送额度。 */
   authorized: boolean
   state: ReminderAuthorizationState
   /** 订阅消息总开关；null 表示微信没下发该字段（用户从未授权过）。 */
@@ -115,9 +115,17 @@ export function requestReminderAuthorization(): Promise<boolean> {
         wx.showToast({ title: '提醒未开启', icon: 'none' })
         resolve(false)
       },
-      fail: () => {
-        track('reminder_request_result', { result: 'failed' })
-        wx.showToast({ title: '提醒未开启，可稍后再试', icon: 'none' })
+      fail: (error) => {
+        const detail = String(error?.errMsg || '')
+        const reason = /TAP gesture/i.test(detail) ? 'tap_required'
+          : /template|tmpl/i.test(detail) ? 'template_invalid'
+            : /network|timeout/i.test(detail) ? 'network' : 'wechat_rejected'
+        console.warn('requestSubscribeMessage failed:', detail)
+        track('reminder_request_result', { result: 'failed', failure_code: reason })
+        wx.showToast({
+          title: reason === 'tap_required' ? '请点击开启提醒后重试' : '提醒未开启，可稍后再试',
+          icon: 'none',
+        })
         resolve(false)
       },
     })

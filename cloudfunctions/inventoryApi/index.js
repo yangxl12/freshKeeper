@@ -371,8 +371,23 @@ async function get(ownerId, event) {
     getOwnedItem(ownerId, itemId),
     db.collection(REMINDERS).where({ _id: itemId, ownerId }).limit(1).get(),
   ])
+  const reminder = reminderResult.data[0]
+  const currentPlan = `${item.expiryDate}:${item.reminderLeadDays}`
+  const samePlan = reminder && (reminder.planKey
+    ? reminder.planKey === currentPlan
+    : reminder.remindDate === addDays(item.expiryDate, -item.reminderLeadDays))
+  const activeReminder = samePlan ? reminder : null
+  const previousResultPending = !samePlan && ['sending', 'unknown'].includes(reminder?.status)
+  const code = String(activeReminder?.failureCode || '')
+  const reminderFailureCategory = code === '43101' ? 'subscription'
+    : ['-501007', '-501001', '47003', '40037', '41030'].includes(code) || /WX_ACCESS_TOKEN|wxCloudApiToken/i.test(code)
+      ? 'configuration'
+      : code ? 'system' : null
   return publicItem(item, currentDateKey(), {
-    reminderStatus: reminderResult.data[0]?.status || null,
+    reminderStatus: activeReminder?.status || (previousResultPending ? 'unknown' : null),
+    reminderPlanPending: previousResultPending,
+    reminderFailureCategory,
+    reminderFailureAt: code ? activeReminder?.sendAttemptedAt || activeReminder?.updatedAt || null : null,
   })
 }
 
@@ -418,13 +433,13 @@ async function save(ownerId, event) {
     })
 
     const reminder = await getTransactionOwnedDoc(transaction, REMINDERS, ownerId, itemId)
-    if (
-      reminder &&
-      ['scheduled', 'failed', 'cancelled'].includes(reminder.status)
-    ) {
+    if (reminder && reminder.status === 'scheduled'
+      && (current.expiryDate !== normalized.expiryDate || current.reminderLeadDays !== normalized.reminderLeadDays)) {
       await transaction.collection(REMINDERS).doc(itemId).update({
         data: {
-          remindDate: addDays(normalized.expiryDate, -normalized.reminderLeadDays),
+          status: 'cancelled',
+          failureCode: 'PLAN_CHANGED',
+          failureReason: '物品提醒日期或提前天数已改变，旧计划已停止',
           updatedAt: db.serverDate(),
         },
       })

@@ -6,8 +6,7 @@
 >
 > **触发器不再绑死时刻**：`daily-reminder-dispatch` 配的是**每小时整点** `0 0 * * * * *`，
 > 「到没到 16:00」由 `dispatchReminders` 里的 `reachedRemindTime()` 判断。
-> 这里有两套同名触发器：普通 CloudBase/SCF 触发器，以及微信开发者工具上传的「微信定时触发器」。
-> 后者才会携带 `wxCloudApiToken`，正式版调用微信订阅消息必须以它为准；只部署代码或只创建普通触发器都不够。
+> **2026-09-29 修订**：历史上存在普通 CloudBase/SCF 与微信开发者工具上传的两种定时入口。普通入口不具备可靠的微信云调用票据，可能先领取任务并造成 `-501007 Invalid wxCloudApiToken`。生产派发只应保留经真机自然触发验证的微信定时入口；移除普通入口前必须先回读云端两类触发器和同一整点调用日志。仓库 `cloudbaserc.json` 已停止声明普通提醒触发器，`dispatchReminders/config.json` 保留微信 IDE 上传所需的配置。
 >
 > 改提醒时刻要同步的地方（`npm run check` 会硬校验，不一致直接红）：
 > ① `miniprogram/domain/reminder-time.ts` 的 `REMINDER_HOUR/REMINDER_MINUTE`
@@ -28,7 +27,7 @@
 
 - 改完云函数必须**真的部署**。`cloud functions download` 拉云端代码跟本地 diff 是最可靠的核对方式。
 - `envVariables` / `triggers` 是否随部署同步，不同 CLI 行为不一致，**以控制台实际值为准**，别信本地文件。
-- `npm run check` 现在会硬校验：提醒时刻三处必须一致、`cloudbaserc.json` 与 `config.json` 的触发器和跳转状态必须一致。
+- `npm run check` 会校验提醒时刻三处一致、普通 CLI 配置不得再声明提醒触发器、微信触发器配置保持每小时整点，以及两处跳转状态一致。
 
 **顺带做的加固**：
 
@@ -36,6 +35,8 @@
 - 派发按时钟判断是否到点，触发器改成每小时 —— 触发器配一次就永久有效，以后改时刻只改代码。
 
 ### 2026-09-22 / 2026-09-26 复核补充：部署代码不会自动同步已有触发器
+
+> 以下普通触发器修复是当时的历史操作记录；2026-09-29 的票据故障使其不再是目标架构。不要按此段重新创建普通提醒触发器。
 
 本次直接读取云端 `GetFunction` 返回值后确认：仓库和下载配置虽然都是每小时整点，
 云端真实触发器却仍是旧的 `0 30 9 * * * *`。仅重新部署函数代码不会更新这个已有触发器。
@@ -58,7 +59,7 @@ tcb fn detail dispatchReminders --json
 tcb api tcb DescribeWxFunctionTriggers --body '{"EnvId":"cloud1-d0gkh66ce94b1be08","FunctionName":"dispatchReminders"}' --api-version 2018-06-08 --json
 ```
 
-`DescribeWxFunctionTriggers` 必须返回 `daily-reminder-dispatch` 且 cron 为 `0 0 * * * * *`。
+`DescribeWxFunctionTriggers` 必须返回 `daily-reminder-dispatch` 且 cron 为 `0 0 * * * * *`；普通触发器视图应确认不再有会领取提醒任务的同名入口。
 它不会被普通 CLI 的函数代码部署自动更新；修改 `cloudfunctions/*/config.json` 后，必须在微信开发者工具中右键对应云函数的 `config.json`，选择「上传触发器」，再回读上面的 API。否则微信定时调用会以 `-501001 INVALID_WX_ACCESS_TOKEN` 失败。
 
 ## 一、已定位并已修的根因：订阅授权不在 tap 同步栈里发起
@@ -108,13 +109,12 @@ tap 的同步调用栈里），只把 Promise 留给保存成功后收结果。
 | # | 位置 | 要确认的事 | 不对会怎样 |
 | --- | --- | --- | --- |
 | 1 | 云函数 → `dispatchReminders` → 配置 | 环境变量 `MINIPROGRAM_STATE` 指向当前在测的版本：开发版 `developer`／体验版 `trial`／正式版 `formal` | **不影响能否收到**，只决定点击通知跳进哪个版本；`developer` 只在本地开着开发者工具时可用，`formal` 在正式版未发布或未更新时跳不过去 |
-| 2 | 云函数 → `dispatchReminders` → 两套触发器 | 普通 `Triggers` 与 `DescribeWxFunctionTriggers` 都存在且启用，cron 都为 **每小时整点** `0 0 * * * * *`；微信定时触发器必须通过开发者工具「上传触发器」同步 | 普通触发器缺失：没有派发；微信触发器缺失/过期：派发调用报 `-501001 INVALID_WX_ACCESS_TOKEN` |
+| 2 | 云函数 → `dispatchReminders` → 定时入口 | 仅微信定时触发器负责派发，cron 为 **每小时整点** `0 0 * * * * *`；普通入口不得竞争领取任务 | 微信触发器缺失/票据无效：派发可能报 `-501007 Invalid wxCloudApiToken`；普通入口存在：可能抢先领取并失败 |
 | 3 | 云函数 → `dispatchReminders` → API 权限 | 已勾选 `subscribeMessage.send` | 调用开放接口直接报无权限 |
 | 4 | 公众平台 → 功能 → 订阅消息 → 我的模板 | 模板 ID `jXD8Fb4_ZudDL8FWO3dP4VXcYMWTXjqOaSaM1XBLwh8`，字段依次 `thing7 / time2 / number5 / number4 / thing3` | 发送报 `47003`（参数不合法）或 `40037`（模板 ID 无效） |
 
 `envVariables` / `triggers` / `permissions` 是否随部署同步，不同 CLI 行为不一致，
-**以控制台实际值为准**。`cloudbaserc.json` 与 `config.json` 的触发器和 `MINIPROGRAM_STATE`
-必须一致（已由 `npm run check` 硬校验），否则又会出现「以为改了其实没改」。
+**以控制台实际值为准**。`cloudbaserc.json` 不再声明普通提醒触发器；`config.json` 保留微信触发器，两处 `MINIPROGRAM_STATE` 必须一致（由 `npm run check` 校验）。仓库检查不能代替云端回读。
 
 ## 四、马上测一条（不用等定时器）
 

@@ -42,6 +42,7 @@ function createCloud(options: {
   function collection(name: string) {
     let where: Doc = {}
     let limit = 1000
+    let skip = 0
     const api = {
       where(next: Doc) {
         where = next
@@ -54,9 +55,13 @@ function createCloud(options: {
         limit = next
         return api
       },
+      skip(next: number) {
+        skip = next
+        return api
+      },
       async get() {
         if (name === 'inventory_items' && options.failInventoryRead) throw new Error('read failed')
-        return { data: store[name].filter((doc) => matches(doc, where)).slice(0, limit) }
+        return { data: store[name].filter((doc) => matches(doc, where)).slice(skip, skip + limit) }
       },
       async count() {
         return { total: store[name].filter((doc) => matches(doc, where)).length }
@@ -135,24 +140,45 @@ function scheduledJob() {
 }
 
 describe('dispatch reminder failure states', () => {
-  it('marks a database read failure before claim as failed', async () => {
+  it('keeps a database read failure before claim retryable', async () => {
     const fixture = scheduledJob()
     const fake = createCloud({ items: [fixture.item], reminders: [fixture.job], failInventoryRead: true })
     const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
 
-    expect(result.data).toMatchObject({ due: 1, claimed: 0, failed: 1 })
-    expect(fake.reminders[0]).toMatchObject({ status: 'failed', failureCode: 'DISPATCH_STAGE_FAILED' })
+    expect(result.data).toMatchObject({ due: 1, claimed: 0, retryable: 1 })
+    expect(fake.reminders[0]).toMatchObject({ status: 'retryable', failureCode: 'DISPATCH_STAGE_FAILED', retryCount: 1, failureStage: 'validate' })
+    expect(fake.reminders[0].nextRetryAt).toBeInstanceOf(Date)
     expect(fake.send).not.toHaveBeenCalled()
   })
 
-  it('marks a claim failure as failed without sending', async () => {
+  it('retries a claim failure without sending', async () => {
     const fixture = scheduledJob()
     const fake = createCloud({ items: [fixture.item], reminders: [fixture.job], failClaim: true })
     const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
 
-    expect(result.data).toMatchObject({ due: 1, claimed: 0, failed: 1 })
-    expect(fake.reminders[0].status).toBe('failed')
+    expect(result.data).toMatchObject({ due: 1, claimed: 0, retryable: 1 })
+    expect(fake.reminders[0].status).toBe('retryable')
     expect(fake.send).not.toHaveBeenCalled()
+  })
+
+  it('bounds pre-send retries and never calls WeChat after repeated read failures', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-29T16:05:00+08:00'))
+    try {
+      const fixture = scheduledJob()
+      const fake = createCloud({ items: [fixture.item], reminders: [fixture.job], failInventoryRead: true })
+      const dispatch = loadDispatch(fake.cloud)
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const result = await dispatch.main({ manual: true, force: true })
+        expect(result.data[attempt === 3 ? 'failed' : 'retryable']).toBe(1)
+        expect(fake.reminders[0].retryCount).toBe(attempt)
+        if (attempt < 3) vi.setSystemTime(new Date(fake.reminders[0].nextRetryAt.getTime() + 1000))
+      }
+      expect(fake.reminders[0].status).toBe('failed')
+      expect(fake.send).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('separates an explicit OpenAPI rejection from an uncertain timeout', async () => {
@@ -192,7 +218,7 @@ describe('dispatch reminder failure states', () => {
     expect(fake.reminders[0].status).toBe('unknown')
   })
 
-  it('reconciles stale sending jobs to unknown without sending', async () => {
+  it('reconciles stale sending jobs before an attempt to retryable without sending', async () => {
     const stale = {
       _id: 'item-stale', itemId: 'item-stale', ownerId: 'openid-1', status: 'sending',
       remindDate: shanghaiToday(), templateId: 'template-1',
@@ -202,7 +228,7 @@ describe('dispatch reminder failure states', () => {
     const result = await loadDispatch(fake.cloud).main({ manual: true, force: true })
 
     expect(result.data).toMatchObject({ due: 0, staleSending: 1 })
-    expect(fake.reminders[0]).toMatchObject({ status: 'unknown', failureCode: 'STALE_SENDING' })
+    expect(fake.reminders[0]).toMatchObject({ status: 'retryable', failureCode: 'STALE_BEFORE_SEND' })
     expect(fake.send).not.toHaveBeenCalled()
   })
 
@@ -229,6 +255,20 @@ describe('dispatch reminder failure states', () => {
 
     expect(result.data).toMatchObject({ total: 1, dueTodayCount: 1 })
     expect(fake.reminders[0].status).toBe('scheduled')
+    expect(fake.send).not.toHaveBeenCalled()
+  })
+
+  it('counts a date beyond the old 1000-row diagnostic limit and pages its jobs', async () => {
+    const today = shanghaiToday()
+    const reminders = Array.from({ length: 1005 }, (_, index) => ({
+      _id: `item-${index}`, itemId: `item-${index}`, ownerId: 'openid-1',
+      status: 'scheduled', remindDate: today, updatedAt: new Date(),
+    }))
+    const fake = createCloud({ reminders })
+    const result = await loadDispatch(fake.cloud).main({ action: 'diag', status: 'scheduled', page: 1 })
+
+    expect(result.data).toMatchObject({ total: 1005, dueTodayCount: 1005, page: 1, hasNextPage: true })
+    expect(result.data.jobs).toHaveLength(20)
     expect(fake.send).not.toHaveBeenCalled()
   })
 

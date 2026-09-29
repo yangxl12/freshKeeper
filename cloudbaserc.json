@@ -76,14 +76,7 @@
       "installDependency": true,
       "envVariables": {
         "MINIPROGRAM_STATE": "formal"
-      },
-      "triggers": [
-        {
-          "name": "daily-reminder-dispatch",
-          "type": "timer",
-          "config": "0 0 * * * * *"
-        }
-      ]
+      }
     }
   ]
 }

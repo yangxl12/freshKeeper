@@ -21,6 +21,8 @@ const MAX_BATCHES = 20
 // 不会有两条路径同时给同一 job 发消息。
 const JOB_CONCURRENCY = 8
 const STALE_SENDING_MS = 15 * 60 * 1000
+const MAX_PRE_SEND_RETRIES = 3
+const RETRY_BASE_MS = 5 * 60 * 1000
 const MILLIS_PER_DAY = 86_400_000
 
 /**
@@ -152,7 +154,7 @@ async function updateJob(job, status, data = {}) {
 async function cancelJob(job, code, reason) {
   await db
     .collection(REMINDERS)
-    .where({ _id: job._id, ownerId: job.ownerId, status: 'scheduled' })
+    .where({ _id: job._id, ownerId: job.ownerId, status: job.status })
     .update({
       data: {
         status: 'cancelled',
@@ -163,17 +165,24 @@ async function cancelJob(job, code, reason) {
     })
 }
 
-async function failScheduledJob(job, code) {
+async function markPreSendFailure(job, code, stage, claimed) {
+  const retryCount = (job.retryCount || 0) + 1
+  const exhausted = retryCount >= MAX_PRE_SEND_RETRIES
+  const nextRetryAt = exhausted ? null : new Date(Date.now() + RETRY_BASE_MS * (2 ** (retryCount - 1)))
   await db.collection(REMINDERS)
-    .where({ _id: job._id, ownerId: job.ownerId, status: 'scheduled' })
+    .where({ _id: job._id, ownerId: job.ownerId, status: claimed ? 'sending' : job.status })
     .update({
       data: {
-        status: 'failed',
+        status: exhausted ? 'failed' : 'retryable',
         failureCode: truncate(code, 40),
-        failureReason: '派发前处理失败，可重新预约',
+        failureReason: exhausted ? '派发前多次处理失败，请联系支持' : '派发前处理失败，系统将自动重试',
+        failureStage: stage,
+        retryCount,
+        nextRetryAt,
         updatedAt: db.serverDate(),
       },
     })
+  return exhausted ? 'failed' : 'retryable'
 }
 
 function jobIdHash(job) {
@@ -212,9 +221,11 @@ async function processJob(job, today, config, options = {}) {
     const expectedRemindDate = item
       ? addDays(item.expiryDate, -normalizedLeadDays(item.reminderLeadDays))
       : null
+    const expectedPlanKey = item ? `${item.expiryDate}:${normalizedLeadDays(item.reminderLeadDays)}` : null
     const expiryOrdinal = item ? toOrdinal(item.expiryDate) : null
     const todayOrdinal = toOrdinal(today)
     if (!item || item.inventoryStatus !== 'active' || expectedRemindDate !== job.remindDate
+      || (job.planKey && job.planKey !== expectedPlanKey)
       || expiryOrdinal === null || expiryOrdinal < todayOrdinal) {
       await cancelJob(job, 'ITEM_NOT_ELIGIBLE', '物品状态或提醒日期已变化')
       return outcome(job, stage, 'cancelled')
@@ -222,7 +233,7 @@ async function processJob(job, today, config, options = {}) {
 
     stage = 'claim'
     const claimResult = await db.collection(REMINDERS)
-      .where({ _id: job._id, ownerId: job.ownerId, status: 'scheduled', remindDate: job.remindDate })
+      .where({ _id: job._id, ownerId: job.ownerId, status: job.status, remindDate: job.remindDate })
       .update({ data: { status: 'sending', updatedAt: db.serverDate() } })
     if (updatedCount(claimResult) !== 1) return outcome(job, stage, 'skipped')
     claimed = true
@@ -233,7 +244,9 @@ async function processJob(job, today, config, options = {}) {
     const sendRemindDate = sendItem
       ? addDays(sendItem.expiryDate, -normalizedLeadDays(sendItem.reminderLeadDays))
       : null
+    const sendPlanKey = sendItem ? `${sendItem.expiryDate}:${normalizedLeadDays(sendItem.reminderLeadDays)}` : null
     if (!sendItem || sendItem.inventoryStatus !== 'active' || sendRemindDate !== job.remindDate
+      || (job.planKey && job.planKey !== sendPlanKey)
       || sendExpiryOrdinal === null || sendExpiryOrdinal < todayOrdinal) {
       await updateJob(job, 'cancelled', {
         failureCode: 'ITEM_CHANGED_BEFORE_SEND',
@@ -248,8 +261,9 @@ async function processJob(job, today, config, options = {}) {
       .update({ data: { sendAttemptedAt: db.serverDate(), updatedAt: db.serverDate() } })
 
     stage = 'send'
+    let sendResult
     try {
-      await cloud.openapi.subscribeMessage.send({
+      sendResult = await cloud.openapi.subscribeMessage.send({
         touser: job.ownerId,
         templateId: job.templateId,
         page: `pages/item-detail/index?id=${encodeURIComponent(job.itemId)}&source=subscribe`,
@@ -263,28 +277,44 @@ async function processJob(job, today, config, options = {}) {
       await updateJob(job, status, {
         failureCode: truncate(error?.errCode || (uncertain ? 'RESULT_UNKNOWN' : 'OPENAPI_REJECTED'), 40),
         failureReason: openApiFailureReason(error, uncertain),
+        failureStage: 'send',
       })
       return outcome(job, stage, status, true)
     }
 
     stage = 'finalize'
-    await updateJob(job, 'sent', { sentAt: db.serverDate(), failureCode: null, failureReason: null })
+    await updateJob(job, 'sent', {
+      sentAt: db.serverDate(),
+      messageId: sendResult?.msgid || sendResult?.msgId || null,
+      failureCode: null,
+      failureReason: null,
+      failureStage: null,
+    })
     return outcome(job, stage, 'sent', true)
   } catch (error) {
     const failureCode = truncate(error?.code || 'DISPATCH_STAGE_FAILED', 40)
+    console.warn(JSON.stringify({
+      action: 'processReminder',
+      jobIdHash: jobIdHash(job),
+      stage,
+      failureCode,
+      detail: truncate(error?.errMsg || error?.message || '', 160),
+    }))
+    let result = stage === 'send' || stage === 'finalize' ? 'unknown' : 'retryable'
     try {
-      if (claimed) {
+      if (stage === 'send' || stage === 'finalize') {
         await updateJob(job, 'unknown', {
           failureCode,
           failureReason: '领取任务后处理异常，发送结果不确定，不自动重试',
+          failureStage: stage,
         })
       } else {
-        await failScheduledJob(job, failureCode)
+        result = await markPreSendFailure(job, failureCode, stage, claimed)
       }
     } catch (_updateError) {
       // 状态修复也失败时仍返回明确阶段；僵尸 sending 会由下次对账收敛为 unknown。
     }
-    return outcome(job, stage, claimed ? 'unknown' : 'failed', claimed)
+    return outcome(job, stage, result, claimed)
   }
 }
 
@@ -297,6 +327,11 @@ async function reconcileStaleSending() {
     .get()
   let reconciled = 0
   for (const job of result.data) {
+    if (!job.sendAttemptedAt) {
+      await markPreSendFailure(job, 'STALE_BEFORE_SEND', 'reconcile', true)
+      reconciled += 1
+      continue
+    }
     const update = await db.collection(REMINDERS)
       .where({ _id: job._id, ownerId: job.ownerId, status: 'sending', updatedAt: command.lt(staleBefore) })
       .update({
@@ -312,44 +347,45 @@ async function reconcileStaleSending() {
   return reconciled
 }
 
-/**
- * 只读诊断：把 reminder_jobs 的全貌摊开，用来回答「到底有没有任务、任务卡在什么状态」。
- * 不修改任何数据，可随时手工调用。
- */
-async function diagnose(today) {
-  const snapshot = await db.collection(REMINDERS).limit(1000).get()
-  const jobs = snapshot.data || []
+/** 按提醒日与状态分页诊断；每个状态的总数来自 count，不受 get 单页上限影响。 */
+async function diagnose(today, options) {
+  const remindDate = parseDateKey(options.remindDate) ? options.remindDate : today
+  const statuses = ['scheduled', 'retryable', 'sending', 'sent', 'failed', 'unknown', 'cancelled']
+  const status = statuses.includes(options.status) ? options.status : 'scheduled'
+  const page = Number.isInteger(options.page) && options.page >= 0 && options.page <= 100 ? options.page : 0
+  const pageSize = 20
   const byStatus = {}
-  const byRemindDate = {}
-  for (const job of jobs) {
-    byStatus[job.status] = (byStatus[job.status] || 0) + 1
-    byRemindDate[job.remindDate] = (byRemindDate[job.remindDate] || 0) + 1
-  }
-  const dueToday = jobs.filter((job) => job.status === 'scheduled' && job.remindDate === today)
+  await Promise.all(statuses.map(async (state) => {
+    const count = await db.collection(REMINDERS).where({ remindDate, status: state }).count()
+    byStatus[state] = count.total || 0
+  }))
+  const pageResult = await db.collection(REMINDERS)
+    .where({ remindDate, status })
+    .orderBy('updatedAt', 'desc')
+    .skip(page * pageSize)
+    .limit(pageSize)
+    .get()
+  const jobs = pageResult.data || []
   return {
     today,
+    remindDate,
+    status,
+    page,
+    pageSize,
     reachedRemindTime: reachedRemindTime(),
-    total: jobs.length,
+    total: Object.values(byStatus).reduce((sum, count) => sum + count, 0),
     byStatus,
-    byRemindDate,
-    dueTodayCount: dueToday.length,
-    dueToday: dueToday.slice(0, 20).map((job) => ({
-      itemId: job.itemId,
-      owner: String(job.ownerId || '').slice(-6),
-      remindDate: job.remindDate,
-      templateId: job.templateId,
-      acceptedAt: job.acceptedAt || null,
-    })),
-    recent: jobs
-      .slice(-20)
-      .reverse()
-      .map((job) => ({
+    dueTodayCount: remindDate === today ? byStatus.scheduled + byStatus.retryable : 0,
+    hasNextPage: (page + 1) * pageSize < byStatus[status],
+    jobs: jobs.map((job) => ({
         itemId: job.itemId,
         owner: String(job.ownerId || '').slice(-6),
         remindDate: job.remindDate,
         status: job.status,
         failureCode: job.failureCode || null,
-        failureReason: job.failureReason || null,
+        failureStage: job.failureStage || null,
+        retryCount: job.retryCount || 0,
+        sendAttemptedAt: job.sendAttemptedAt || null,
         sentAt: job.sentAt || null,
       })),
   }
@@ -406,9 +442,9 @@ exports.main = async (event = {}) => {
     assert(!context.OPENID, 'FORBIDDEN', '提醒派发函数只允许定时触发或云端测试')
 
     if (options.action === 'diag') {
-      const diag = await diagnose(today)
+      const diag = await diagnose(today, options)
       console.info(
-        JSON.stringify({ requestId, action: 'diag', resultCode: 'OK', durationMs: Date.now() - startedAt, ...diag, dueToday: undefined }),
+        JSON.stringify({ requestId, action: 'diag', resultCode: 'OK', durationMs: Date.now() - startedAt, remindDate: diag.remindDate, status: diag.status, page: diag.page, total: diag.total, byStatus: diag.byStatus }),
       )
       return { ok: true, data: diag, requestId }
     }
@@ -417,50 +453,54 @@ exports.main = async (event = {}) => {
     const reached = force || reachedRemindTime()
     // 未到提醒时刻时只清理过期任务（remindDate < 今天），当天任务保持 scheduled 不提前推。
     const dateFilter = reached ? command.lte(today) : command.lt(today)
-    const summary = { due: 0, claimed: 0, sent: 0, failed: 0, unknown: 0, cancelled: 0, skipped: 0, pending: 0, staleSending: 0 }
+    const summary = { due: 0, claimed: 0, sent: 0, failed: 0, retryable: 0, unknown: 0, cancelled: 0, skipped: 0, pending: 0, staleSending: 0 }
     const details = []
     summary.staleSending = await reconcileStaleSending()
 
-    for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
-      const result = await db
-        .collection(REMINDERS)
-        .where({ status: 'scheduled', remindDate: dateFilter })
-        .orderBy('remindDate', 'asc')
-        .limit(BATCH_SIZE)
-        .get()
-      if (!result.data.length) break
+    for (const status of ['scheduled', 'retryable']) {
+      for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
+        const condition = { status, remindDate: dateFilter }
+        if (status === 'retryable') condition.nextRetryAt = command.lte(new Date())
+        const result = await db
+          .collection(REMINDERS)
+          .where(condition)
+          .orderBy('remindDate', 'asc')
+          .limit(BATCH_SIZE)
+          .get()
+        if (!result.data.length) break
 
-      // 内层并发（见 JOB_CONCURRENCY 说明）；受控分批，避免一次打太多开放接口。
-      for (let index = 0; index < result.data.length; index += JOB_CONCURRENCY) {
-        const slice = result.data.slice(index, index + JOB_CONCURRENCY)
-        const outcomes = await Promise.all(slice.map((job) => processJob(job, today, config)))
-        outcomes.forEach((jobOutcome, offset) => {
-          const job = slice[offset]
-          summary.due += 1
-          if (jobOutcome.claimed) summary.claimed += 1
-          summary[jobOutcome.result] = (summary[jobOutcome.result] || 0) + 1
-          if (manual) {
-            details.push({
-              itemId: job.itemId,
-              owner: String(job.ownerId || '').slice(-6),
-              remindDate: job.remindDate,
-              stage: jobOutcome.stage,
-              result: jobOutcome.result,
-            })
-          }
-        })
+        // 内层并发（见 JOB_CONCURRENCY 说明）；受控分批，避免一次打太多开放接口。
+        for (let index = 0; index < result.data.length; index += JOB_CONCURRENCY) {
+          const slice = result.data.slice(index, index + JOB_CONCURRENCY)
+          const outcomes = await Promise.all(slice.map((job) => processJob(job, today, config)))
+          outcomes.forEach((jobOutcome, offset) => {
+            const job = slice[offset]
+            summary.due += 1
+            if (jobOutcome.claimed) summary.claimed += 1
+            summary[jobOutcome.result] = (summary[jobOutcome.result] || 0) + 1
+            if (manual) {
+              details.push({
+                itemId: job.itemId,
+                owner: String(job.ownerId || '').slice(-6),
+                remindDate: job.remindDate,
+                stage: jobOutcome.stage,
+                result: jobOutcome.result,
+              })
+            }
+          })
+        }
+        if (result.data.length < BATCH_SIZE) break
       }
-      if (result.data.length < BATCH_SIZE) break
     }
 
     // 超时被截断时运维要能看出漏了多少，只打 summary 是看不出来的。
     let remaining = 0
     try {
-      const remainingResult = await db
-        .collection(REMINDERS)
-        .where({ status: 'scheduled', remindDate: dateFilter })
-        .count()
-      remaining = remainingResult.total || 0
+      for (const status of ['scheduled', 'retryable']) {
+        const remainingResult = await db.collection(REMINDERS)
+          .where({ status, remindDate: dateFilter }).count()
+        remaining += remainingResult.total || 0
+      }
     } catch (_error) {
       remaining = -1
     }
@@ -477,7 +517,7 @@ exports.main = async (event = {}) => {
       JSON.stringify({
         requestId,
         action: 'dispatch',
-        resultCode: 'OK',
+        resultCode: summary.failed ? 'JOBS_FAILED' : summary.unknown ? 'JOBS_UNKNOWN' : summary.retryable ? 'JOBS_RETRYABLE' : summary.staleSending ? 'JOBS_RECONCILED' : 'OK',
         durationMs: Date.now() - startedAt,
         ...summary,
         remaining,
